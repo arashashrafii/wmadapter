@@ -45,7 +45,16 @@ class DeepSeekLogin:
                 await checkbox.click()
         except Exception:
             pass
-        await self.page.locator(LOGIN_SUBMIT).click()
+        for selector in LOGIN_SUBMIT:
+            button = self.page.locator(selector).last
+            try:
+                if await button.is_visible(timeout=1500):
+                    await button.click()
+                    break
+            except Exception:
+                continue
+        else:
+            raise RuntimeError("DeepSeek login submit button was not found")
         await self.page.wait_for_timeout(3000)
 
         if not await self.is_authenticated():

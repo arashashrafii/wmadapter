@@ -5,6 +5,7 @@ server:
 browser:
   headless: false
   profile_dir: ./.webbridge-profile
+  executable_path:
 
 deepseek:
   chat_url: https://chat.deepseek.com/

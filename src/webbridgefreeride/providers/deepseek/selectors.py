@@ -14,4 +14,8 @@ RESPONSE_BLOCKS = [
 LOGIN_EMAIL = 'input[placeholder="Phone number / email address"]'
 LOGIN_PASSWORD = 'input[placeholder="Password"]'
 LOGIN_AGREE = ".ds-checkbox"
-LOGIN_SUBMIT = ".ds-sign-up-form__register-button"
+LOGIN_SUBMIT = [
+    '.ds-button--primary:has-text("Log in")',
+    'div[role=button]:has-text("Log in")',
+    ".ds-sign-up-form__register-button",
+]

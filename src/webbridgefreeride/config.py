@@ -7,7 +7,7 @@ import yaml
 
 DEFAULTS: dict[str, Any] = {
     "server": {"host": "127.0.0.1", "port": 8000},
-    "browser": {"headless": False, "profile_dir": ".webbridge-profile"},
+    "browser": {"headless": False, "profile_dir": ".webbridge-profile", "executable_path": None},
     "deepseek": {"chat_url": "https://chat.deepseek.com/", "timeout_ms": 180000},
     "logging": {"level": "INFO", "file": "webbridgefreeride.log"},
 }

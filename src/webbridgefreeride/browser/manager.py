@@ -6,9 +6,15 @@ from playwright.async_api import BrowserContext, Page, Playwright, async_playwri
 
 
 class BrowserManager:
-    def __init__(self, profile_path: str = ".webbridge-profile", headless: bool = False):
+    def __init__(
+        self,
+        profile_path: str = ".webbridge-profile",
+        headless: bool = False,
+        executable_path: str | None = None,
+    ):
         self.profile_path = Path(profile_path)
         self.headless = headless
+        self.executable_path = executable_path
         self.playwright: Playwright | None = None
         self.context: BrowserContext | None = None
 
@@ -20,6 +26,7 @@ class BrowserManager:
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=str(self.profile_path),
             headless=self.headless,
+            executable_path=self.executable_path,
             viewport={"width": 1440, "height": 1000},
         )
         return self.context

@@ -12,6 +12,7 @@ class DeepSeekService:
         self.browser = BrowserManager(
             profile_path=browser_cfg.get("profile_dir", ".webbridge-profile"),
             headless=browser_cfg.get("headless", False),
+            executable_path=browser_cfg.get("executable_path"),
         )
         self.chat_url = deepseek_cfg.get("chat_url", "https://chat.deepseek.com/")
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
