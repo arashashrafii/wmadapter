@@ -27,6 +27,14 @@ class DeepSeekConfig(BaseModel):
     system_prompt: str = "Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required."
 
 
+class QwenConfig(BaseModel):
+    chat_url: str = "https://chat.qwen.ai/"
+    auth: str = "manual"
+    profile_dir: str = ".webbridge-profile/qwen"
+    headless: bool = False
+    timeout_ms: int = Field(default=180000, ge=1000)
+
+
 class ProviderConfig(BaseModel):
     default: str = "deepseek"
     enabled: list[str] = Field(default_factory=lambda: ["deepseek"])
@@ -43,6 +51,7 @@ class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     deepseek: DeepSeekConfig = Field(default_factory=DeepSeekConfig)
+    qwen: QwenConfig = Field(default_factory=QwenConfig)
     providers: ProviderConfig = Field(default_factory=ProviderConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 

@@ -13,7 +13,14 @@ class ProviderRouter:
     def provider_for_model(self, model: str | None) -> ChatProvider:
         if not model:
             return self.providers[self.default_provider]
-        provider_name = model.split(":", 1)[0] if ":" in model else self.default_provider
+        if ":" in model:
+            provider_name = model.split(":", 1)[0]
+        elif model.startswith("qwen"):
+            provider_name = "qwen"
+        elif model.startswith("deepseek"):
+            provider_name = "deepseek"
+        else:
+            provider_name = self.default_provider
         if provider_name not in self.providers:
             raise RuntimeError(f"No provider configured for model {model!r}")
         return self.providers[provider_name]

@@ -16,6 +16,7 @@ deepseek:
 
 qwen:
   chat_url: https://chat.qwen.ai/
+  headless: false
   auth: google
   profile_dir: ./.webbridge-profile/qwen
 

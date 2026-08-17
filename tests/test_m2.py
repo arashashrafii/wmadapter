@@ -109,6 +109,11 @@ class Milestone2Tests(unittest.TestCase):
         prompt = _prompt([Message(role="user", content=[{"type": "text", "text": "hello"}])])
         self.assertEqual(prompt, "USER: hello")
 
+    def test_provider_router_dispatches_qwen_model(self):
+        router = ProviderRouter({"deepseek": FakeProvider(), "qwen": FakeProvider()}, "deepseek")
+        router.providers["qwen"].name = "qwen"
+        self.assertEqual(router.provider_for_model("qwen-chat").name, "qwen")
+
     def test_manual_auth_targets_include_qwen_google(self):
         target = AUTH_TARGETS["qwen"]
         self.assertEqual(target.url, "https://chat.qwen.ai/")

@@ -15,12 +15,12 @@ from .config import load_config
 from .logging import configure_logging
 from .providers.router import ProviderRouter
 from .security import redact
-from .service import DeepSeekService
+from .service import DeepSeekService, QwenService
 
 config = load_config()
 configure_logging(config["logging"])
 logger = logging.getLogger(__name__)
-providers = {"deepseek": DeepSeekService(config)}
+providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
 router = ProviderRouter(providers, config["providers"]["default"])
 default_system_prompt = config["deepseek"].get("system_prompt", "")
 
@@ -131,18 +131,19 @@ async def models():
         "data": [
             {"id": "deepseek-chat", "object": "model", "owned_by": "deepseek-web"},
             {"id": "deepseek-reasoner", "object": "model", "owned_by": "deepseek-web"},
+            {"id": "qwen-chat", "object": "model", "owned_by": "qwen-web"},
         ],
     }
 
 
 @app.post("/v1/chat/completions")
 async def chat_completion(payload: ChatRequest):
-    prompt = _prompt(payload.messages, default_system_prompt)
-    if not prompt:
-        raise HTTPException(status_code=400, detail="messages must contain text")
-
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = router.provider_for_model(payload.model)
+    system_prompt = "" if provider.name == "qwen" else default_system_prompt
+    prompt = _prompt(payload.messages, system_prompt)
+    if not prompt:
+        raise HTTPException(status_code=400, detail="messages must contain text")
 
     if payload.stream:
         async def events():
