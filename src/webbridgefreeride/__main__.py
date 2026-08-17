@@ -8,6 +8,7 @@ import uvicorn
 from .config import load_config
 from .credentials import save_credentials_interactive
 from .logging import configure_logging
+from .ports import find_free_port
 
 
 def run_server() -> None:
@@ -15,10 +16,16 @@ def run_server() -> None:
     config = load_config()
     configure_logging(config["logging"])
     server = config["server"]
+    host = server.get("host", "127.0.0.1")
+    configured_port = int(server.get("port", 11555))
+    port = find_free_port(host, configured_port)
+    if port != configured_port:
+        print(f"Port {configured_port} is busy; using {port} instead.")
+    print(f"API URL: http://{host}:{port}/v1")
     uvicorn.run(
         "webbridgefreeride.main:app",
-        host=server.get("host", "127.0.0.1"),
-        port=int(server.get("port", 8000)),
+        host=host,
+        port=port,
         reload=False,
     )
 

@@ -2,7 +2,7 @@ services:
   webbridgefreeride:
     build: .
     ports:
-      - "8000:8000"
+      - "11555:11555"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - webbridge-profile:/app/.webbridge-profile

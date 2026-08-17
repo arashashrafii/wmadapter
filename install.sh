@@ -2,7 +2,7 @@
 set -euo pipefail
 
 API_HOST="127.0.0.1"
-API_PORT="8000"
+API_PORT="11555"
 API_URL="http://${API_HOST}:${API_PORT}/v1"
 REPO_URL="https://github.com/Shaivpidadi/FreeRide"
 

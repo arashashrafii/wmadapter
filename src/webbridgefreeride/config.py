@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
-    port: int = Field(default=8000, ge=1, le=65535)
+    port: int = Field(default=11555, ge=1, le=65535)
 
 
 class BrowserConfig(BaseModel):

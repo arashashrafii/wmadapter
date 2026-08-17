@@ -8,6 +8,7 @@ from webbridgefreeride.credentials import CredentialStore
 from webbridgefreeride.security import redact
 from webbridgefreeride.providers.router import ProviderRouter
 from webbridgefreeride.main import Message, _prompt
+from webbridgefreeride.ports import find_free_port
 from webbridgefreeride.providers.base import ChatProvider
 
 
@@ -34,9 +35,17 @@ class Milestone2Tests(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             cfg = load_config(Path(directory) / "missing.yaml")
-        self.assertEqual(cfg["server"]["port"], 8000)
+        self.assertEqual(cfg["server"]["port"], 11555)
         self.assertEqual(cfg["browser"]["restart_retries"], 1)
         self.assertEqual(cfg["deepseek"]["login_timeout_ms"], 30000)
+
+    def test_find_free_port_skips_busy_port(self):
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            busy_port = sock.getsockname()[1]
+            self.assertEqual(find_free_port("127.0.0.1", busy_port), busy_port + 1)
 
     def test_config_path_can_come_from_environment(self):
         from tempfile import TemporaryDirectory

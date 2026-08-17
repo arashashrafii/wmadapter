@@ -62,7 +62,7 @@ Then start the bridge:
 python -m webbridgefreeride
 ```
 
-The server defaults to `http://127.0.0.1:8000`.
+The server defaults to `http://127.0.0.1:11555`.
 
 For automatic login recovery without storing secrets in `config.yaml`, save encrypted local credentials outside the repository:
 
@@ -77,19 +77,19 @@ The credential key is stored under `~/.config/webbridgefreeride/` and the encryp
 Health check:
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:11555/health
 ```
 
 Readiness check:
 
 ```bash
-curl http://127.0.0.1:8000/ready
+curl http://127.0.0.1:11555/ready
 ```
 
 Chat request:
 
 ```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://127.0.0.1:11555/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "deepseek-chat",
@@ -107,7 +107,7 @@ The first successful live run on a real DeepSeek account is still required to va
 Streaming request:
 
 ```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://127.0.0.1:11555/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "deepseek-chat",
