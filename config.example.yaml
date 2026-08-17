@@ -1,0 +1,13 @@
+app:
+  host: 127.0.0.1
+  port: 8000
+
+browser:
+  headless: false
+  profile_path: ./data/browser-profile
+
+provider:
+  name: deepseek
+
+logging:
+  level: INFO
