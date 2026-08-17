@@ -19,3 +19,16 @@ LOGIN_SUBMIT = [
     'div[role=button]:has-text("Log in")',
     ".ds-sign-up-form__register-button",
 ]
+
+
+COOKIE_ACCEPT = [
+    'button:has-text("Accept")',
+    'button:has-text("Accept all")',
+    'button:has-text("I agree")',
+    'button:has-text("Agree")',
+    'div[role=button]:has-text("Accept")',
+    'div[role=button]:has-text("Accept all")',
+    '[data-testid*="accept"]',
+    '[id*="accept"]',
+    '[class*="accept"]',
+]

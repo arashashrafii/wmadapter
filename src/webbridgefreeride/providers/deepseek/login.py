@@ -5,7 +5,7 @@ import os
 from playwright.async_api import Page
 
 from ...credentials import CredentialStore, CredentialStoreError
-from .selectors import CHAT_INPUTS, LOGIN_AGREE, LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
+from .selectors import CHAT_INPUTS, COOKIE_ACCEPT, LOGIN_AGREE, LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
 
 
 class DeepSeekLogin:
@@ -16,6 +16,20 @@ class DeepSeekLogin:
 
     async def open(self) -> None:
         await self.page.goto(self.chat_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+
+    async def _click_first_visible(self, selectors: list[str], timeout: int = 1000) -> bool:
+        for selector in selectors:
+            locator = self.page.locator(selector).last
+            try:
+                if await locator.is_visible(timeout=timeout):
+                    await locator.click()
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def accept_cookies(self) -> None:
+        await self._click_first_visible(COOKIE_ACCEPT, timeout=800)
 
     async def is_authenticated(self) -> bool:
         for selector in CHAT_INPUTS:
@@ -38,6 +52,7 @@ class DeepSeekLogin:
 
     async def ensure_authenticated(self) -> None:
         await self.open()
+        await self.accept_cookies()
         if await self.is_authenticated():
             return
 
@@ -49,6 +64,7 @@ class DeepSeekLogin:
             )
         email, password = credentials
 
+        await self.accept_cookies()
         await self.page.locator(LOGIN_EMAIL).fill(email, timeout=self.timeout_ms)
         await self.page.locator(LOGIN_PASSWORD).fill(password, timeout=self.timeout_ms)
         try:
@@ -57,15 +73,7 @@ class DeepSeekLogin:
                 await checkbox.click()
         except Exception:
             pass
-        for selector in LOGIN_SUBMIT:
-            button = self.page.locator(selector).last
-            try:
-                if await button.is_visible(timeout=1500):
-                    await button.click()
-                    break
-            except Exception:
-                continue
-        else:
+        if not await self._click_first_visible(LOGIN_SUBMIT, timeout=1500):
             raise RuntimeError("DeepSeek login submit button was not found")
         await self.page.wait_for_timeout(3000)
 
