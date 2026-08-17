@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
 import uvicorn
 
 from .config import load_config
 
 
 def main() -> None:
+    load_dotenv()
     config = load_config()
     server = config["server"]
     uvicorn.run(
