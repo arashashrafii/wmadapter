@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="freeride-v3"
 API_HOST="127.0.0.1"
 API_PORT="8000"
 API_URL="http://${API_HOST}:${API_PORT}/v1"
@@ -23,10 +22,10 @@ need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }
 }
 write_config() {
-  local provider="$1" chat_url="$2" headless="$3" executable_path="$4"
+  local provider="$1" chat_url="$2" headless="$3" executable_path="$4" server_host="$5"
   cat > config.yaml <<YAML
 server:
-  host: ${API_HOST}
+  host: ${server_host}
   port: ${API_PORT}
 
 browser:
@@ -130,7 +129,9 @@ CHAT_URL=$(ask "Chat authentication/start URL" "$(provider_url "$PROVIDER")")
 HEADLESS=$(ask "Run browser headless? (true/false)" "true")
 EXECUTABLE_PATH=$(ask "Chrome/Chromium executable path (blank for Playwright default)" "")
 if [ -z "$EXECUTABLE_PATH" ]; then EXECUTABLE_PATH=""; fi
-write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH"
+SERVER_HOST="$API_HOST"
+if [ "$MODE" = "docker" ]; then SERVER_HOST="0.0.0.0"; fi
+write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH" "$SERVER_HOST"
 
 AUTH_MODE=$(ask "Login by user/pass or URL/manual authentication? (credentials/url)" "url")
 case "$AUTH_MODE" in
