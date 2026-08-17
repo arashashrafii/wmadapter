@@ -1,8 +1,17 @@
-"""DeepSeek web selectors.
+"""DeepSeek web selectors kept in one place for easier maintenance."""
 
-Selectors are isolated here because web UI changes require updates.
-"""
+CHAT_INPUTS = [
+    "textarea#chat-input",
+    'textarea[placeholder*="DeepSeek"]',
+    "textarea.d96f2d2a",
+]
 
-CHAT_INPUT = None
-SEND_BUTTON = None
-RESPONSE_CONTAINER = None
+RESPONSE_BLOCKS = [
+    ".ds-markdown",
+    "[class*='ds-markdown']",
+]
+
+LOGIN_EMAIL = 'input[placeholder="Phone number / email address"]'
+LOGIN_PASSWORD = 'input[placeholder="Password"]'
+LOGIN_AGREE = ".ds-checkbox"
+LOGIN_SUBMIT = ".ds-sign-up-form__register-button"
