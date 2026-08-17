@@ -9,6 +9,7 @@ from webbridgefreeride.security import redact
 from webbridgefreeride.providers.router import ProviderRouter
 from webbridgefreeride.main import Message, _prompt
 from webbridgefreeride.ports import find_free_port
+from webbridgefreeride.manual_auth import AUTH_TARGETS
 from webbridgefreeride.providers.base import ChatProvider
 
 
@@ -107,6 +108,11 @@ class Milestone2Tests(unittest.TestCase):
     def test_prompt_accepts_rich_openai_content(self):
         prompt = _prompt([Message(role="user", content=[{"type": "text", "text": "hello"}])])
         self.assertEqual(prompt, "USER: hello")
+
+    def test_manual_auth_targets_include_qwen_google(self):
+        target = AUTH_TARGETS["qwen"]
+        self.assertEqual(target.url, "https://chat.qwen.ai/")
+        self.assertTrue(any("Google" in selector for selector in target.google_selectors))
 
     def test_provider_router_dispatches_prefixed_model(self):
         router = ProviderRouter({"fake": FakeProvider()}, "fake")

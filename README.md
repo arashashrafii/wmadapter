@@ -72,6 +72,16 @@ python -m webbridgefreeride credentials set
 
 The credential key is stored under `~/.config/webbridgefreeride/` and the encrypted credential file under `~/.local/share/webbridgefreeride/` by default.
 
+## Qwen Google authentication
+
+Qwen runtime chat is not implemented yet, but you can create a persistent Qwen Google-login browser session for the future adapter:
+
+```bash
+python -m webbridgefreeride auth qwen --google
+```
+
+Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.webbridge-profile/qwen`.
+
 ## Test
 
 Health check:

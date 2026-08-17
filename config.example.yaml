@@ -14,6 +14,11 @@ deepseek:
   login_timeout_ms: 30000
   system_prompt: Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required.
 
+qwen:
+  chat_url: https://chat.qwen.ai/
+  auth: google
+  profile_dir: ./.webbridge-profile/qwen
+
 providers:
   default: deepseek
   enabled:

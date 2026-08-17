@@ -37,6 +37,11 @@ browser:
 # Provider selection is stored for future adapters. Current runtime adapter: deepseek.
 provider_choice: ${provider}
 
+qwen:
+  chat_url: https://chat.qwen.ai/
+  auth: google
+  profile_dir: ./.webbridge-profile/qwen
+
 deepseek:
   chat_url: ${chat_url}
   timeout_ms: 180000
@@ -147,7 +152,11 @@ ENV
     ;;
   url|manual)
     say "Manual/URL authentication selected. Start URL: ${CHAT_URL}"
-    say "If the session is not already authenticated, run with headless=false once and log in in the opened browser."
+    if [ "$PROVIDER" = "qwen" ]; then
+      say "For Qwen Google login, run: .venv/bin/python -m webbridgefreeride auth qwen --google"
+    else
+      say "If the session is not already authenticated, run with headless=false once and log in in the opened browser."
+    fi
     ;;
   *) echo "Invalid auth mode: $AUTH_MODE" >&2; exit 1 ;;
 esac
