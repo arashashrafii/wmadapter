@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webbridgefreeride"
+version = "0.1.0"
+description = "Local OpenAI-compatible bridge to browser-based AI chat services"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.116,<1.0",
+  "uvicorn[standard]>=0.35,<1.0",
+  "playwright>=1.54,<2.0",
+  "PyYAML>=6.0,<7.0",
+  "pydantic>=2.11,<3.0",
+]
+
+[project.scripts]
+webbridgefreeride = "webbridgefreeride.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
