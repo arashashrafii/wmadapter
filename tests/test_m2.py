@@ -91,6 +91,10 @@ class Milestone2Tests(unittest.TestCase):
         self.assertNotIn("secret", redact("password=secret token:abc"))
 
 
+    def test_prompt_adds_default_system_instruction(self):
+        prompt = _prompt([Message(role="user", content="hello")], "Absolute mode. Short answer.")
+        self.assertEqual(prompt, "SYSTEM: Absolute mode. Short answer.\n\nUSER: hello")
+
     def test_prompt_accepts_rich_openai_content(self):
         prompt = _prompt([Message(role="user", content=[{"type": "text", "text": "hello"}])])
         self.assertEqual(prompt, "USER: hello")

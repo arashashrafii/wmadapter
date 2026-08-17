@@ -14,7 +14,7 @@ class ServerConfig(BaseModel):
 
 
 class BrowserConfig(BaseModel):
-    headless: bool = False
+    headless: bool = True
     profile_dir: str = ".webbridge-profile"
     executable_path: str | None = None
     restart_retries: int = Field(default=1, ge=0, le=5)
@@ -24,6 +24,7 @@ class DeepSeekConfig(BaseModel):
     chat_url: str = "https://chat.deepseek.com/"
     timeout_ms: int = Field(default=180000, ge=1000)
     login_timeout_ms: int = Field(default=30000, ge=1000)
+    system_prompt: str = "Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required."
 
 
 class ProviderConfig(BaseModel):

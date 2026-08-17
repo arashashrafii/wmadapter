@@ -22,6 +22,7 @@ configure_logging(config["logging"])
 logger = logging.getLogger(__name__)
 providers = {"deepseek": DeepSeekService(config)}
 router = ProviderRouter(providers, config["providers"]["default"])
+default_system_prompt = config["deepseek"].get("system_prompt", "")
 
 
 class Message(BaseModel):
@@ -59,8 +60,10 @@ def _content_text(content: Any) -> str:
     return str(content)
 
 
-def _prompt(messages: list[Message]) -> str:
+def _prompt(messages: list[Message], system_prompt: str = "") -> str:
     lines = []
+    if system_prompt.strip() and not any(message.role.lower() == "system" for message in messages):
+        lines.append(f"SYSTEM: {system_prompt.strip()}")
     for message in messages:
         text = _content_text(message.content).strip()
         if text:
@@ -134,7 +137,7 @@ async def models():
 
 @app.post("/v1/chat/completions")
 async def chat_completion(payload: ChatRequest):
-    prompt = _prompt(payload.messages)
+    prompt = _prompt(payload.messages, default_system_prompt)
     if not prompt:
         raise HTTPException(status_code=400, detail="messages must contain text")
 

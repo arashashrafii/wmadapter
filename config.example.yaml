@@ -3,7 +3,7 @@ server:
   port: 8000
 
 browser:
-  headless: false
+  headless: true
   profile_dir: ./.webbridge-profile
   executable_path:
   restart_retries: 1
@@ -12,6 +12,7 @@ deepseek:
   chat_url: https://chat.deepseek.com/
   timeout_ms: 180000
   login_timeout_ms: 30000
+  system_prompt: Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required.
 
 providers:
   default: deepseek
