@@ -26,6 +26,16 @@ Milestones 2-5 add local-tool hardening, streaming-compatible responses, provide
 - M4: Provider routing foundation and adapter contract.
 - M5: Docker/package metadata plus security and maintenance docs.
 
+## FreeRide v3 installer
+
+Interactive setup:
+
+```bash
+./install.sh
+```
+
+The installer asks whether to use Docker or the current OS, lets you choose a free chatbot target (`deepseek`, `kimi`, `glm`, `qwen`), configures credential or URL/manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. The current implemented runtime adapter is DeepSeek; other provider choices are saved as configuration for future adapters.
+
 ## Linux quick start
 
 ```bash
