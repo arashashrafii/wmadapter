@@ -1,0 +1,5 @@
+fastapi>=0.116,<1.0
+uvicorn[standard]>=0.35,<1.0
+playwright>=1.54,<2.0
+PyYAML>=6.0,<7.0
+pydantic>=2.11,<3.0
