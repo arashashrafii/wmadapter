@@ -1,61 +1,72 @@
 # WebBridgeFreeRide
 
-## Purpose
+WebBridgeFreeRide is a proof of concept for a local OpenAI-compatible gateway that uses browser automation to talk to DeepSeek Web.
 
-WebBridgeFreeRide is a proof of concept for an OpenAI-compatible local gateway that connects AI agents to browser-based free chatbot services.
+## Milestone 1 scope
 
-Initial target: DeepSeek Web.
+Implemented:
 
-## Goal
+- FastAPI local server
+- `/health`
+- `/v1/models`
+- `/v1/chat/completions` (non-streaming)
+- Playwright Chromium with a persistent profile
+- DeepSeek login/session detection
+- Optional first-login credentials via environment variables
+- DeepSeek prompt submission
+- DOM response extraction
 
-Provide a local API:
+Streaming and production hardening are not part of Milestone 1.
 
+## Linux quick start
+
+```bash
+git clone https://github.com/arashashrafii/webbridgefreeride.git
+cd webbridgefreeride
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .
+playwright install chromium
+cp config.example.yaml config.yaml
 ```
-Agent / Application
-        |
-        v
-OpenAI compatible API (localhost)
-        |
-        v
-Browser automation layer
-        |
-        v
-DeepSeek Web session
+
+For the first login, either log into DeepSeek manually in the Chromium window, or temporarily export credentials in the shell:
+
+```bash
+export DEEPSEEK_EMAIL='your-email'
+export DEEPSEEK_PASSWORD='your-password'
 ```
 
-## Proof of Concept Scope
+Then start the bridge:
 
-Phase 1:
+```bash
+python -m webbridgefreeride
+```
 
-- [ ] Start local API server
-- [ ] Implement OpenAI `/v1/chat/completions` compatibility
-- [ ] Use Playwright browser automation
-- [ ] Support persistent browser profile
-- [ ] Manual login first (no password storage)
-- [ ] Send prompt to DeepSeek Web
-- [ ] Capture response
-- [ ] Return OpenAI compatible JSON
+The server defaults to `http://127.0.0.1:8000`.
 
-## Non Goals
+## Test
 
-- No API key bypass
-- No password storage
-- No guarantee of unlimited free usage
-- No dependency on undocumented APIs
+Health check:
 
-## Technical Evaluation
+```bash
+curl http://127.0.0.1:8000/health
+```
 
-Success criteria:
+Chat request:
 
-1. A local agent can call the API using an OpenAI client.
-2. DeepSeek Web can answer through the browser session.
-3. The workflow is stable enough for personal use.
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Reply only with: OK"}]
+  }'
+```
 
-## Future
+## Important limitations
 
-Possible adapters:
+This depends on DeepSeek's current website DOM and authentication flow. A DeepSeek UI change, CAPTCHA, verification challenge, or service policy change can break the bridge. The selectors are isolated in `src/webbridgefreeride/providers/deepseek/selectors.py` to make repairs easier.
 
-- Gemini Web
-- Claude Web
-- ChatGPT Web
-- Other browser-based AI assistants
+The first successful live run on a real DeepSeek account is still required to validate the current selectors against the live site.
