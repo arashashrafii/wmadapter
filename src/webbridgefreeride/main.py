@@ -26,7 +26,7 @@ router = ProviderRouter(providers, config["providers"]["default"])
 
 class Message(BaseModel):
     role: str
-    content: str
+    content: Any = ""
     name: str | None = None
 
 
@@ -41,10 +41,31 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = Field(default=None, alias="conversation_id")
 
 
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                value = item.get("text") or item.get("content")
+                if isinstance(value, str):
+                    parts.append(value)
+        return "\n".join(parts)
+    if content is None:
+        return ""
+    return str(content)
+
+
 def _prompt(messages: list[Message]) -> str:
-    return "\n\n".join(
-        f"{m.role.upper()}: {m.content}" for m in messages if m.content.strip()
-    )
+    lines = []
+    for message in messages:
+        text = _content_text(message.content).strip()
+        if text:
+            lines.append(f"{message.role.upper()}: {text}")
+    return "\n\n".join(lines)
 
 
 def _completion_response(request_id: str, model: str, answer: str) -> dict[str, Any]:
@@ -93,6 +114,11 @@ async def ready():
     status = await router.status()
     ready_value = all(item.get("ready") for item in status.values())
     return {"status": "ready" if ready_value else "not_ready", "providers": redact(status)}
+
+
+@app.get("/props")
+async def props(model: str, autoload: bool = False):
+    return {"model": model, "context_length": 128000, "supports_chat": True}
 
 
 @app.get("/v1/models")

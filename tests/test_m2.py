@@ -7,6 +7,7 @@ from webbridgefreeride.config import load_config
 from webbridgefreeride.credentials import CredentialStore
 from webbridgefreeride.security import redact
 from webbridgefreeride.providers.router import ProviderRouter
+from webbridgefreeride.main import Message, _prompt
 from webbridgefreeride.providers.base import ChatProvider
 
 
@@ -89,6 +90,10 @@ class Milestone2Tests(unittest.TestCase):
         )
         self.assertNotIn("secret", redact("password=secret token:abc"))
 
+
+    def test_prompt_accepts_rich_openai_content(self):
+        prompt = _prompt([Message(role="user", content=[{"type": "text", "text": "hello"}])])
+        self.assertEqual(prompt, "USER: hello")
 
     def test_provider_router_dispatches_prefixed_model(self):
         router = ProviderRouter({"fake": FakeProvider()}, "fake")
