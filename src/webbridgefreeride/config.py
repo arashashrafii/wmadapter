@@ -1,26 +1,60 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
-
-DEFAULTS: dict[str, Any] = {
-    "server": {"host": "127.0.0.1", "port": 8000},
-    "browser": {"headless": False, "profile_dir": ".webbridge-profile", "executable_path": None},
-    "deepseek": {"chat_url": "https://chat.deepseek.com/", "timeout_ms": 180000},
-    "logging": {"level": "INFO", "file": "webbridgefreeride.log"},
-}
+from pydantic import BaseModel, Field, ValidationError
 
 
-def load_config(path: str | Path = "config.yaml") -> dict[str, Any]:
-    cfg = {k: dict(v) for k, v in DEFAULTS.items()}
-    p = Path(path)
+class ServerConfig(BaseModel):
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+
+
+class BrowserConfig(BaseModel):
+    headless: bool = False
+    profile_dir: str = ".webbridge-profile"
+    executable_path: str | None = None
+    restart_retries: int = Field(default=1, ge=0, le=5)
+
+
+class DeepSeekConfig(BaseModel):
+    chat_url: str = "https://chat.deepseek.com/"
+    timeout_ms: int = Field(default=180000, ge=1000)
+    login_timeout_ms: int = Field(default=30000, ge=1000)
+
+
+class ProviderConfig(BaseModel):
+    default: str = "deepseek"
+    enabled: list[str] = Field(default_factory=lambda: ["deepseek"])
+
+
+class LoggingConfig(BaseModel):
+    level: str = "INFO"
+    file: str | None = "webbridgefreeride.log"
+    max_bytes: int = Field(default=1_000_000, ge=10_000)
+    backup_count: int = Field(default=3, ge=0, le=20)
+
+
+class AppConfig(BaseModel):
+    server: ServerConfig = Field(default_factory=ServerConfig)
+    browser: BrowserConfig = Field(default_factory=BrowserConfig)
+    deepseek: DeepSeekConfig = Field(default_factory=DeepSeekConfig)
+    providers: ProviderConfig = Field(default_factory=ProviderConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+    def as_legacy_dict(self) -> dict[str, Any]:
+        return self.model_dump()
+
+
+def load_config(path: str | Path | None = None) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    p = Path(path or os.getenv("WEBBRIDGE_CONFIG", "config.yaml"))
     if p.exists():
-        user = yaml.safe_load(p.read_text()) or {}
-        for section, values in user.items():
-            if isinstance(values, dict) and section in cfg:
-                cfg[section].update(values)
-            else:
-                cfg[section] = values
-    return cfg
+        data = yaml.safe_load(p.read_text()) or {}
+    try:
+        return AppConfig.model_validate(data).as_legacy_dict()
+    except ValidationError as exc:
+        raise RuntimeError(f"Invalid configuration in {p}: {exc}") from exc

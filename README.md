@@ -16,7 +16,15 @@ Implemented:
 - DeepSeek prompt submission
 - DOM response extraction
 
-Streaming and production hardening are not part of Milestone 1.
+Milestones 2-5 add local-tool hardening, streaming-compatible responses, provider routing foundations, Docker packaging, and public maintenance/security docs.
+
+## Milestone status
+
+- M1: DeepSeek browser-backed non-streaming chat completion validated.
+- M2: Stable local tool foundation: config validation, encrypted local credentials, redacted logs, readiness, retries.
+- M3: Agent/OpenAI client compatibility base: optional OpenAI fields, SSE streaming shape, conversation IDs.
+- M4: Provider routing foundation and adapter contract.
+- M5: Docker/package metadata plus security and maintenance docs.
 
 ## Linux quick start
 
@@ -46,12 +54,26 @@ python -m webbridgefreeride
 
 The server defaults to `http://127.0.0.1:8000`.
 
+For automatic login recovery without storing secrets in `config.yaml`, save encrypted local credentials outside the repository:
+
+```bash
+python -m webbridgefreeride credentials set
+```
+
+The credential key is stored under `~/.config/webbridgefreeride/` and the encrypted credential file under `~/.local/share/webbridgefreeride/` by default.
+
 ## Test
 
 Health check:
 
 ```bash
 curl http://127.0.0.1:8000/health
+```
+
+Readiness check:
+
+```bash
+curl http://127.0.0.1:8000/ready
 ```
 
 Chat request:
@@ -70,3 +92,24 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 This depends on DeepSeek's current website DOM and authentication flow. A DeepSeek UI change, CAPTCHA, verification challenge, or service policy change can break the bridge. The selectors are isolated in `src/webbridgefreeride/providers/deepseek/selectors.py` to make repairs easier.
 
 The first successful live run on a real DeepSeek account is still required to validate the current selectors against the live site.
+
+
+Streaming request:
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "deepseek-chat",
+    "stream": true,
+    "messages": [{"role": "user", "content": "Reply only with: OK"}]
+  }'
+```
+
+Docker:
+
+```bash
+docker compose up --build
+```
+
+Security and maintenance notes live in `docs/SECURITY.md` and `docs/MAINTENANCE.md`.

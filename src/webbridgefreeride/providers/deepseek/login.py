@@ -4,16 +4,18 @@ import os
 
 from playwright.async_api import Page
 
+from ...credentials import CredentialStore, CredentialStoreError
 from .selectors import CHAT_INPUTS, LOGIN_AGREE, LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
 
 
 class DeepSeekLogin:
-    def __init__(self, page: Page, chat_url: str = "https://chat.deepseek.com/"):
+    def __init__(self, page: Page, chat_url: str = "https://chat.deepseek.com/", timeout_ms: int = 30000):
         self.page = page
         self.chat_url = chat_url
+        self.timeout_ms = timeout_ms
 
     async def open(self) -> None:
-        await self.page.goto(self.chat_url, wait_until="domcontentloaded")
+        await self.page.goto(self.chat_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
 
     async def is_authenticated(self) -> bool:
         for selector in CHAT_INPUTS:
@@ -24,21 +26,31 @@ class DeepSeekLogin:
                 pass
         return False
 
+    def _credentials(self) -> tuple[str, str] | None:
+        email = os.getenv("DEEPSEEK_EMAIL")
+        password = os.getenv("DEEPSEEK_PASSWORD")
+        if email and password:
+            return email, password
+        try:
+            return CredentialStore().load()
+        except CredentialStoreError as exc:
+            raise RuntimeError(str(exc)) from exc
+
     async def ensure_authenticated(self) -> None:
         await self.open()
         if await self.is_authenticated():
             return
 
-        email = os.getenv("DEEPSEEK_EMAIL")
-        password = os.getenv("DEEPSEEK_PASSWORD")
-        if not email or not password:
+        credentials = self._credentials()
+        if credentials is None:
             raise RuntimeError(
-                "DeepSeek is not logged in. Set DEEPSEEK_EMAIL and DEEPSEEK_PASSWORD "
-                "for first login, or log in manually in the opened browser and restart."
+                "DeepSeek is not logged in. Run `python -m webbridgefreeride credentials set`, "
+                "set DEEPSEEK_EMAIL and DEEPSEEK_PASSWORD, or log in manually in the opened browser."
             )
+        email, password = credentials
 
-        await self.page.locator(LOGIN_EMAIL).fill(email)
-        await self.page.locator(LOGIN_PASSWORD).fill(password)
+        await self.page.locator(LOGIN_EMAIL).fill(email, timeout=self.timeout_ms)
+        await self.page.locator(LOGIN_PASSWORD).fill(password, timeout=self.timeout_ms)
         try:
             checkbox = self.page.locator(LOGIN_AGREE)
             if await checkbox.is_visible(timeout=1000):
@@ -59,5 +71,6 @@ class DeepSeekLogin:
 
         if not await self.is_authenticated():
             raise RuntimeError(
-                "Automatic DeepSeek login did not complete. CAPTCHA, verification, or UI change may require manual login."
+                "Automatic DeepSeek login did not complete. CAPTCHA, verification, invalid credentials, "
+                "or a UI change may require manual login."
             )

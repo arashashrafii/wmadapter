@@ -5,3 +5,7 @@ config.yaml
 .webbridge-profile/
 webbridgefreeride.log
 .env
+*.egg-info/
+*.log.*
+.coverage
+.pytest_cache/

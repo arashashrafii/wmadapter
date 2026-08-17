@@ -6,11 +6,20 @@ browser:
   headless: false
   profile_dir: ./.webbridge-profile
   executable_path:
+  restart_retries: 1
 
 deepseek:
   chat_url: https://chat.deepseek.com/
   timeout_ms: 180000
+  login_timeout_ms: 30000
+
+providers:
+  default: deepseek
+  enabled:
+    - deepseek
 
 logging:
   level: INFO
   file: webbridgefreeride.log
+  max_bytes: 1000000
+  backup_count: 3

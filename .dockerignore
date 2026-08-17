@@ -1,0 +1,7 @@
+.git
+.venv
+.webbridge-profile
+__pycache__
+*.pyc
+*.log
+src/*.egg-info
