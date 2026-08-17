@@ -1,13 +1,15 @@
-app:
+server:
   host: 127.0.0.1
   port: 8000
 
 browser:
   headless: false
-  profile_path: ./data/browser-profile
+  profile_dir: ./.webbridge-profile
 
-provider:
-  name: deepseek
+deepseek:
+  chat_url: https://chat.deepseek.com/
+  timeout_ms: 180000
 
 logging:
   level: INFO
+  file: webbridgefreeride.log
