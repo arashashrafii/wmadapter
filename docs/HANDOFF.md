@@ -34,6 +34,10 @@ It is not the paid DeepSeek API.
 
 ## Verified tests
 
+The ordered 13-capability acceptance checklist is maintained in
+docs/CAPABILITY_TEST_STATUS.md. It is the source of truth for which capability
+has been tested and what remains.
+
 Run from the repository:
 
     .venv/bin/python -m unittest discover -s tests -q
