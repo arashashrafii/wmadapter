@@ -1,6 +1,10 @@
 # WebBridgeFreeRide
 
-WebBridgeFreeRide is a proof of concept for a local OpenAI-compatible gateway that uses browser automation to talk to DeepSeek Web.
+WebBridgeFreeRide is a local OpenAI-compatible gateway for free DeepSeek Web and Qwen Web sessions.
+
+The provider side is Web-only: DeepSeek and Qwen are accessed through their
+browser chat pages. The local OpenAI-compatible boundary exists for clients
+such as OpenClaw; this project does not use the paid DeepSeek API.
 
 ## Milestone 1 scope
 
@@ -10,11 +14,9 @@ Implemented:
 - `/health`
 - `/v1/models`
 - `/v1/chat/completions` (non-streaming)
-- Playwright Chromium with a persistent profile
-- DeepSeek login/session detection
-- Optional first-login credentials via environment variables
-- DeepSeek prompt submission
-- DOM response extraction
+- DeepSeek Web browser sessions with per-OpenClaw-session pages
+- Text-to-structured tool-call simulation for OpenClaw
+- Optional Qwen Web browser adapter
 
 Milestones 2-5 add local-tool hardening, streaming-compatible responses, provider routing foundations, Docker packaging, and public maintenance/security docs.
 
@@ -34,7 +36,49 @@ Interactive setup:
 ./install.sh
 ```
 
-The installer asks whether to use Docker or the current OS, lets you choose a free chatbot target (`deepseek`, `kimi`, `glm`, `qwen`), configures credential or URL/manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. The current implemented runtime adapter is DeepSeek; other provider choices are saved as configuration for future adapters.
+The installer sets up a local Python environment, lets you choose DeepSeek Web or Qwen Web, opens a browser for manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. No paid API key is required.
+
+The local installer creates a user-level systemd service named `webbridgefreeride.service`. Remove the local installation with:
+
+```bash
+./uninstall.sh
+```
+
+When Qwen is selected and OpenClaw is installed, the installer can enable a
+small cleanup plugin for the browser adapter:
+
+```bash
+openclaw plugins install --link "$PWD/openclaw-plugin" --force
+openclaw plugins enable webbridgefreeride-openclaw
+```
+
+Each OpenClaw session maps to a separate browser conversation. Deleting an
+OpenClaw session releases its local browser page; deleting the remote DeepSeek
+conversation still depends on DeepSeek's web UI.
+
+For OpenClaw, configure the model as `webbridge/deepseek-chat`. The bridge
+passes OpenClaw's tool definitions to DeepSeek Web in a strict text protocol and
+converts a valid `<tool_call>...</tool_call>` response into an OpenAI-compatible
+`tool_calls` message. OpenClaw executes the tool and sends the result back on
+the next turn.
+
+OpenClaw configuration follows its custom-provider format:
+
+```json5
+{
+  models: { providers: { webbridge: {
+    baseUrl: "http://127.0.0.1:11555/v1",
+    apiKey: "local-webbridge",
+    api: "openai-completions",
+    models: [{ id: "deepseek-chat", name: "WebBridge DeepSeek Web",
+      reasoning: true, input: ["text"], contextWindow: 128000, maxTokens: 8192 }]
+  } } },
+  agents: { defaults: { model: { primary: "webbridge/deepseek-chat" } } }
+}
+```
+
+This provider is intentionally a free Web Chat adapter, not the paid DeepSeek
+API provider.
 
 ## Linux quick start
 
@@ -49,17 +93,18 @@ playwright install chromium
 cp config.example.yaml config.yaml
 ```
 
-For the first login, either log into DeepSeek manually in the Chromium window, or temporarily export credentials in the shell:
+For DeepSeek Web:
 
 ```bash
-export DEEPSEEK_EMAIL='your-email'
-export DEEPSEEK_PASSWORD='your-password'
+./.venv/bin/python -m webbridgefreeride auth deepseek
 ```
+
+Complete login in the opened browser. No DeepSeek API key is required.
 
 Then start the bridge:
 
 ```bash
-python -m webbridgefreeride
+.venv/bin/python -m webbridgefreeride
 ```
 
 The server defaults to `http://127.0.0.1:11555`.
@@ -67,17 +112,17 @@ The server defaults to `http://127.0.0.1:11555`.
 For automatic login recovery without storing secrets in `config.yaml`, save encrypted local credentials outside the repository:
 
 ```bash
-python -m webbridgefreeride credentials set
+.venv/bin/python -m webbridgefreeride credentials set
 ```
 
 The credential key is stored under `~/.config/webbridgefreeride/` and the encrypted credential file under `~/.local/share/webbridgefreeride/` by default.
 
-## Qwen Google authentication
+## Qwen authentication
 
-Qwen runtime chat is not implemented yet, but you can create a persistent Qwen Google-login browser session for the future adapter:
+Create a persistent Qwen browser session with manual or Google authentication:
 
 ```bash
-python -m webbridgefreeride auth qwen --google
+.venv/bin/python -m webbridgefreeride auth qwen --google
 ```
 
 Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.webbridge-profile/qwen`.
@@ -109,7 +154,9 @@ curl http://127.0.0.1:11555/v1/chat/completions \
 
 ## Important limitations
 
-This depends on DeepSeek's current website DOM and authentication flow. A DeepSeek UI change, CAPTCHA, verification challenge, or service policy change can break the bridge. The selectors are isolated in `src/webbridgefreeride/providers/deepseek/selectors.py` to make repairs easier.
+The Web adapters depend on website DOM and authentication behavior. Tool-call
+simulation is deliberately allowlisted and only OpenClaw executes returned
+tools; invalid or unknown markers remain ordinary text.
 
 The first successful live run on a real DeepSeek account is still required to validate the current selectors against the live site.
 
@@ -133,3 +180,6 @@ docker compose up --build
 ```
 
 Security and maintenance notes live in `docs/SECURITY.md` and `docs/MAINTENANCE.md`.
+
+For the complete maintainer handoff, verified behavior, extension status, and
+the next-agent prompt, see `docs/HANDOFF.md`.

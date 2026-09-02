@@ -15,7 +15,9 @@ class DeepSeekLogin:
         self.timeout_ms = timeout_ms
 
     async def open(self) -> None:
-        await self.page.goto(self.chat_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+        response = await self.page.goto(self.chat_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+        if response is not None and response.status >= 400:
+            raise RuntimeError(f"DeepSeek returned HTTP {response.status}; the website or network blocked the browser request")
 
     async def _click_first_visible(self, selectors: list[str], timeout: int = 1000) -> bool:
         for selector in selectors:
@@ -41,6 +43,8 @@ class DeepSeekLogin:
         return False
 
     def _credentials(self) -> tuple[str, str] | None:
+        if os.getenv("WEBBRIDGE_LOGIN") == "1":
+            return None
         email = os.getenv("DEEPSEEK_EMAIL")
         password = os.getenv("DEEPSEEK_PASSWORD")
         if email and password:
@@ -51,6 +55,11 @@ class DeepSeekLogin:
             raise RuntimeError(str(exc)) from exc
 
     async def ensure_authenticated(self) -> None:
+        # Keep the current DeepSeek page when it is already logged in. Navigating
+        # to the home URL for every API request starts a new web conversation.
+        if await self.is_authenticated():
+            return
+
         await self.open()
         await self.accept_cookies()
         if await self.is_authenticated():
@@ -59,7 +68,7 @@ class DeepSeekLogin:
         credentials = self._credentials()
         if credentials is None:
             raise RuntimeError(
-                "DeepSeek is not logged in. Run `python -m webbridgefreeride credentials set`, "
+                "DeepSeek is not logged in. Run `.venv/bin/python -m webbridgefreeride credentials set`, "
                 "set DEEPSEEK_EMAIL and DEEPSEEK_PASSWORD, or log in manually in the opened browser."
             )
         email, password = credentials

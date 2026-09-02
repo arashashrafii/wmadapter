@@ -23,6 +23,10 @@ class ChatProvider(ABC):
     async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
         pass
 
+    async def delete_conversation(self, conversation_id: str) -> bool:
+        """Release provider-side state for one logical conversation."""
+        return False
+
     async def stream_complete(
         self, prompt: str, conversation_id: str | None = None
     ) -> AsyncIterator[str]:

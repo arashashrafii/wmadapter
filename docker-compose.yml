@@ -1,8 +1,11 @@
 services:
   webbridgefreeride:
     build: .
+    env_file:
+      - path: .env
+        required: false
     ports:
-      - "11555:11555"
+      - "${API_PORT:-11555}:11555"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - webbridge-profile:/app/.webbridge-profile

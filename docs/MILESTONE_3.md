@@ -2,9 +2,10 @@
 
 Implemented:
 
-- Accepts common OpenAI chat completion fields: `temperature`, `top_p`, `max_tokens`, `user`, and `stream`. Unsupported sampling fields are accepted for client compatibility and ignored by the browser-backed provider.
+- Accepts and forwards the OpenAI-compatible request, including `tools`, `tool_choice`, tool messages, reasoning fields, and streaming.
 - Adds Server-Sent Events streaming response shape for `/v1/chat/completions`. The current provider emits the completed answer as one chunk because DeepSeek DOM extraction is completion-based.
-- Adds `conversation_id` to keep separate browser pages for sequential agent conversations in one process.
+- DeepSeek Web sessions remain isolated per OpenClaw session; OpenClaw owns the
+  logical session history and deletion.
 
 Validation:
 

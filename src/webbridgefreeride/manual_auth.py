@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import shutil
 
 from .browser.manager import BrowserManager
 
@@ -13,6 +14,11 @@ class AuthTarget:
 
 
 AUTH_TARGETS = {
+    "deepseek": AuthTarget(
+        url="https://chat.deepseek.com/",
+        profile_dir=".webbridge-profile",
+        google_selectors=(),
+    ),
     "qwen": AuthTarget(
         url="https://chat.qwen.ai/",
         profile_dir=".webbridge-profile/qwen",
@@ -49,6 +55,11 @@ async def run_manual_auth(
         raise RuntimeError(f"Unsupported manual auth provider: {provider}")
 
     target = AUTH_TARGETS[provider]
+    if executable_path is None:
+        for browser in ("google-chrome", "chromium", "chromium-browser"):
+            executable_path = shutil.which(browser)
+            if executable_path:
+                break
     browser = BrowserManager(
         profile_path=target.profile_dir,
         headless=False,

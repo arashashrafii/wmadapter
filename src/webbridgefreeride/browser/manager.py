@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 from playwright.async_api import BrowserContext, Page, Playwright, async_playwright
 
@@ -13,7 +14,8 @@ class BrowserManager:
         executable_path: str | None = None,
     ):
         self.profile_path = Path(profile_path)
-        self.headless = headless
+        login_mode = os.getenv("WEBBRIDGE_LOGIN") == "1"
+        self.headless = False if login_mode or os.getenv("WEBBRIDGE_XVFB") == "1" else headless
         self.executable_path = executable_path
         self.playwright: Playwright | None = None
         self.context: BrowserContext | None = None

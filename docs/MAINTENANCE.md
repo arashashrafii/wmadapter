@@ -3,7 +3,7 @@
 Supported target:
 
 - Local Linux, Python 3.11+
-- DeepSeek Web through Playwright Chromium or a configured Chrome/Chromium executable
+- DeepSeek Web and Qwen Web through Playwright Chromium or a configured Chrome/Chromium executable
 
 Operational checks:
 
@@ -14,7 +14,7 @@ Operational checks:
 
 Known fragile areas:
 
-- DeepSeek DOM selectors in `src/webbridgefreeride/providers/deepseek/selectors.py`
+- DeepSeek DOM selectors and marker extraction
 - Login challenges, CAPTCHA, and account verification
 - Long-running browser profile state
 

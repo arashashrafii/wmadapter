@@ -39,7 +39,7 @@ def main() -> None:
     credential_commands = credentials.add_subparsers(dest="credential_command")
     credential_commands.add_parser("set")
     auth = subparsers.add_parser("auth")
-    auth.add_argument("provider", choices=["qwen"])
+    auth.add_argument("provider", choices=["deepseek", "qwen"])
     auth.add_argument("--google", action="store_true", help="Open provider login and start Google authentication when possible")
     auth.add_argument("--executable-path", help="Chrome/Chromium executable path")
     args = parser.parse_args()

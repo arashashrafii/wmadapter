@@ -7,7 +7,7 @@ from webbridgefreeride.config import load_config
 from webbridgefreeride.credentials import CredentialStore
 from webbridgefreeride.security import redact
 from webbridgefreeride.providers.router import ProviderRouter
-from webbridgefreeride.main import Message, _prompt
+from webbridgefreeride.main import Message, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
 from webbridgefreeride.ports import find_free_port
 from webbridgefreeride.manual_auth import AUTH_TARGETS
 from webbridgefreeride.providers.base import ChatProvider
@@ -109,6 +109,82 @@ class Milestone2Tests(unittest.TestCase):
         prompt = _prompt([Message(role="user", content=[{"type": "text", "text": "hello"}])])
         self.assertEqual(prompt, "USER: hello")
 
+    def test_openclaw_title_requests_are_detected_locally(self):
+        messages = [
+            Message(role="system", content="Generate a concise session title (3-6 words)."),
+            Message(role="user", content="What can you do?"),
+        ]
+        self.assertTrue(_is_title_request(messages))
+        self.assertEqual(_local_title(messages), "What can you do?")
+
+    def test_persian_prompt_preserves_unicode(self):
+        self.assertEqual(_prompt([Message(role="user", content="به فارسی پاسخ بده")]), "USER: به فارسی پاسخ بده")
+
+    def test_text_tool_marker_becomes_structured_call(self):
+        call, visible = _extract_tool_call(
+            '<tool_call>{"name":"exec","arguments":{"command":"printf {\\"ok\\":true}"}}</tool_call>',
+            [{"type": "function", "function": {"name": "exec"}}],
+        )
+        self.assertEqual(visible, "")
+        self.assertEqual(call["function"]["name"], "exec")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {"command": 'printf {"ok":true}'})
+
+    def test_unknown_text_tool_marker_is_not_executed(self):
+        call, visible = _extract_tool_call(
+            '<tool_call>{"name":"rm_everything","arguments":{}}</tool_call>',
+            [{"type": "function", "function": {"name": "exec"}}],
+        )
+        self.assertIsNone(call)
+        self.assertIn("rm_everything", visible)
+
+    def test_markdown_json_tool_call_becomes_structured_call(self):
+        answer = "json\nCopy\nDownload\n```json\n{\n  \"name\": \"exec\",\n  \"arguments\": {\"command\": \"openclaw status\"}\n}\n```"
+        call, visible = _extract_tool_call(
+            answer,
+            [{"type": "function", "function": {"name": "exec"}}],
+        )
+        self.assertEqual(visible, "json\nCopy\nDownload")
+        self.assertEqual(call["function"]["name"], "exec")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {"command": "openclaw status"})
+
+    def test_rendered_json_tool_call_without_code_fence(self):
+        answer = 'json\nCopy\nDownload\n{\n  "name": "exec",\n  "arguments": {"command": "openclaw status"}\n}'
+        call, visible = _extract_tool_call(
+            answer,
+            [{"type": "function", "function": {"name": "exec"}}],
+        )
+        self.assertEqual(call["function"]["name"], "exec")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {"command": "openclaw status"})
+        self.assertEqual(visible, "json\nCopy\nDownload")
+
+    def test_malformed_quoted_arguments_tool_call_is_recovered(self):
+        answer = '<tool_call>{"name":"exec","arguments":"{"command":"mkdir -p helloIran","yieldMs":5000}"}</tool_call>'
+        call, visible = _extract_tool_call(
+            answer,
+            [{"type": "function", "function": {"name": "exec"}}],
+        )
+        self.assertEqual(visible, "")
+        self.assertEqual(call["function"]["name"], "exec")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {"command": "mkdir -p helloIran", "yieldMs": 5000})
+
+    def test_malformed_write_content_with_html_quotes_is_recovered(self):
+        answer = '<tool_call>{"name":"write","arguments":{"path":"hello-iran/index.html","content":"<html lang="en"><title>Hello Iran</title></html>"}}</tool_call>'
+        call, _ = _extract_tool_call(
+            answer,
+            [{"type": "function", "function": {"name": "write"}}],
+        )
+        self.assertEqual(call["function"]["name"], "write")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {
+            "path": "hello-iran/index.html",
+            "content": '<html lang="en"><title>Hello Iran</title></html>',
+        })
+
+    def test_fallback_conversation_id_is_stable(self):
+        first = [Message(role="user", content="Hello"), Message(role="assistant", content="Hi")]
+        continued = first + [Message(role="user", content="Continue")]
+        self.assertEqual(_fallback_conversation_id(first), _fallback_conversation_id(continued))
+        self.assertNotEqual(_fallback_conversation_id(first), _fallback_conversation_id([Message(role="user", content="Different")]))
+
     def test_provider_router_dispatches_qwen_model(self):
         router = ProviderRouter({"deepseek": FakeProvider(), "qwen": FakeProvider()}, "deepseek")
         router.providers["qwen"].name = "qwen"
@@ -122,6 +198,7 @@ class Milestone2Tests(unittest.TestCase):
     def test_provider_router_dispatches_prefixed_model(self):
         router = ProviderRouter({"fake": FakeProvider()}, "fake")
         self.assertEqual(router.provider_for_model("fake:any").name, "fake")
+
 
 
 if __name__ == "__main__":

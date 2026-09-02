@@ -12,7 +12,7 @@ Implemented base scope:
 
 Operational notes:
 
-- Run `python -m webbridgefreeride credentials set` to save encrypted credentials locally.
+- Run `.venv/bin/python -m webbridgefreeride credentials set` to save encrypted credentials locally.
 - Manual browser login still works with the persistent profile.
 - CAPTCHA, verification challenges, and upstream UI changes still require manual intervention.
 - Streaming remains M3 scope.

@@ -21,6 +21,7 @@ class BrowserConfig(BaseModel):
 
 
 class DeepSeekConfig(BaseModel):
+    transport: str = "web"
     chat_url: str = "https://chat.deepseek.com/"
     timeout_ms: int = Field(default=180000, ge=1000)
     login_timeout_ms: int = Field(default=30000, ge=1000)

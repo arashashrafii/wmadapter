@@ -9,6 +9,7 @@ browser:
   restart_retries: 1
 
 deepseek:
+  transport: web
   chat_url: https://chat.deepseek.com/
   timeout_ms: 180000
   login_timeout_ms: 30000

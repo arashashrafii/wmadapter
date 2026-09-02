@@ -3,8 +3,13 @@ set -euo pipefail
 
 API_HOST="127.0.0.1"
 API_PORT="11555"
-API_URL="http://${API_HOST}:${API_PORT}/v1"
-REPO_URL="https://github.com/Shaivpidadi/FreeRide"
+REPO_URL="https://github.com/arashashrafii/webbridgefreeride"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_NAME="webbridgefreeride.service"
+SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
+DISPLAY_VALUE="${DISPLAY:-:0}"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 say() { printf '\n%s\n' "$*"; }
 ask() {
@@ -18,8 +23,42 @@ ask() {
     printf '%s' "$answer"
   fi
 }
+port_available() {
+  ! (echo >"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+find_free_port() {
+  local port="$1"
+  while ! port_available "$port"; do
+    port=$((port + 1))
+    [ "$port" -le 65535 ] || { echo "No free port found" >&2; return 1; }
+  done
+  printf "%s" "$port"
+}
 need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }
+}
+detect_browser() {
+  for browser in google-chrome chromium chromium-browser; do
+    if command -v "$browser" >/dev/null 2>&1; then
+      command -v "$browser"
+      return 0
+    fi
+  done
+  return 1
+}
+resolve_browser_path() {
+  local requested="$1"
+  case "${requested,,}" in
+    google-chrome|googlechrome) requested="google-chrome" ;;
+    chromium|chromium-browser) requested="chromium" ;;
+  esac
+  if [ -x "$requested" ]; then
+    printf '%s' "$requested"
+  elif command -v "$requested" >/dev/null 2>&1; then
+    command -v "$requested"
+  else
+    return 1
+  fi
 }
 write_config() {
   local provider="$1" chat_url="$2" headless="$3" executable_path="$4" server_host="$5"
@@ -34,24 +73,26 @@ browser:
   executable_path: ${executable_path}
   restart_retries: 1
 
-# Provider selection is stored for future adapters. Current runtime adapter: deepseek.
+# Provider selected by the installer.
 provider_choice: ${provider}
 
 qwen:
-  chat_url: https://chat.qwen.ai/
+  chat_url: ${chat_url}
   auth: google
   profile_dir: ./.webbridge-profile/qwen
+  headless: ${headless}
 
 deepseek:
-  chat_url: ${chat_url}
+  transport: web
+  chat_url: https://chat.deepseek.com/
   timeout_ms: 180000
   login_timeout_ms: 30000
   system_prompt: Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required.
 
 providers:
-  default: deepseek
+  default: ${provider}
   enabled:
-    - deepseek
+    - ${provider}
 
 logging:
   level: INFO
@@ -63,8 +104,6 @@ YAML
 provider_url() {
   case "$1" in
     deepseek) printf '%s' 'https://chat.deepseek.com/' ;;
-    kimi) printf '%s' 'https://www.kimi.com/' ;;
-    glm) printf '%s' 'https://chatglm.cn/' ;;
     qwen) printf '%s' 'https://chat.qwen.ai/' ;;
     *) printf '%s' 'https://chat.deepseek.com/' ;;
   esac
@@ -80,16 +119,37 @@ install_current_os() {
     .venv/bin/playwright install chromium || true
   fi
 }
-install_docker() {
-  need docker
-  docker compose build
+write_service() {
+  local login_mode="$1"
+  mkdir -p "$SERVICE_DIR"
+  cat > "$SERVICE_FILE" <<SERVICE
+[Unit]
+Description=WebBridge FreeRide local service
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${PROJECT_DIR}
+EnvironmentFile=-${PROJECT_DIR}/.env
+Environment=WEBBRIDGE_LOGIN=${login_mode}
+Environment=DISPLAY=${DISPLAY_VALUE}
+Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
+ExecStart=${PROJECT_DIR}/.venv/bin/python -m webbridgefreeride
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+SERVICE
 }
-start_current_os() {
-  .venv/bin/python -m webbridgefreeride > webbridgefreeride.install.log 2>&1 &
-  echo $! > .webbridgefreeride.pid
+start_service() {
+  local login_mode="$1"
+  write_service "$login_mode"
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$SERVICE_NAME"
 }
-start_docker() {
-  docker compose up -d --build
+stop_service() {
+  systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true
 }
 wait_health() {
   local i
@@ -102,83 +162,95 @@ wait_health() {
   return 1
 }
 run_smoke() {
-  curl -fsS "http://${API_HOST}:${API_PORT}/ready" >/dev/null || return 1
   curl -fsS "http://${API_HOST}:${API_PORT}/v1/chat/completions" \
     -H 'Content-Type: application/json' \
-    -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"Reply exactly: FREERIDE_OK"}]}' >/tmp/freeride-smoke.json
+    -d "{\"model\":\"${SMOKE_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply exactly: FREERIDE_OK\"}]}" >/tmp/freeride-smoke.json
   grep -q 'FREERIDE_OK' /tmp/freeride-smoke.json
 }
+install_openclaw_cleanup_plugin() {
+  local openclaw_cmd
+  openclaw_cmd="$(command -v openclaw || true)"
+  if [ -z "$openclaw_cmd" ]; then
+    say "OpenClaw not found; cleanup integration can be installed later."
+    return 0
+  fi
+  if "$openclaw_cmd" plugins install --link "${PROJECT_DIR}/openclaw-plugin" --force >/dev/null 2>&1 \
+    && "$openclaw_cmd" plugins enable webbridgefreeride-openclaw >/dev/null 2>&1; then
+    say "Installed OpenClaw cleanup integration."
+  else
+    say "Could not install OpenClaw cleanup integration; see README for manual setup."
+  fi
+}
 
-say "FreeRide v3 installer"
-MODE=$(ask "Install/run with docker or current os? (docker/os)" "os")
-case "$MODE" in docker|Docker) MODE="docker" ;; os|OS|current|current-os) MODE="os" ;; *) echo "Invalid mode: $MODE" >&2; exit 1 ;; esac
+need curl
+need systemctl
+API_PORT="$(find_free_port "$API_PORT")"
+API_URL="http://${API_HOST}:${API_PORT}/v1"
+export API_PORT
+
+say "WebBridge FreeRide installer"
+say "Local installation"
 
 say "Choose free chatbot provider:"
-echo "  1) deepseek (implemented)"
-echo "  2) kimi (config only, adapter pending)"
-echo "  3) glm (config only, adapter pending)"
-echo "  4) qwen (config only, adapter pending)"
+echo "  1) deepseek web (free)"
+echo "  2) qwen (implemented)"
 CHOICE=$(ask "Provider number" "1")
 case "$CHOICE" in
   1|deepseek) PROVIDER="deepseek" ;;
-  2|kimi) PROVIDER="kimi" ;;
-  3|glm|GLM) PROVIDER="glm" ;;
-  4|qwen) PROVIDER="qwen" ;;
+  2|qwen) PROVIDER="qwen" ;;
   *) echo "Invalid provider: $CHOICE" >&2; exit 1 ;;
 esac
+SMOKE_MODEL="$PROVIDER-chat"
 if [ "$PROVIDER" != "deepseek" ]; then
-  say "Note: $PROVIDER is saved in config, but the current runtime adapter is DeepSeek only."
+  say "Using the $PROVIDER browser-backed runtime adapter."
 fi
 
-CHAT_URL=$(ask "Chat authentication/start URL" "$(provider_url "$PROVIDER")")
+CHAT_URL="$(provider_url "$PROVIDER")"
 HEADLESS=$(ask "Run browser headless? (true/false)" "true")
-EXECUTABLE_PATH=$(ask "Chrome/Chromium executable path (blank for Playwright default)" "")
-if [ -z "$EXECUTABLE_PATH" ]; then EXECUTABLE_PATH=""; fi
+EXECUTABLE_PATH=$(ask "Chrome/Chromium executable path or name (blank for auto-detect)" "")
+if [ -z "$EXECUTABLE_PATH" ]; then
+  EXECUTABLE_PATH="$(detect_browser || true)"
+  if [ -n "$EXECUTABLE_PATH" ]; then
+    say "Using installed browser: ${EXECUTABLE_PATH}"
+  fi
+else
+  REQUESTED_BROWSER="$EXECUTABLE_PATH"
+  if ! EXECUTABLE_PATH="$(resolve_browser_path "$REQUESTED_BROWSER")"; then
+    echo "Browser executable not found: ${REQUESTED_BROWSER}" >&2
+    echo "Enter a valid executable path, google-chrome, or chromium." >&2
+    exit 1
+  fi
+fi
 SERVER_HOST="$API_HOST"
-if [ "$MODE" = "docker" ]; then SERVER_HOST="0.0.0.0"; fi
 write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH" "$SERVER_HOST"
 
-AUTH_MODE=$(ask "Login by user/pass or URL/manual authentication? (credentials/url)" "url")
-case "$AUTH_MODE" in
-  credentials|userpass|user-pass)
-    EMAIL=$(ask "Chatbot email/username" "")
-    read -r -s -p "Chatbot password: " PASSWORD || true
-    printf '\n'
-    cat > .env <<ENV
-DEEPSEEK_EMAIL=${EMAIL}
-DEEPSEEK_PASSWORD=${PASSWORD}
-ENV
-    chmod 600 .env
-    ;;
-  url|manual)
-    say "Manual/URL authentication selected. Start URL: ${CHAT_URL}"
-    if [ "$PROVIDER" = "qwen" ]; then
-      say "For Qwen Google login, run: .venv/bin/python -m webbridgefreeride auth qwen --google"
-    else
-      say "If the session is not already authenticated, run with headless=false once and log in in the opened browser."
-    fi
-    ;;
-  *) echo "Invalid auth mode: $AUTH_MODE" >&2; exit 1 ;;
-esac
+say "Manual browser authentication selected; no chatbot credentials will be stored."
 
+INSTALL_BROWSER="no"
 INSTALL_BROWSER=$(ask "Install Playwright Chromium if needed? (yes/no)" "yes")
-if [ "$MODE" = "docker" ]; then
-  install_docker
-  start_docker
-else
-  install_current_os
-  start_current_os
+install_current_os
+stop_service
+say "Opening the browser for manual authentication..."
+AUTH_ARGS=(auth "$PROVIDER")
+if [ -n "$EXECUTABLE_PATH" ]; then
+  AUTH_ARGS+=(--executable-path "$EXECUTABLE_PATH")
 fi
+if ! .venv/bin/python -m webbridgefreeride "${AUTH_ARGS[@]}"; then
+  echo "Manual authentication failed or was cancelled." >&2
+  exit 1
+fi
+start_service 0
+install_openclaw_cleanup_plugin
 
-say "Waiting for API health..."
+say "Waiting for API health after login..."
 if ! wait_health; then
-  echo "Server did not become healthy. Check webbridgefreeride.install.log or docker compose logs." >&2
+  echo "Server did not become healthy after login. Check webbridgefreeride.install.log." >&2
   exit 1
 fi
 
 say "Running complete smoke test..."
 if run_smoke; then
-  say "freeride v3 : ${REPO_URL}"
+  say "WebBridge FreeRide: ${REPO_URL}"
   say "API URL: ${API_URL}"
   say "Health: http://${API_HOST}:${API_PORT}/health"
   say "Models: http://${API_HOST}:${API_PORT}/v1/models"

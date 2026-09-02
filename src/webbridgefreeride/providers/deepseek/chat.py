@@ -22,16 +22,20 @@ class DeepSeekChat:
                 continue
         raise RuntimeError(f"No visible DeepSeek element found for selectors: {selectors}")
 
-    async def send_message(self, message: str) -> str:
-        input_box = await self._first_visible(CHAT_INPUTS)
-        response_locator = None
-        previous_count = 0
+    async def _response_locator(self):
+        """Return one non-overlapping locator for the rendered answer blocks."""
+        fallback = None
         for selector in RESPONSE_BLOCKS:
             locator = self.page.locator(selector)
-            count = await locator.count()
-            if count >= previous_count:
-                previous_count = count
-                response_locator = locator
+            fallback = fallback or locator
+            if await locator.count():
+                return locator
+        return fallback
+
+    async def send_message(self, message: str) -> str:
+        input_box = await self._first_visible(CHAT_INPUTS)
+        response_locator = await self._response_locator()
+        previous_count = await response_locator.count()
 
         await input_box.fill(message)
         await input_box.press("Enter")
@@ -41,18 +45,21 @@ class DeepSeekChat:
         stable_rounds = 0
 
         while asyncio.get_running_loop().time() < deadline:
-            for selector in RESPONSE_BLOCKS:
-                blocks = self.page.locator(selector)
-                if await blocks.count() > previous_count:
-                    text = (await blocks.last.inner_text()).strip()
-                    if text:
-                        if text == last_text:
-                            stable_rounds += 1
-                        else:
-                            stable_rounds = 0
-                            last_text = text
-                        if stable_rounds >= 3:
-                            return text
+            blocks = await self._response_locator()
+            if await blocks.count() > previous_count:
+                # Read the complete rendered block, including multiline Markdown
+                # and any content that arrived after the first DOM update.
+                text = (await blocks.last.inner_text()).strip()
+                if text:
+                    if text == last_text:
+                        stable_rounds += 1
+                    else:
+                        stable_rounds = 0
+                        last_text = text
+                    # A short pause is common while DeepSeek renders Markdown;
+                    # require a longer stable window before returning the answer.
+                    if stable_rounds >= 5:
+                        return text
             await asyncio.sleep(1)
 
         if last_text:

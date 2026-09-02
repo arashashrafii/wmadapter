@@ -1,7 +1,8 @@
 # WebBridgeFreeRide Architecture
 
 ## Goal
-Create a local OpenAI-compatible bridge that uses free web chatbot services through browser automation.
+Create a local OpenAI-compatible bridge for free web chat services while
+preserving OpenClaw's native agent loop as far as the web model permits.
 
 ## MVP Scope
 - Provider: DeepSeek Web
@@ -12,7 +13,7 @@ Create a local OpenAI-compatible bridge that uses free web chatbot services thro
 - Logs: Required
 
 ## Flow
-Client/Agent -> Local API -> DeepSeek Adapter -> Playwright Browser -> DeepSeek Web -> Response
+OpenClaw Agent -> Local OpenAI API -> Playwright -> DeepSeek Web -> text/marker parser -> OpenClaw
 
 ## Components
 
@@ -25,10 +26,11 @@ First implementation: DeepSeekAdapter.
 Future adapters may support other web chat providers.
 
 ### Browser Manager
-Responsible for browser lifecycle, authentication session, and page interaction.
+OpenClaw owns tool execution. The bridge only translates an allowlisted textual
+tool marker into the OpenAI-compatible `tool_calls` shape.
 
 ### Storage
-Stores encrypted configuration and browser session information.
+Stores browser profiles and non-secret application configuration.
 
 ### Logging
 Tracks requests, errors, provider changes, and debugging information.
