@@ -42,6 +42,12 @@ text to identify OpenClaw, OpenCode or Hermes. Historical OpenClaw workflow
 guidance remains available only to direct internal helper callers and is not
 part of the agent-facing contract.
 
+WebBridge emulates the API boundary, rather than an agent's workflow. Its
+provider adapters may translate structured tools to a WebChat text marker and
+translate that marker back to a standard tool call, but they do not choose,
+execute or verify an agent's tools. OpenClaw-specific session cleanup remains
+in the optional plugin outside the gateway request path.
+
 Bearer authentication is optional: configure `server.api_key` and send
 `Authorization: Bearer <key>`. With no key configured, existing loopback
 behavior remains unchanged.

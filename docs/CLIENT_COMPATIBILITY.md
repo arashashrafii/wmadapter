@@ -57,6 +57,8 @@ port), model deepseek-chat or qwen-chat, and a non-secret dummy key if their
 SDK requires one. The gateway itself currently has no bearer authentication.
 The wire contract is client-brand neutral: the gateway does not select behavior
 by detecting OpenClaw, Hermes or OpenCode in message text.
+Tool definitions and tool results are forwarded as neutral model protocol data.
+The agent remains responsible for tool execution and its own workflow policy.
 Do not infer limits from Web product names: context and output limits are
 unknown. Any manually configured client token budgets are operator estimates.
 Use generous request timeouts for browser latency.

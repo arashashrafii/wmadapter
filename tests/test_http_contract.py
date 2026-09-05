@@ -137,6 +137,18 @@ class HTTPContractTests(unittest.TestCase):
         self.provider.complete = AsyncMock(return_value='<tool_call>{"name":"lookup","arguments":{}}</tool_call>')
         self.assertEqual(self.post(tools=TOOLS, tool_choice='none').json()['choices'][0]['finish_reason'], 'stop')
 
+    def test_openclaw_words_do_not_change_public_gateway_policy(self):
+        self.provider.complete = AsyncMock(return_value='hello')
+        response = self.client.post('/v1/chat/completions', json={
+            'model': 'deepseek-chat', 'tools': TOOLS,
+            'messages': [{'role': 'user', 'content': 'OpenClaw should use computer.act'}],
+        })
+        self.assertEqual(response.status_code, 200)
+        prompt = self.provider.complete.call_args.args[0]
+        self.assertNotIn('OPENCLAW CAPABILITY POLICY', prompt)
+        self.assertNotIn('OPENCLAW DOCUMENTATION POLICY', prompt)
+        self.assertNotIn('DESKTOP GUI POLICY', prompt)
+
     def test_title_honors_sse(self):
         response = self.post(stream=True, messages=[{'role':'system','content':'Generate a concise session title'}, {'role':'user','content':'my title'}])
         self.assertIn('data: [DONE]', response.text)
