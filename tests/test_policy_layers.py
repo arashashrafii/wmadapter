@@ -55,3 +55,12 @@ class PolicyLayerTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIsNone(call)
         self.assertEqual(visible, "repaired")
+
+    async def test_recovery_accepts_injected_call_guard(self):
+        from unittest.mock import AsyncMock
+        provider = type("Provider", (), {})()
+        provider.complete = AsyncMock(return_value='<tool_call>{"name":"blocked","arguments":{}}</tool_call>')
+        recovery = ToolCallRecovery(validate_call=lambda call: call["function"]["name"] != "blocked")
+        with self.assertRaises(ValueError):
+            await recovery.resolve(provider, '<tool_call>{"name":"blocked","arguments":{}}</tool_call>', [],
+                                   [{"type":"function","function":{"name":"blocked","parameters":{}}}], "s", "prompt")
