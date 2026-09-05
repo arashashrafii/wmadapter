@@ -40,9 +40,9 @@ Interactive setup:
 
 The installer sets up a local Python environment, lets you choose DeepSeek Web or Qwen Web, opens a browser for manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. If Chrome or Chromium is unavailable, it offers to install the system Chromium package on supported Linux distributions. No paid API key is required.
 
-The installer recommends `Launch Chromium yourself for login and service use?`.
-This is the lightest reliable path for WebChat sign-in: it uses the installed
-system Chromium and does not download Playwright's separate Chromium binary.
+The installer uses one browser process only: the installed system Chromium.
+It does not download Playwright's separate Chromium binary. Playwright is used
+only as the Python library that controls the already-running Chromium session.
 It prints a command that starts local Chromium with an isolated profile and a
 loopback-only debugging endpoint. Complete login in that Chromium window and
 leave it open while WebBridge runs. WebBridge attaches to that session; it does
@@ -102,7 +102,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -e .
-playwright install chromium
+# Install Chromium with your Linux package manager if it is not already present.
+# Do not run `playwright install chromium`: WebBridge attaches to system Chromium.
 cp config.example.yaml config.yaml
 ```
 

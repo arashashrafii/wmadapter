@@ -144,9 +144,6 @@ install_current_os() {
   fi
   .venv/bin/python -m pip install --upgrade pip
   .venv/bin/pip install -e .
-  if [ "${INSTALL_BROWSER}" = "yes" ]; then
-    .venv/bin/playwright install chromium || true
-  fi
 }
 write_service() {
   local login_mode="$1"
@@ -235,7 +232,7 @@ if [ "$PROVIDER" != "deepseek" ]; then
 fi
 
 CHAT_URL="$(provider_url "$PROVIDER")"
-HEADLESS=$(ask "Run browser headless? (true/false)" "true")
+HEADLESS="false"
 EXECUTABLE_PATH=$(ask "Chrome/Chromium executable path or name (blank for auto-detect)" "")
 if [ -z "$EXECUTABLE_PATH" ]; then
   EXECUTABLE_PATH="$(detect_browser || true)"
@@ -253,7 +250,8 @@ if [ -z "$EXECUTABLE_PATH" ]; then
   if [ -n "$EXECUTABLE_PATH" ]; then
     say "Using installed browser: ${EXECUTABLE_PATH}"
   else
-    say "No system browser selected. Playwright Chromium can be installed below."
+    echo "System Chromium is required. Install it now or provide its executable path and rerun." >&2
+    exit 1
   fi
 else
   REQUESTED_BROWSER="$EXECUTABLE_PATH"
@@ -264,47 +262,22 @@ else
   fi
 fi
 SERVER_HOST="$API_HOST"
-BROWSER_MODE=$(ask "Launch Chromium yourself for login and service use? (yes/no)" "yes")
-CDP_ENDPOINT=""
-CDP_PORT=""
-if [ "$BROWSER_MODE" = "yes" ]; then
-  if [ -z "$EXECUTABLE_PATH" ]; then
-    echo "A system Chromium installation is required for this mode. Rerun and choose Chromium installation." >&2
-    exit 1
-  fi
-  CDP_PORT=$(ask "Local Chromium debugging port" "9222")
-  case "$CDP_PORT" in
-    ''|*[!0-9]*) echo "Invalid local debugging port: ${CDP_PORT}" >&2; exit 1 ;;
-  esac
-  CDP_ENDPOINT="http://127.0.0.1:${CDP_PORT}"
-fi
+CDP_PORT=$(ask "Local Chromium debugging port" "9222")
+case "$CDP_PORT" in
+  ''|*[!0-9]*) echo "Invalid local debugging port: ${CDP_PORT}" >&2; exit 1 ;;
+esac
+CDP_ENDPOINT="http://127.0.0.1:${CDP_PORT}"
 write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH" "$SERVER_HOST" "$CDP_ENDPOINT"
 
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
-INSTALL_BROWSER="no"
-if [ "$BROWSER_MODE" != "yes" ]; then
-  INSTALL_BROWSER=$(ask "Install Playwright Chromium if needed? (yes/no)" "yes")
-fi
 install_current_os
 stop_service
-if [ "$BROWSER_MODE" = "yes" ]; then
-  PROFILE_PATH="${PROJECT_DIR}/.webbridge-profile"
-  say "Start Chromium yourself, complete login, and leave that window open:"
-  printf '  %q --remote-debugging-address=127.0.0.1 --remote-debugging-port=%q --user-data-dir=%q %q\n' \
-    "$EXECUTABLE_PATH" "$CDP_PORT" "$PROFILE_PATH" "$CHAT_URL"
-  read -r -p "Press Enter after ${PROVIDER} is logged in and the Chromium window remains open: " _
-else
-  say "Opening the browser for manual authentication..."
-  AUTH_ARGS=(auth "$PROVIDER")
-  if [ -n "$EXECUTABLE_PATH" ]; then
-    AUTH_ARGS+=(--executable-path "$EXECUTABLE_PATH")
-  fi
-  if ! .venv/bin/python -m webbridgefreeride "${AUTH_ARGS[@]}"; then
-    echo "Manual authentication failed or was cancelled." >&2
-    exit 1
-  fi
-fi
+PROFILE_PATH="${PROJECT_DIR}/.webbridge-profile"
+say "Start Chromium yourself, complete login, and leave that window open:"
+printf '  %q --remote-debugging-address=127.0.0.1 --remote-debugging-port=%q --user-data-dir=%q %q\n' \
+  "$EXECUTABLE_PATH" "$CDP_PORT" "$PROFILE_PATH" "$CHAT_URL"
+read -r -p "Press Enter after ${PROVIDER} is logged in and the Chromium window remains open: " _
 start_service 0
 install_openclaw_cleanup_plugin
 
