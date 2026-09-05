@@ -72,9 +72,10 @@ ProviderRequest, legacy text completion remains available, and DeepSeek/Qwen
 use explicit protocol adapter classes. Browser behavior, MCP, GPT/OX and true
 incremental streaming were intentionally unchanged.
 
-The next staged boundary is `ToolCallRecovery`; provider adapters now call it
-instead of importing the recovery function directly. The legacy implementation
-remains delegated until its policy and retry rules have dedicated tests.
+`ToolCallRecovery` now owns the provider path. The old protocol function remains
+as a compatibility wrapper, while recovery has independent normalization and a
+bounded one-repair policy. Legacy helper tests continue to exercise the old
+repeated-call and GUI safeguards.
 
 - c6c97bb records the baseline and plan.
 - defa0c1 adds contract.py, the shared legacy protocol and DeepSeek V2 support;
