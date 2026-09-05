@@ -73,6 +73,4 @@ class QwenChat:
                     return text
             await asyncio.sleep(1)
 
-        if last_text:
-            return last_text
         raise TimeoutError("Qwen response was not detected before timeout")

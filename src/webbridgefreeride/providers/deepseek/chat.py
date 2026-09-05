@@ -192,8 +192,6 @@ class DeepSeekChat:
                             return text
                 await asyncio.sleep(1)
 
-            if last_text:
-                return last_text
             raise TimeoutError("DeepSeek response was not detected before timeout")
         finally:
             if attachment_directory is not None:

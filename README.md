@@ -4,16 +4,18 @@ WebBridgeFreeRide is a local OpenAI-compatible gateway for free DeepSeek Web and
 
 The provider side is Web-only: DeepSeek and Qwen are accessed through their
 browser chat pages. The local OpenAI-compatible boundary exists for clients
-such as OpenClaw; this project does not use the paid DeepSeek API.
+such as OpenCode, Hermes and OpenClaw; this project does not use the paid DeepSeek API.
 
-## Milestone 1 scope
+## Gateway V1 / Provider Contract V2
 
 Implemented:
 
 - FastAPI local server
 - `/health`
 - `/v1/models`
-- `/v1/chat/completions` (non-streaming)
+- `/v1/chat/completions` (ordinary responses and buffered SSE)
+- Structured Provider Contract V2 with legacy complete(prompt) compatibility
+- Standard request errors, model capabilities and tool-result round trips
 - DeepSeek Web browser sessions with per-OpenClaw-session pages
 - Text-to-structured tool-call simulation for OpenClaw
 - Optional Qwen Web browser adapter
@@ -74,7 +76,7 @@ OpenClaw configuration follows its custom-provider format:
     apiKey: "local-webbridge",
     api: "openai-completions",
     models: [{ id: "deepseek-chat", name: "WebBridge DeepSeek Web",
-      reasoning: true, input: ["text"], contextWindow: 128000, maxTokens: 8192 }]
+      reasoning: false, input: ["text"] }]
   } } },
   agents: { defaults: { model: { primary: "webbridge/deepseek-chat" } } }
 }
@@ -158,8 +160,8 @@ curl http://127.0.0.1:11555/v1/chat/completions \
 ## Important limitations
 
 The Web adapters depend on website DOM and authentication behavior. Tool-call
-simulation is deliberately allowlisted and only OpenClaw executes returned
-tools; invalid or unknown markers remain ordinary text.
+simulation is deliberately allowlisted and the calling agent executes returned
+tools; unresolved tool markers trigger bounded recovery and then a provider error.
 
 The first successful live run on a real DeepSeek account is still required to validate the current selectors against the live site.
 
@@ -186,3 +188,19 @@ Security and maintenance notes live in `docs/SECURITY.md` and `docs/MAINTENANCE.
 
 For the complete maintainer handoff, verified behavior, extension status, and
 the next-agent prompt, see `docs/HANDOFF.md`.
+
+
+## V2 migration and compatibility
+
+See [architecture](docs/ARCHITECTURE.md), [audit and migration notes](docs/MIGRATION_V2.md)
+and [client verification/setup](docs/CLIENT_COMPATIBILITY.md). The original
+complete/stream_complete methods and session cleanup routes remain available.
+SSE is buffered; tools are emulated, not native. Context/output limits and usage
+are unknown. Legacy sampling, token-limit and structured-output request fields
+are accepted but not enforced by the browser. deepseek-reasoner is an alias,
+not proof that the Web UI selected a reasoning model. Unknown HTTP model names
+now return 404 instead of silently falling back to the default provider.
+
+106 unit/contract tests and real client SDK transport checks passed against a
+fixture provider. Current live WebChat behavior and full agent runs remain
+unverified by this migration. No MCP dependency or GPT/OX placeholder was added.

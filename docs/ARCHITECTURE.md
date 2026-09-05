@@ -1,39 +1,37 @@
 # WebBridgeFreeRide Architecture
 
 ## Goal
-Create a local OpenAI-compatible bridge for free web chat services while
-preserving OpenClaw's native agent loop as far as the web model permits.
+An AI Compatibility Gateway: OpenCode, Hermes and OpenClaw consume standard
+Chat Completions while provider adapters communicate with WebChat pages.
+The client agent owns tool execution and sends the result on its next request.
 
-## MVP Scope
-- Provider: DeepSeek Web
-- Backend: Python + FastAPI
-- Automation: Playwright
-- Deployment: Local Linux first
-- Authentication: Local encrypted credential/session storage
-- Logs: Required
+## Runtime boundary
 
-## Flow
-OpenClaw Agent -> Local OpenAI API -> Playwright -> DeepSeek Web -> text/marker parser -> OpenClaw
+- main:app is the application; api/server re-exports it for compatibility.
+- api/validation validates the HTTP subset before any browser request.
+- providers/contract defines ChatRequest, ProviderRequest, ProviderResult and
+  ModelCapabilities. main still re-exports old schema/helper names.
+- ChatProvider.infer is the V2 interface. Its default legacy adapter serializes
+  messages/tools, calls the unchanged complete(prompt)->str method, then
+  normalizes the Web response. V1 subclasses remain valid.
+- providers/protocol holds shared prompt, marker parsing and recovery behavior.
+- service.py owns DeepSeek/Qwen lifecycle, locks, retries and conversations.
+  Provider chat/login/selectors retain site-specific DOM code; browser/elements
+  contains the common visible-element lookup and BrowserManager owns profiles.
+- Model discovery comes from registered provider model_ids and capabilities.
+  GPT Web/OX Alpha are extension targets only; no dummy adapters are registered.
 
-## Components
+## Contract scope
 
-### API Gateway
-Receives chat requests and exposes local endpoints.
+POST /v1/chat/completions and GET /v1/models support text messages, system/user/
+assistant/tool roles, emulated function calls, tool_choice, finish_reason and
+buffered SSE. DeepSeek additionally dispatches data URL images. Capabilities
+are metadata extensions; unknown token limits/usage remain null. See
+MIGRATION_V2.md for behavior corrections and unsupported sampling controls.
 
-### Provider Adapter
-First implementation: DeepSeekAdapter.
-
-Future adapters may support other web chat providers.
-
-### Browser Manager
-OpenClaw owns tool execution. The bridge only translates an allowlisted textual
-tool marker into the OpenAI-compatible `tool_calls` shape.
-
-### Storage
-Stores browser profiles and non-secret application configuration.
-
-### Logging
-Tracks requests, errors, provider changes, and debugging information.
+No MCP server is needed for this boundary. A client may itself expose MCP
+functions as model tools; WebBridge simply preserves their schema and results.
+The OpenClaw plugin is optional session cleanup, not the model transport.
 
 ### Model response recovery
 OpenClaw owns the research/action/verification loop and executes every tool.

@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from .api.validation import validate_chat
 
 from .config import load_config
@@ -17,14 +18,6 @@ from .logging import configure_logging
 from .providers.router import ProviderRouter
 from .security import redact
 from .service import DeepSeekService, QwenService
-
-config = load_config()
-configure_logging(config["logging"])
-logger = logging.getLogger(__name__)
-providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
-router = ProviderRouter(providers, config["providers"]["default"])
-default_system_prompt = config["deepseek"].get("system_prompt", "")
-
 
 from .providers.contract import Message, ChatRequest, ProviderRequest, ProviderResult
 from .providers.protocol import (
@@ -40,6 +33,16 @@ from .providers.protocol import (
     _normalize_tool_arguments,
     _extract_tool_call,
 )
+
+config = load_config()
+configure_logging(config["logging"])
+logger = logging.getLogger(__name__)
+providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
+router = ProviderRouter(providers, config["providers"]["default"])
+default_system_prompt = config["deepseek"].get("system_prompt", "")
+
+
+
 
 
 def _completion_response(request_id: str, model: str, answer: str, tool_calls: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -88,10 +91,10 @@ def _error(message, kind="invalid_request_error", code=None):
     return {"error": {"message": message, "type": kind, "param": None, "code": code}}
 
 
-@app.exception_handler(HTTPException)
+@app.exception_handler(StarletteHTTPException)
 async def http_error(request, exc):
     kind = "provider_error" if exc.status_code >= 500 else "invalid_request_error"
-    code = "model_not_found" if exc.status_code == 404 else kind
+    code = "model_not_found" if exc.status_code == 404 and "model" in str(exc.detail).lower() else kind
     return JSONResponse(_error(str(exc.detail), kind, code), status_code=exc.status_code)
 
 

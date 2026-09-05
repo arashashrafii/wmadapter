@@ -61,3 +61,58 @@ not native; required/named choices must either produce a matching call or
 fail. Unknown context/output limits and usage must not be fabricated. SSE
 remains buffered because DOM adapters do not expose trustworthy token deltas.
 No MCP dependency and no fake GPT Web or OX Alpha implementation.
+
+## Implementation outcome
+
+- c6c97bb records the baseline and plan.
+- defa0c1 adds contract.py, the shared legacy protocol and DeepSeek V2 support;
+  89 tests pass. main helper imports remain available.
+- ecb13c8 adds Qwen capability metadata, preserves its authenticated page and
+  extracts only the duplicated visible-element lookup; 91 tests pass.
+- fc2c7db switches HTTP to V2, aliases api/server to the real app, validates
+  requests and supplies model capabilities, standard errors and buffered SSE;
+  101 tests pass.
+- Final verification adds real SDK transport smoke scripts, malformed-input
+  coverage and timeout regressions; 106 tests pass.
+
+The full protocol extraction is mechanical relocation, not a rewrite of DOM
+or OpenClaw policies. complete(prompt)->str and stream_complete remain callable.
+Unknown HTTP models now fail 404; invalid request bodies fail 400 using an
+OpenAI error envelope. Unmeasured usage/context values are null, not zero or
+128000. These deliberate corrections may affect callers relying on old values.
+At a DOM timeout, partial output now raises instead of being reported as a
+successful completion. Existing bounded provider retries still apply.
+
+SSE is role -> one buffered content/tool delta -> finish -> optional usage ->
+[DONE]. Errors after headers appear as an error event then [DONE]. There is no
+incremental token stream or fabricated length finish. Model metadata describes
+this explicitly. stream_infer is an additive buffered provider interface;
+HTTP uses infer for one complete normalized result.
+
+## Deferred risks, without claims of completion
+
+- Current live DeepSeek/Qwen DOM and real agent workflows still need the
+  authenticated checks in CLIENT_COMPATIBILITY.md. Tool-call decision quality
+  is not guaranteed by text emulation or the HTTP contract.
+- Existing OpenClaw-specific prompt policies, renderer repair and tool-specific
+  argument normalization remain for compatibility. A configurable neutral
+  policy and stricter JSON-schema validation require separate migration work.
+- Only one outgoing tool call is emulated per turn. Multiple tool results can
+  be preserved in input; parallel generation is advertised false. Tools are
+  never executed by the gateway. MCP is not needed here.
+- Sampling, max_tokens, stop, response_format and reasoning controls remain
+  accepted legacy fields but are not enforced by the Web adapters. Models
+  expose sampling_controls=false and unknown token limits. deepseek-reasoner
+  remains a legacy alias, not a guarantee of a selected reasoning mode.
+- Browser completion is still based on text stability and can stop too early
+  during pauses before the timeout. Retries may resubmit an ambiguous request.
+- Conversation fallback hashes the first user text; identical prompts may
+  share state. Use explicit unique conversation_id/session headers. Cleanup
+  races, resource eviction and multi-user isolation remain out of scope.
+- enabled retains its old readiness-only meaning. /models lists registered
+  adapters, not authenticated sessions; use /ready for current availability.
+- Plugin host-specific paths/port and legacy unused placeholders remain;
+  no destructive cleanup test or profile migration was done.
+- New GPT Web/OX Alpha adapters must supply tested browser code, model_ids,
+  capabilities, lifecycle and complete or a native infer override. None is
+  registered or presented as functional in this change.

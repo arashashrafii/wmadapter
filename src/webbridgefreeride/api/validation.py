@@ -64,7 +64,7 @@ def validate_chat(chat: ChatRequest, provider) -> None:
     choice = chat.tool_choice
     if isinstance(choice, dict):
         function = choice.get('function')
-        if choice.get('type') != 'function' or not isinstance(function, dict) or function.get('name') not in names:
+        if choice.get('type') != 'function' or not isinstance(function, dict) or not isinstance(function.get('name'), str) or function.get('name') not in names:
             invalid('tool_choice must name a supplied function')
     elif choice not in (None, 'auto', 'none', 'required'):
         invalid('Unsupported tool_choice')

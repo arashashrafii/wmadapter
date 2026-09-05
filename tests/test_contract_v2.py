@@ -57,3 +57,44 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
             await provider._authenticate('session')
         page.goto.assert_not_called()
         self.assertTrue(provider.ready)
+
+    async def test_deepseek_image_dispatch(self):
+        provider = DeepSeekService(load_config('/nonexistent'))
+        provider.complete_with_attachments = AsyncMock(return_value='image answer')
+        request = ProviderRequest(chat=ChatRequest(messages=[Message(role='user', content=[
+            {'type':'image_url','image_url':{'url':'data:image/png;base64,aGVsbG8='}}
+        ])]))
+        result = await provider.infer(request)
+        self.assertEqual(result.content, 'image answer')
+        self.assertEqual(provider.complete_with_attachments.call_args.kwargs['attachments'], ['data:image/png;base64,aGVsbG8='])
+
+    async def test_partial_qwen_timeout_is_not_success(self):
+        from unittest.mock import patch, Mock
+        from webbridgefreeride.providers.qwen.chat import QwenChat
+        page = AsyncMock()
+        chat = QwenChat(page, timeout_ms=1000)
+        chat._first_visible = AsyncMock(return_value=AsyncMock())
+        chat._response_counts = AsyncMock(return_value={})
+        chat._latest_response_text = AsyncMock(return_value='partial')
+        clock = Mock()
+        clock.time.side_effect = [0, 0, 2]
+        with patch('webbridgefreeride.providers.qwen.chat.asyncio.get_running_loop', return_value=clock), patch('webbridgefreeride.providers.qwen.chat.asyncio.sleep', new=AsyncMock()):
+            with self.assertRaises(TimeoutError):
+                await chat.send_message('hi')
+
+    async def test_partial_deepseek_timeout_is_not_success(self):
+        from unittest.mock import patch, Mock
+        from webbridgefreeride.providers.deepseek.chat import DeepSeekChat
+        page = AsyncMock()
+        chat = DeepSeekChat(page, timeout_ms=1000)
+        chat._first_visible = AsyncMock(return_value=AsyncMock())
+        chat._enabled_send_button = AsyncMock(return_value=None)
+        blocks = AsyncMock()
+        blocks.count.side_effect = [0, 1]
+        chat._response_locator = AsyncMock(return_value=blocks)
+        chat._response_text = AsyncMock(return_value='partial')
+        clock = Mock()
+        clock.time.side_effect = [0, 0, 2]
+        with patch('webbridgefreeride.providers.deepseek.chat.asyncio.get_running_loop', return_value=clock), patch('webbridgefreeride.providers.deepseek.chat.asyncio.sleep', new=AsyncMock()):
+            with self.assertRaises(TimeoutError):
+                await chat.send_message('hi')

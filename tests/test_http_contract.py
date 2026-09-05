@@ -97,6 +97,7 @@ class HTTPContractTests(unittest.TestCase):
             {'tool_choice':'required'}, {'tool_choice':{'type':'function','function':{'name':'missing'}}},
             {'messages':[{'role':'user','content':[{'type':'image_url','image_url':{'url':'https://example.com/a.png'}}]}]},
             {'n':2}, {'stream_options': 'invalid'},
+            {'tool_choice': {'type':'function','function':{'name':[]}}},
         ]:
             with self.subTest(overrides=overrides):
                 response = self.post(**overrides)
@@ -133,3 +134,16 @@ class HTTPContractTests(unittest.TestCase):
         response = self.post(stream=True, messages=[{'role':'system','content':'Generate a concise session title'}, {'role':'user','content':'my title'}])
         self.assertIn('data: [DONE]', response.text)
         self.provider.complete.assert_not_called()
+
+    def test_malformed_json_and_unknown_route(self):
+        response = self.client.post('/v1/chat/completions', content='{bad', headers={'content-type':'application/json'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.json())
+        self.assertIn('error', self.client.get('/v1/missing').json())
+
+    def test_registry_extension_and_session_header(self):
+        self.provider.model_ids += ('future-tested-model',)
+        response = self.client.post('/v1/chat/completions', headers={'x-openclaw-session-key':'session-key'}, json={
+            'model':'future-tested-model', 'messages':[{'role':'user','content':'hi'}]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.provider.complete.call_args.kwargs['conversation_id'], 'session-key')
