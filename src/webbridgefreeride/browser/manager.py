@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
 import os
+import fcntl
+from collections.abc import Awaitable, Callable
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 
@@ -14,7 +17,7 @@ class BrowserManager:
         executable_path: str | None = None,
         cdp_endpoint: str | None = None,
     ):
-        self.profile_path = Path(profile_path)
+        self.profile_path = Path(profile_path).expanduser().resolve()
         login_mode = os.getenv("WEBBRIDGE_LOGIN") == "1"
         self.headless = False if login_mode or os.getenv("WEBBRIDGE_XVFB") == "1" else headless
         self.executable_path = executable_path
@@ -26,6 +29,29 @@ class BrowserManager:
         self._stale_context: BrowserContext | None = None
         self._stale_browser: Browser | None = None
         self._stale_playwright: Playwright | None = None
+        self._lock_fd: int | None = None
+
+    def _acquire_profile_lock(self) -> None:
+        if self.cdp_endpoint or self._lock_fd is not None:
+            return
+        lock_path = self.profile_path / ".webbridge-profile.lock"
+        self.profile_path.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            os.close(fd)
+            raise RuntimeError(f"Browser profile is locked: {self.profile_path}") from exc
+        self._lock_fd = fd
+
+    def _release_profile_lock(self) -> None:
+        if self._lock_fd is None:
+            return
+        try:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(self._lock_fd)
+            self._lock_fd = None
 
     @property
     def is_running(self) -> bool:
@@ -87,9 +113,9 @@ class BrowserManager:
             return self.context
         if self.context is not None or self._stale_playwright is not None:
             await self._discard_stale()
-        self.profile_path.mkdir(parents=True, exist_ok=True)
-        self.playwright = await async_playwright().start()
+        self._acquire_profile_lock()
         try:
+            self.playwright = await async_playwright().start()
             if self.cdp_endpoint:
                 self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_endpoint)
                 if not self.browser.contexts:
@@ -112,6 +138,44 @@ class BrowserManager:
     async def restart(self) -> BrowserContext:
         await self.stop()
         return await self.start()
+
+    async def handoff_to_headless(
+        self,
+        auth_probe: Callable[[Page], Awaitable[bool]] | None = None,
+    ) -> BrowserContext:
+        """Close headed managed login and reopen the same profile headlessly."""
+        if self.cdp_endpoint:
+            raise RuntimeError("CDP mode does not support managed browser handoff")
+        if self.headless:
+            raise RuntimeError("Browser handoff requires a headed managed context")
+        if not await self.check_liveness():
+            raise RuntimeError("Headed browser is no longer running")
+        try:
+            await self.stop()
+        except BaseException as exc:
+            raise RuntimeError("headed browser shutdown failed before handoff") from exc
+        self.headless = True
+        try:
+            context = await self.start()
+            if auth_probe is not None:
+                page = await self.page()
+                if not await auth_probe(page):
+                    raise RuntimeError("headless authentication probe returned false")
+            return context
+        except BaseException as exc:
+            await self.stop()
+            self.headless = False
+            try:
+                await self.start()
+            except BaseException as restore_exc:
+                raise RuntimeError(
+                    "headless handoff failed and headed session could not be restored"
+                ) from restore_exc
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise RuntimeError(
+                "headless handoff failed; headed session was restored"
+            ) from exc
 
     async def page(self) -> Page:
         context = await self.start()
@@ -141,3 +205,4 @@ class BrowserManager:
                 await playwright.stop()
             finally:
                 pass
+        self._release_profile_lock()

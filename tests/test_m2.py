@@ -403,7 +403,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter, chromium, _ = self._managed_playwright([first, second])
 
         with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager()
+            manager = BrowserManager(profile_path=f"/tmp/webbridge-test-{id(first)}")
             self.assertIs(await manager.start(), first)
             self.assertTrue(manager.is_running)
             context_callback = first.on.call_args.args[1]
@@ -411,17 +411,20 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(manager.is_running)
             self.assertIs(await manager.start(), second)
             self.assertEqual(chromium.launch_persistent_context.await_count, 2)
+            await manager.stop()
 
     async def test_healthy_context_is_reused_without_relaunch(self):
         context = Mock(pages=[])
         context.browser = None
+        context.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([context])
 
         with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager()
+            manager = BrowserManager(profile_path=f"/tmp/webbridge-test-{id(context)}")
             self.assertIs(await manager.start(), context)
             self.assertIs(await manager.start(), context)
             chromium.launch_persistent_context.assert_awaited_once()
+            await manager.stop()
 
     async def test_managed_recovery_failure_clears_state(self):
         context = Mock(pages=[])
@@ -431,7 +434,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         chromium.launch_persistent_context.side_effect = [context, RuntimeError("launch failed")]
 
         with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager()
+            manager = BrowserManager(profile_path=f"/tmp/webbridge-test-{id(context)}")
             await manager.start()
             context.on.call_args.args[1]()
             with self.assertRaisesRegex(RuntimeError, "launch failed"):
@@ -440,6 +443,146 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(manager.context)
             self.assertIsNone(manager.playwright)
             playwright.stop.assert_awaited()
+
+    async def test_headed_handoff_reuses_profile_and_executable_headlessly(self):
+        headed = Mock(pages=[])
+        headed.browser = None
+        headed.close = AsyncMock()
+        headless = Mock(pages=[])
+        headless.browser = None
+        headless.close = AsyncMock()
+        headless.pages = [Mock(is_closed=Mock(return_value=False))]
+        headed_chromium = Mock()
+        headed_chromium.launch_persistent_context = AsyncMock(return_value=headed)
+        headless_chromium = Mock()
+        headless_chromium.launch_persistent_context = AsyncMock(return_value=headless)
+        headed_playwright = Mock(chromium=headed_chromium)
+        headed_playwright.stop = AsyncMock()
+        headless_playwright = Mock(chromium=headless_chromium)
+        headless_playwright.stop = AsyncMock()
+        starter = Mock()
+        starter.start = AsyncMock(side_effect=[headed_playwright, headless_playwright])
+        executable = "/usr/bin/chromium-test"
+        profile = "/tmp/webbridge-handoff-test"
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile, executable_path=executable, headless=False)
+            await manager.start()
+            auth_probe = AsyncMock(return_value=True)
+            result = await manager.handoff_to_headless(auth_probe=auth_probe)
+            self.assertIs(result, headless)
+            self.assertTrue(manager.headless)
+            auth_probe.assert_awaited_once()
+
+        headed_chromium.launch_persistent_context.assert_awaited_once_with(
+            user_data_dir=profile,
+            headless=False,
+            executable_path=executable,
+            viewport={"width": 1440, "height": 1000},
+        )
+        headless_chromium.launch_persistent_context.assert_awaited_once_with(
+            user_data_dir=profile,
+            headless=True,
+            executable_path=executable,
+            viewport={"width": 1440, "height": 1000},
+        )
+        headed.close.assert_awaited_once()
+        headed_playwright.stop.assert_awaited_once()
+        await manager.stop()
+
+    async def test_handoff_auth_probe_failure_restores_headed_session(self):
+        headed = Mock(pages=[])
+        headed.browser = None
+        headed.close = AsyncMock()
+        headless = Mock(pages=[])
+        headless.browser = None
+        headless.close = AsyncMock()
+        restored = Mock(pages=[])
+        restored.browser = None
+        restored.close = AsyncMock()
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(side_effect=[headed, headless, restored])
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock()
+        starter.start = AsyncMock(return_value=playwright)
+        profile = "/tmp/webbridge-handoff-auth-failure-test"
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile, headless=False)
+            await manager.start()
+            with self.assertRaisesRegex(RuntimeError, "headed session was restored"):
+                await manager.handoff_to_headless(auth_probe=AsyncMock(return_value=False))
+            self.assertFalse(manager.headless)
+            self.assertIs(manager.context, restored)
+            self.assertTrue(manager.is_running)
+            await manager.stop()
+
+    async def test_handoff_launch_failure_restores_headed_session(self):
+        headed = Mock(pages=[])
+        headed.browser = None
+        headed.close = AsyncMock()
+        restored = Mock(pages=[])
+        restored.browser = None
+        restored.close = AsyncMock()
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(
+            side_effect=[headed, RuntimeError("headless launch failed"), restored]
+        )
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock()
+        starter.start = AsyncMock(return_value=playwright)
+        profile = "/tmp/webbridge-handoff-launch-failure-test"
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile, headless=False)
+            await manager.start()
+            with self.assertRaisesRegex(RuntimeError, "headed session was restored"):
+                await manager.handoff_to_headless()
+            self.assertFalse(manager.headless)
+            self.assertIs(manager.context, restored)
+            await manager.stop()
+
+    async def test_managed_profile_lock_conflict_blocks_second_manager(self):
+        profile = "/tmp/webbridge-lock-conflict-test"
+        first_context = Mock(pages=[])
+        first_context.browser = None
+        first_context.close = AsyncMock()
+        starter, _, _ = self._managed_playwright([first_context])
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            first = BrowserManager(profile_path=profile)
+            second = BrowserManager(profile_path=profile)
+            await first.start()
+            with self.assertRaisesRegex(RuntimeError, "profile is locked"):
+                await second.start()
+            self.assertIsNone(second.playwright)
+            await first.stop()
+
+    async def test_handoff_cancellation_releases_profile_lock(self):
+        context = Mock(pages=[])
+        context.browser = None
+        context.close = AsyncMock()
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(
+            side_effect=[context, asyncio.CancelledError(), context, context]
+        )
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock()
+        starter.start = AsyncMock(return_value=playwright)
+        profile = "/tmp/webbridge-cancel-handoff-test"
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile, headless=False)
+            await manager.start()
+            with self.assertRaises(asyncio.CancelledError):
+                await manager.handoff_to_headless()
+            self.assertTrue(manager.is_running)
+            await manager.stop()
+            contender = BrowserManager(profile_path=profile)
+            await contender.start()
+            await contender.stop()
 
     async def test_cdp_mode_attaches_without_closing_user_chromium(self):
         context = Mock()

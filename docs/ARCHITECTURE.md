@@ -29,6 +29,14 @@ The client agent owns tool execution and sends the result on its next request.
   until their dedicated migration stages. See [GitHub Issue #22](https://github.com/arashashrafii/webbridgefreeride/issues/22)
   and [ADR/Issue #15](https://github.com/arashashrafii/webbridgefreeride/issues/15)
   for the migration decisions and follow-up runtime work.
+- Managed authentication uses one canonical absolute profile and executable
+  across a sequential headed-to-headless handoff. The managed BrowserManager
+  holds an exclusive profile lock, releases it only after the headed context
+  and Playwright handle stop, then launches headless and runs an authentication
+  probe. A failed launch or probe stops the failed context and attempts to
+  restore headed mode on the same profile; the resulting error identifies
+  whether restoration succeeded. CDP mode remains a separate attach path and
+  never participates in this lock or handoff and never closes the user browser.
 - Model discovery comes from registered provider model_ids and capabilities.
   GPT Web/OX Alpha are extension targets only; no dummy adapters are registered.
 

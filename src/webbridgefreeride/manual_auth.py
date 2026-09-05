@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import shutil
 
 from .browser.manager import BrowserManager
+from .providers.deepseek.login import DeepSeekLogin
+from .providers.qwen.chat import QwenChat
 
 
 @dataclass(frozen=True)
@@ -75,5 +77,13 @@ async def run_manual_auth(
         print(f"Complete {provider} authentication in the opened browser.")
         print("Press Enter here after the chat page is logged in and usable.")
         input()
+        async def auth_probe(page) -> bool:
+            await page.goto(target.url, wait_until="domcontentloaded")
+            if provider == "deepseek":
+                return await DeepSeekLogin(page, target.url).is_authenticated()
+            return await QwenChat(page).is_authenticated()
+
+        await browser.handoff_to_headless(auth_probe=auth_probe)
+        await browser.stop()
     finally:
         await browser.stop()

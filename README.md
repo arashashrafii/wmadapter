@@ -55,6 +55,15 @@ configurations that set cdp_endpoint without mode are interpreted as cdp for
 backward compatibility. In Stage 1 this is only the configuration and
 migration contract; it does not yet change runtime browser selection.
 
+Managed authentication uses a sequential handoff on the same canonical
+profile and executable: the headed login context is stopped and its exclusive
+profile lock is released before the headless runtime starts. The headless
+context probes the authenticated session after launch. If launch or the probe
+fails, WebBridge stops the failed context, restores headed mode on the same
+profile where possible, and reports the handoff failure. CDP mode remains a
+separate operator-selected attach path and does not use this handoff or close
+the user's browser.
+
 The local installer creates a user-level systemd service named `webbridgefreeride.service`. Remove the local installation with:
 
 ```bash
