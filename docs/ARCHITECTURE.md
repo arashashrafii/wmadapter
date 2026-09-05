@@ -22,6 +22,13 @@ The client agent owns tool execution and sends the result on its next request.
 - service.py owns DeepSeek/Qwen lifecycle, locks, retries and conversations.
   Provider chat/login/selectors retain site-specific DOM code; browser/elements
   contains the common visible-element lookup and BrowserManager owns profiles.
+- Browser configuration declares browser.mode as managed (default) or cdp. A
+  legacy config with browser.cdp_endpoint and no mode migrates to cdp; an
+  explicit mode always takes precedence. Stage 1 defines this configuration
+  contract only; lifecycle, page ownership and retry behavior remain unchanged
+  until their dedicated migration stages. See [GitHub Issue #22](https://github.com/arashashrafii/webbridgefreeride/issues/22)
+  and [ADR/Issue #15](https://github.com/arashashrafii/webbridgefreeride/issues/15)
+  for the migration decisions and follow-up runtime work.
 - Model discovery comes from registered provider model_ids and capabilities.
   GPT Web/OX Alpha are extension targets only; no dummy adapters are registered.
 

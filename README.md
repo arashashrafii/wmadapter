@@ -48,6 +48,13 @@ loopback-only debugging endpoint. Complete login in that Chromium window and
 leave it open while WebBridge runs. WebBridge attaches to that session; it does
 not launch a second browser or attempt to bypass the site's CAPTCHA.
 
+Browser selection is explicit in config.yaml: browser.mode: managed (the
+default) uses WebBridge's persistent profile, while browser.mode: cdp attaches
+to a user-launched Chromium configured by browser.cdp_endpoint. Existing
+configurations that set cdp_endpoint without mode are interpreted as cdp for
+backward compatibility. In Stage 1 this is only the configuration and
+migration contract; it does not yet change runtime browser selection.
+
 The local installer creates a user-level systemd service named `webbridgefreeride.service`. Remove the local installation with:
 
 ```bash

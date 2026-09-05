@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 class ServerConfig(BaseModel):
@@ -15,11 +15,25 @@ class ServerConfig(BaseModel):
 
 
 class BrowserConfig(BaseModel):
+    # managed uses WebBridge's own persistent browser profile; cdp attaches
+    # to an already-running Chromium exposed through CDP.
+    mode: Literal["managed", "cdp"] = "managed"
     headless: bool = True
     profile_dir: str = ".webbridge-profile"
     executable_path: str | None = None
     cdp_endpoint: str | None = None
     restart_retries: int = Field(default=1, ge=0, le=5)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_cdp_config(cls, value: Any) -> Any:
+        """Map pre-Stage-1 configs with only cdp_endpoint to CDP mode."""
+        if not isinstance(value, dict):
+            return value
+        migrated = dict(value)
+        if "mode" not in migrated and migrated.get("cdp_endpoint"):
+            migrated["mode"] = "cdp"
+        return migrated
 
 
 class DeepSeekConfig(BaseModel):

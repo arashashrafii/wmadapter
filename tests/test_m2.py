@@ -83,6 +83,7 @@ class Milestone2Tests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             cfg = load_config(Path(directory) / "missing.yaml")
         self.assertEqual(cfg["server"]["port"], 11555)
+        self.assertEqual(cfg["browser"]["mode"], "managed")
         self.assertEqual(cfg["browser"]["restart_retries"], 1)
         self.assertEqual(cfg["deepseek"]["login_timeout_ms"], 30000)
 
@@ -95,6 +96,27 @@ class Milestone2Tests(unittest.TestCase):
             path.write_text("browser:\n  cdp_endpoint: http://127.0.0.1:9222\n")
             cfg = load_config(path)
         self.assertEqual(cfg["browser"]["cdp_endpoint"], "http://127.0.0.1:9222")
+        self.assertEqual(cfg["browser"]["mode"], "cdp")
+
+    def test_config_preserves_explicit_browser_mode(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text("browser:\n  mode: managed\n  cdp_endpoint: http://127.0.0.1:9222\n")
+            cfg = load_config(path)
+        self.assertEqual(cfg["browser"]["mode"], "managed")
+
+    def test_config_accepts_explicit_cdp_mode(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text("browser:\n  mode: cdp\n  cdp_endpoint: http://127.0.0.1:9222\n")
+            cfg = load_config(path)
+        self.assertEqual(cfg["browser"]["mode"], "cdp")
 
     def test_find_free_port_skips_busy_port(self):
         import socket
