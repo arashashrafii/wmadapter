@@ -9,6 +9,9 @@ from .recovery import ToolCallRecovery
 class WebChatTextAdapter:
     """Provider-side translation boundary for WebChat text protocols."""
 
+    def __init__(self, recovery: ToolCallRecovery | None = None):
+        self.recovery = recovery or ToolCallRecovery()
+
     def prompt(self, messages, system_prompt: str, tools, client_policy):
         return _prompt(messages, system_prompt, tools, client_policy)
 
@@ -16,6 +19,6 @@ class WebChatTextAdapter:
         return _image_attachments(messages)
 
     async def resolve(self, provider, answer: str, messages, tools, conversation_id, prompt):
-        return await ToolCallRecovery().resolve(
+        return await self.recovery.resolve(
             provider, answer, messages, tools, conversation_id, prompt
         )

@@ -38,3 +38,9 @@ class PolicyLayerTests(unittest.TestCase):
     def test_legacy_protocol_name_is_not_recovery_entrypoint(self):
         from webbridgefreeride.providers.protocol import _legacy_resolve_web_answer
         self.assertTrue(callable(_legacy_resolve_web_answer))
+
+    def test_provider_protocol_owns_stable_recovery_dependency(self):
+        from webbridgefreeride.service import DeepSeekService
+        from webbridgefreeride.config import load_config
+        provider = DeepSeekService(load_config('/nonexistent'))
+        self.assertIs(provider.protocol.recovery, provider.protocol.recovery)
