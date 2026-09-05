@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 
 class ChatProvider(ABC):
     name: str
+    model_ids: tuple[str, ...] = ()
     capabilities = ModelCapabilities()
 
     async def infer(self, request: ProviderRequest) -> ProviderResult:
@@ -15,7 +16,7 @@ class ChatProvider(ABC):
         return await infer_legacy(self, request)
 
     async def stream_infer(self, request: ProviderRequest) -> AsyncIterator[ProviderResult]:
-        """Buffered normalized result; incremental providers may override."""
+        """Buffered normalized result, not token deltas."""
         yield await self.infer(request)
 
 

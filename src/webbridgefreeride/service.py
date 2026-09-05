@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class DeepSeekService(ChatProvider):
     name = "deepseek"
+    model_ids = ("deepseek-chat", "deepseek-reasoner")
     capabilities = ModelCapabilities(image_input=True)
 
     def __init__(self, config: dict):
@@ -168,6 +169,7 @@ class DeepSeekService(ChatProvider):
 
 class QwenService(ChatProvider):
     name = "qwen"
+    model_ids = ("qwen-chat",)
     capabilities = ModelCapabilities(image_input=False)
 
     def __init__(self, config: dict):

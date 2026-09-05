@@ -1,23 +1,4 @@
-from fastapi import FastAPI
+"""Compatibility import: both entrypoints serve the same real application."""
+from ..main import app
 
-app = FastAPI(title="WebBridgeFreeRide")
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.post("/v1/chat/completions")
-def chat_completion(request: dict):
-    return {
-        "id": "webbridge-test",
-        "object": "chat.completion",
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": "DeepSeek adapter is not connected yet."
-                }
-            }
-        ]
-    }
+__all__ = ["app"]

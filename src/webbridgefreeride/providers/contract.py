@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
     model: str = "deepseek-chat"
     messages: list[Message]
     stream: bool = False
+    stream_options: dict[str, bool] | None = None
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
@@ -33,7 +34,7 @@ class ChatRequest(BaseModel):
 
 class ModelCapabilities(BaseModel):
     tool_calling: Literal["none", "emulated", "native"] = "emulated"
-    streaming: Literal["buffered", "incremental"] = "buffered"
+    streaming: Literal["buffered"] = "buffered"
     image_input: bool = False
     context_window: int | None = None
     max_output_tokens: int | None = None
