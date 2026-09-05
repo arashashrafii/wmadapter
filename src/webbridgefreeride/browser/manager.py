@@ -10,6 +10,14 @@ from urllib.parse import urlsplit
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 
 
+class LifecycleState:
+    STOPPED = "STOPPED"
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    STOPPING = "STOPPING"
+    RESTARTING = "RESTARTING"
+
+
 class BrowserManager:
     _PROVIDER_HOSTS = {
         "deepseek": {"chat.deepseek.com"},
@@ -39,6 +47,18 @@ class BrowserManager:
         self._page_owners: dict[int, str] = {}
         self._page_claims: dict[tuple[str, str | None], Page] = {}
         self._owned_pages: dict[int, Page] = {}
+        self._lifecycle_lock = asyncio.Lock()
+        self.lifecycle_state = LifecycleState.STOPPED
+
+    async def _await_cleanup(self, awaitable) -> None:
+        task = asyncio.ensure_future(awaitable)
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            try:
+                await task
+            finally:
+                raise
 
     def _acquire_profile_lock(self) -> None:
         if self.cdp_endpoint or self._lock_fd is not None:
@@ -174,10 +194,15 @@ class BrowserManager:
         return True
 
     async def start(self) -> BrowserContext:
+        async with self._lifecycle_lock:
+            return await self._start_unlocked()
+
+    async def _start_unlocked(self) -> BrowserContext:
         if await self.check_liveness():
             return self.context
         if self.context is not None or self._stale_playwright is not None:
             await self._discard_stale()
+        self.lifecycle_state = LifecycleState.STARTING
         self._acquire_profile_lock()
         try:
             self.playwright = await async_playwright().start()
@@ -195,14 +220,20 @@ class BrowserManager:
                 viewport={"width": 1440, "height": 1000},
             )
             self._register_liveness(self.context)
+            self.lifecycle_state = LifecycleState.RUNNING
         except Exception:
-            await self.stop()
+            await self._stop_unlocked()
+            raise
+        except BaseException:
+            await self._stop_unlocked()
             raise
         return self.context
 
     async def restart(self) -> BrowserContext:
-        await self.stop()
-        return await self.start()
+        async with self._lifecycle_lock:
+            self.lifecycle_state = LifecycleState.RESTARTING
+            await self._stop_unlocked()
+            return await self._start_unlocked()
 
     async def handoff_to_headless(
         self,
@@ -250,6 +281,11 @@ class BrowserManager:
         return await context.new_page()
 
     async def stop(self) -> None:
+        async with self._lifecycle_lock:
+            await self._stop_unlocked()
+
+    async def _stop_unlocked(self) -> None:
+        self.lifecycle_state = LifecycleState.STOPPING
         context = self.context
         playwright = self.playwright
         self.context = None
@@ -262,15 +298,19 @@ class BrowserManager:
         self._page_owners.clear()
         self._page_claims.clear()
         self._owned_pages.clear()
+        failure = None
         if context is not None:
             try:
                 if not self.cdp_endpoint:
-                    await context.close()
-            finally:
-                pass
+                    await self._await_cleanup(context.close())
+            except BaseException as exc:
+                failure = exc
         if playwright is not None:
             try:
-                await playwright.stop()
-            finally:
-                pass
+                await self._await_cleanup(playwright.stop())
+            except BaseException as exc:
+                failure = failure or exc
         self._release_profile_lock()
+        self.lifecycle_state = LifecycleState.STOPPED
+        if failure is not None:
+            raise failure

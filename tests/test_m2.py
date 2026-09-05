@@ -413,6 +413,68 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(chromium.launch_persistent_context.await_count, 2)
             await manager.stop()
 
+    async def test_concurrent_starts_share_one_context_and_lifecycle(self):
+        context = Mock(pages=[])
+        context.browser = None
+        context.close = AsyncMock()
+        starter, chromium, _ = self._managed_playwright([context])
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/webbridge-concurrent-{id(context)}")
+            first, second = await asyncio.gather(manager.start(), manager.start())
+            self.assertIs(first, context)
+            self.assertIs(second, context)
+            self.assertEqual(chromium.launch_persistent_context.await_count, 1)
+            self.assertEqual(manager.lifecycle_state, "RUNNING")
+            await asyncio.gather(manager.stop(), manager.stop())
+            self.assertEqual(manager.lifecycle_state, "STOPPED")
+
+    async def test_restart_is_serialized_with_start(self):
+        first = Mock(pages=[])
+        first.browser = None
+        first.close = AsyncMock()
+        second = Mock(pages=[])
+        second.browser = None
+        second.close = AsyncMock()
+        starter, chromium, _ = self._managed_playwright([first, second])
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/webbridge-restart-{id(first)}")
+            await manager.start()
+            result, observed = await asyncio.gather(manager.restart(), manager.start())
+            self.assertIs(result, second)
+            self.assertIs(observed, second)
+            self.assertEqual(chromium.launch_persistent_context.await_count, 2)
+            await manager.stop()
+
+    async def test_cancellation_during_launch_releases_state_and_lock(self):
+        chromium = Mock()
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock(start=AsyncMock(side_effect=asyncio.CancelledError()))
+        profile = "/tmp/webbridge-cancel-launch-test"
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile)
+            with self.assertRaises(asyncio.CancelledError):
+                await manager.start()
+            self.assertFalse(manager.is_running)
+            self.assertEqual(manager.lifecycle_state, "STOPPED")
+            self.assertIsNone(manager._lock_fd)
+
+    async def test_cancellation_during_stop_finishes_cleanup(self):
+        context = Mock(pages=[])
+        context.browser = None
+        context.close = AsyncMock(side_effect=asyncio.CancelledError())
+        starter, _, playwright = self._managed_playwright([context])
+        profile = f"/tmp/webbridge-cancel-stop-{id(context)}"
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile)
+            await manager.start()
+            with self.assertRaises(asyncio.CancelledError):
+                await manager.stop()
+            self.assertFalse(manager.is_running)
+            self.assertEqual(manager.lifecycle_state, "STOPPED")
+            self.assertIsNone(manager._lock_fd)
+            playwright.stop.assert_awaited_once()
+
     async def test_healthy_context_is_reused_without_relaunch(self):
         context = Mock(pages=[])
         context.browser = None
