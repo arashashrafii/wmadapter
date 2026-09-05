@@ -92,6 +92,14 @@ Sources checked for the intended client paths:
 
 ## Remaining live verification
 
+Live environment check on 2026-09-05: the Qwen profile opened successfully
+against `https://chat.qwen.ai/` with HTTP 200 and a visible authenticated chat
+composer using the current selectors. This verified login/page readiness only;
+no message was sent. The DeepSeek profile was locked by an already-running
+Chrome process, so Playwright could not open it concurrently. DeepSeek live
+completion remains unverified until that browser session is closed or exposed
+through a supported attached-browser workflow.
+
 Run each actual agent against each authenticated Web provider in an isolated
 conversation: ask for one harmless tool, execute it in the agent, send its
 result and verify the final answer. Include long replies, expired login,

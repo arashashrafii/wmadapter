@@ -128,3 +128,8 @@ HTTP uses infer for one complete normalized result.
 - New GPT Web/OX Alpha adapters must supply tested browser code, model_ids,
   capabilities, lifecycle and complete or a native infer override. None is
   registered or presented as functional in this change.
+
+The final live check found Qwen authenticated and selector-ready without
+sending a message. DeepSeek could not be checked because its persistent profile
+was locked by an existing Chrome process; this is an environment blocker, not
+evidence of provider success.
