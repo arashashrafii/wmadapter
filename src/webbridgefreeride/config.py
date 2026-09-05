@@ -8,6 +8,10 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
+def canonical_path(value: str | Path) -> str:
+    return str(Path(value).expanduser().resolve())
+
+
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=11555, ge=1, le=65535)

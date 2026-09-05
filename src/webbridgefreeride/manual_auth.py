@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import shutil
+from typing import Any
 
 from .browser.manager import BrowserManager
+from .config import canonical_path, load_config
 from .providers.deepseek.login import DeepSeekLogin
 from .providers.qwen.chat import QwenChat
 
@@ -52,20 +53,30 @@ async def run_manual_auth(
     *,
     use_google: bool = False,
     executable_path: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> None:
     if provider not in AUTH_TARGETS:
         raise RuntimeError(f"Unsupported manual auth provider: {provider}")
 
+    config = config or load_config()
+    browser_cfg = config["browser"]
+    if browser_cfg.get("mode", "managed") == "cdp":
+        raise RuntimeError("Manual authentication requires browser.mode=managed; CDP mode is attach-only")
     target = AUTH_TARGETS[provider]
-    if executable_path is None:
-        for browser in ("google-chrome", "chromium", "chromium-browser"):
-            executable_path = shutil.which(browser)
-            if executable_path:
-                break
+    profile_value = browser_cfg.get("profile_dir", ".webbridge-profile")
+    if provider == "qwen":
+        profile_value = config.get("qwen", {}).get("profile_dir", ".webbridge-profile/qwen")
+    configured_executable = browser_cfg.get("executable_path")
+    configured_executable = canonical_path(configured_executable) if configured_executable else None
+    override_executable = canonical_path(executable_path) if executable_path else None
+    if override_executable != configured_executable and executable_path is not None:
+        raise RuntimeError(
+            "--executable-path does not match browser.executable_path; configure the Gateway executable first"
+        )
     browser = BrowserManager(
-        profile_path=target.profile_dir,
+        profile_path=canonical_path(profile_value),
         headless=False,
-        executable_path=executable_path,
+        executable_path=configured_executable,
     )
     try:
         page = await browser.page()

@@ -11,7 +11,7 @@ from webbridgefreeride.security import redact
 from webbridgefreeride.providers.router import ProviderRouter
 from webbridgefreeride.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
 from webbridgefreeride.ports import find_free_port
-from webbridgefreeride.manual_auth import AUTH_TARGETS
+from webbridgefreeride.manual_auth import AUTH_TARGETS, run_manual_auth
 from webbridgefreeride.providers.base import ChatProvider
 from webbridgefreeride.providers.deepseek.chat import DeepSeekChat
 from webbridgefreeride.browser.manager import BrowserManager
@@ -34,6 +34,38 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_manual_auth_rejects_cdp_mode(self):
+        config = {"browser": {"mode": "cdp"}}
+        with self.assertRaisesRegex(RuntimeError, "browser.mode=managed"):
+            asyncio.run(run_manual_auth("deepseek", config=config))
+
+    def test_manual_auth_rejects_executable_mismatch_before_launch(self):
+        config = {
+            "browser": {"mode": "managed", "profile_dir": ".profile", "executable_path": "/configured/chrome"},
+        }
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            asyncio.run(run_manual_auth("deepseek", executable_path="/other/chrome", config=config))
+
+    def test_manual_auth_uses_provider_profile_and_configured_executable(self):
+        from unittest.mock import patch
+        from pathlib import Path
+
+        page = AsyncMock()
+        manager = Mock()
+        manager.page = AsyncMock(return_value=page)
+        manager.handoff_to_headless = AsyncMock()
+        manager.stop = AsyncMock()
+        config = {
+            "browser": {"mode": "managed", "profile_dir": ".profile", "executable_path": "./chrome"},
+            "qwen": {"profile_dir": "./qwen-profile"},
+        }
+        with patch("webbridgefreeride.manual_auth.BrowserManager", return_value=manager) as manager_class, patch(
+            "builtins.input", return_value=""
+        ):
+            asyncio.run(run_manual_auth("qwen", config=config))
+        kwargs = manager_class.call_args.kwargs
+        self.assertEqual(kwargs["profile_path"], str(Path("./qwen-profile").resolve()))
+        self.assertEqual(kwargs["executable_path"], str(Path("./chrome").resolve()))
     def test_deepseek_remote_delete_uses_web_ui_confirmation(self):
         page = Mock()
         page.url = "https://chat.deepseek.com/a/chat/s/abc123"

@@ -48,11 +48,13 @@ def main() -> None:
         save_credentials_interactive()
         return
     if args.command == "auth":
+        config = load_config()
         asyncio.run(
             run_manual_auth(
                 args.provider,
                 use_google=args.google,
                 executable_path=args.executable_path,
+                config=config,
             )
         )
         return
