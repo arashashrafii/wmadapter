@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from playwright.async_api import Page
+from ...browser.elements import first_visible
 
 from .selectors import ATTACH_BUTTONS, CHAT_INPUTS, FILE_INPUTS, RESPONSE_BLOCKS, SEND_BUTTONS
 
@@ -18,14 +19,7 @@ class DeepSeekChat:
         self.timeout_ms = timeout_ms
 
     async def _first_visible(self, selectors: list[str]):
-        for selector in selectors:
-            locator = self.page.locator(selector).last
-            try:
-                if await locator.is_visible(timeout=1500):
-                    return locator
-            except Exception:
-                continue
-        raise RuntimeError(f"No visible DeepSeek element found for selectors: {selectors}")
+        return await first_visible(self.page, selectors, "DeepSeek")
 
     async def _response_locator(self):
         """Return one non-overlapping locator for the rendered answer blocks."""

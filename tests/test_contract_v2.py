@@ -38,3 +38,22 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         provider.complete = AsyncMock(return_value='ordinary answer')
         with self.assertRaisesRegex(ValueError, 'tool_choice'):
             await provider.infer(ProviderRequest(chat=ChatRequest(messages=[Message(role='user', content='hi')], tools=TOOLS, tool_choice='required')))
+
+    async def test_qwen_v2_stream_and_legacy(self):
+        provider = QwenService(load_config('/nonexistent'))
+        provider.complete = AsyncMock(return_value='qwen answer')
+        request = ProviderRequest(chat=ChatRequest(messages=[Message(role='user', content='hi')]))
+        chunks = [chunk async for chunk in provider.stream_infer(request)]
+        self.assertEqual(chunks[0].content, 'qwen answer')
+        self.assertEqual(await provider.complete('old prompt'), 'qwen answer')
+        self.assertFalse(provider.capabilities.image_input)
+
+    async def test_qwen_preserves_authenticated_page(self):
+        from unittest.mock import patch
+        provider = QwenService(load_config('/nonexistent'))
+        page = AsyncMock()
+        provider._page_for_conversation = AsyncMock(return_value=page)
+        with patch('webbridgefreeride.service.QwenChat.is_authenticated', new=AsyncMock(return_value=True)):
+            await provider._authenticate('session')
+        page.goto.assert_not_called()
+        self.assertTrue(provider.ready)

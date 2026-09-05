@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from playwright.async_api import Page
+from ...browser.elements import first_visible
 
 from .selectors import CHAT_INPUTS, RESPONSE_BLOCKS
 
@@ -13,14 +14,7 @@ class QwenChat:
         self.timeout_ms = timeout_ms
 
     async def _first_visible(self, selectors: list[str]):
-        for selector in selectors:
-            locator = self.page.locator(selector).last
-            try:
-                if await locator.is_visible(timeout=1500):
-                    return locator
-            except Exception:
-                continue
-        raise RuntimeError(f"No visible Qwen element found for selectors: {selectors}")
+        return await first_visible(self.page, selectors, "Qwen")
 
     async def is_authenticated(self) -> bool:
         try:

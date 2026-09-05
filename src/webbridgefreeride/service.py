@@ -168,6 +168,7 @@ class DeepSeekService(ChatProvider):
 
 class QwenService(ChatProvider):
     name = "qwen"
+    capabilities = ModelCapabilities(image_input=False)
 
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
@@ -223,6 +224,11 @@ class QwenService(ChatProvider):
 
     async def _authenticate(self, conversation_id: str | None = None) -> None:
         page = await self._page_for_conversation(conversation_id)
+        chat = QwenChat(page, timeout_ms=self.timeout_ms)
+        if await chat.is_authenticated():
+            self.ready = True
+            self.last_error = None
+            return
         await page.goto(self.chat_url, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(3000)
         chat = QwenChat(page, timeout_ms=self.timeout_ms)
