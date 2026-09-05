@@ -2,6 +2,7 @@
 from .contract import ProviderRequest, ProviderResult
 from .protocol import _prompt, _image_attachments, _resolve_web_answer
 from .normalizer import ToolProtocolNormalizer
+from .recovery import ToolCallRecovery
 
 
 async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
@@ -30,7 +31,9 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     else:
         answer = await provider.complete(prompt, conversation_id=request.conversation_id)
     call, visible = await (adapter.resolve(provider, answer, messages, tools, request.conversation_id, prompt)
-                           if adapter else _resolve_web_answer(provider, answer, messages, tools, request.conversation_id, prompt))
+                           if adapter else ToolCallRecovery().resolve(
+                               provider, answer, messages, tools, request.conversation_id, prompt
+                           ))
     if call is None:
         call, visible = ToolProtocolNormalizer().normalize(visible, tools)
     if required and call is None:

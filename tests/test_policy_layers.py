@@ -4,6 +4,7 @@ from webbridgefreeride.providers.normalizer import ToolProtocolNormalizer
 from webbridgefreeride.providers.policy import ClientPolicy, detect_client_policy
 from webbridgefreeride.providers.protocol import _prompt
 from webbridgefreeride.providers.contract import Message
+from webbridgefreeride.providers.recovery import ToolCallRecovery
 
 
 class PolicyLayerTests(unittest.TestCase):
@@ -28,3 +29,6 @@ class PolicyLayerTests(unittest.TestCase):
         prompt = _prompt(messages, tools=[{"type": "function", "function": {"name": "computer"}}],
                          client_policy=ClientPolicy.GENERIC)
         self.assertNotIn("OPENCLAW DOCUMENTATION POLICY", prompt)
+
+    def test_recovery_has_independent_provider_boundary(self):
+        self.assertTrue(hasattr(ToolCallRecovery(), "resolve"))
