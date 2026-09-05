@@ -42,6 +42,12 @@ The client agent owns tool execution and sends the result on its next request.
   claimed by the other provider are skipped, and a close event releases the
   claim. Managed contexts are manager-owned; CDP contexts remain user-owned,
   so provider selection never closes unrelated tabs or the user's browser.
+- Each provider service applies the shared browser page policy: `max_pages`
+  defaults to 8 unique Gateway-owned pages and `idle_timeout_ms` defaults to
+  300000. Setting either field to `null` explicitly disables that limit or
+  idle cleanup. Cleanup removes aliases, releases local ownership and closes
+  only the local page; it never invokes remote conversation deletion. Active
+  or in-flight pages are protected, and a full cap returns a capacity error.
 - Model discovery comes from registered provider model_ids and capabilities.
   GPT Web/OX Alpha are extension targets only; no dummy adapters are registered.
 

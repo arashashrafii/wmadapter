@@ -12,6 +12,9 @@ browser:
   executable_path:
   cdp_endpoint:
   restart_retries: 1
+  # null disables the local page cap/idle cleanup explicitly.
+  max_pages: 8
+  idle_timeout_ms: 300000
 
 deepseek:
   transport: web

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from dataclasses import dataclass
 from collections.abc import AsyncIterator
 
 from .browser.manager import BrowserManager
@@ -15,6 +17,17 @@ from .providers.qwen.protocol import QwenTextAdapter
 from .providers.submit import PreSubmitError, UncertainSubmitError
 
 logger = logging.getLogger(__name__)
+
+
+class PageCapacityError(RuntimeError):
+    """No idle Gateway-owned page is available within the configured cap."""
+
+
+@dataclass
+class _PageRecord:
+    page: object
+    last_used: float
+    active: int = 0
 
 
 class DeepSeekService(ChatProvider):
@@ -40,6 +53,10 @@ class DeepSeekService(ChatProvider):
         self.ready = False
         self._conversation_pages: dict[str, object] = {}
         self._conversation_bindings: dict[str, str] = {}
+        self.max_pages = browser_cfg.get("max_pages", 8)
+        self.idle_timeout_ms = browser_cfg.get("idle_timeout_ms", 300000)
+        self._page_records: dict[int, _PageRecord] = {}
+        self._active_pages: set[int] = set()
         self._request_lock = asyncio.Lock()
 
     async def start(self) -> None:
@@ -50,6 +67,8 @@ class DeepSeekService(ChatProvider):
         self.ready = False
         self._conversation_pages.clear()
         self._conversation_bindings.clear()
+        self._page_records.clear()
+        self._active_pages.clear()
 
     async def status(self) -> dict:
         return {
@@ -60,6 +79,47 @@ class DeepSeekService(ChatProvider):
             "conversations": len(self._conversation_pages),
         }
 
+    def _track_page(self, page: object) -> None:
+        self._page_records.setdefault(id(page), _PageRecord(page, time.monotonic()))
+        self._page_records[id(page)].last_used = time.monotonic()
+
+    def _remove_page(self, page: object) -> None:
+        for alias, candidate in list(self._conversation_pages.items()):
+            if candidate is page:
+                self._conversation_pages.pop(alias, None)
+        self._page_records.pop(id(page), None)
+        self._active_pages.discard(id(page))
+        self.browser.release_page(page)
+
+    async def cleanup_pages(self) -> int:
+        if self.idle_timeout_ms is None:
+            return 0
+        cutoff = time.monotonic() - int(self.idle_timeout_ms) / 1000
+        removed = 0
+        for record in list(self._page_records.values()):
+            if record.active or record.last_used > cutoff:
+                continue
+            page = record.page
+            self._remove_page(page)
+            if not page.is_closed():
+                await page.close()
+            removed += 1
+        return removed
+
+    def _mark_page_active(self, page: object) -> None:
+        record = self._page_records.get(id(page))
+        if record:
+            record.active += 1
+            self._active_pages.add(id(page))
+            record.last_used = time.monotonic()
+
+    def _mark_page_inactive(self, page: object) -> None:
+        record = self._page_records.get(id(page))
+        if record:
+            record.active = max(0, record.active - 1)
+            if not record.active:
+                self._active_pages.discard(id(page))
+
     async def delete_conversation(self, conversation_id: str) -> bool:
         page = self._conversation_pages.pop(conversation_id, None)
         if page is None:
@@ -67,6 +127,7 @@ class DeepSeekService(ChatProvider):
         for alias, candidate in list(self._conversation_pages.items()):
             if candidate is page:
                 self._conversation_pages.pop(alias, None)
+        self._remove_page(page)
         try:
             deleted = await DeepSeekChat(page, timeout_ms=self.timeout_ms).delete_remote_conversation()
         except Exception as exc:
@@ -93,15 +154,34 @@ class DeepSeekService(ChatProvider):
 
     async def _page_for_conversation(self, conversation_id: str | None):
         if not conversation_id:
-            return await self.browser.page_for(self.name)
+            await self.cleanup_pages()
+            page = await self.browser.page_for(self.name)
+            if id(page) not in self._page_records and self.max_pages is not None and len(self._page_records) >= self.max_pages:
+                self.browser.release_page(page)
+                if not page.is_closed():
+                    await page.close()
+                raise PageCapacityError(
+                    f"DeepSeek page capacity reached ({self.max_pages}); close an idle conversation before opening another"
+                )
+            self._track_page(page)
+            return page
         page = self._conversation_pages.get(conversation_id)
         if page is not None and not page.is_closed():
+            self._track_page(page)
             return page
+        if page is not None:
+            self._remove_page(page)
         if conversation_id.startswith("auto:") and self._conversation_bindings:
             session_id, session_key = next(iter(self._conversation_bindings.items()))
         else:
             session_id = session_key = None
+        await self.cleanup_pages()
+        if self.max_pages is not None and len(self._page_records) >= self.max_pages:
+            raise PageCapacityError(
+                f"DeepSeek page capacity reached ({self.max_pages}); close an idle conversation before opening another"
+            )
         page = await self.browser.page_for(self.name, conversation_id)
+        self._track_page(page)
         self._conversation_pages[conversation_id] = page
         if session_id:
             self._conversation_pages[session_id] = page
@@ -122,10 +202,15 @@ class DeepSeekService(ChatProvider):
             attempts = self.restart_retries + 1
             for attempt in range(1, attempts + 1):
                 try:
-                    await self._authenticate(conversation_id)
                     page = await self._page_for_conversation(conversation_id)
-                    chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
-                    answer = await chat.send_message(prompt)
+                    self._mark_page_active(page)
+                    try:
+                        await self._authenticate(conversation_id)
+                        page = await self._page_for_conversation(conversation_id)
+                        chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
+                        answer = await chat.send_message(prompt)
+                    finally:
+                        self._mark_page_inactive(page)
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
@@ -150,10 +235,15 @@ class DeepSeekService(ChatProvider):
             attempts = self.restart_retries + 1
             for attempt in range(1, attempts + 1):
                 try:
-                    await self._authenticate(conversation_id)
                     page = await self._page_for_conversation(conversation_id)
-                    chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
-                    answer = await chat.send_message(prompt, attachments=attachments or [])
+                    self._mark_page_active(page)
+                    try:
+                        await self._authenticate(conversation_id)
+                        page = await self._page_for_conversation(conversation_id)
+                        chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
+                        answer = await chat.send_message(prompt, attachments=attachments or [])
+                    finally:
+                        self._mark_page_inactive(page)
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
@@ -203,6 +293,10 @@ class QwenService(ChatProvider):
         self.last_error: str | None = None
         self.ready = False
         self._conversation_pages: dict[str, object] = {}
+        self.max_pages = browser_cfg.get("max_pages", 8)
+        self.idle_timeout_ms = browser_cfg.get("idle_timeout_ms", 300000)
+        self._page_records: dict[int, _PageRecord] = {}
+        self._active_pages: set[int] = set()
         self._request_lock = asyncio.Lock()
 
     async def start(self) -> None:
@@ -212,6 +306,8 @@ class QwenService(ChatProvider):
         await self.browser.stop()
         self.ready = False
         self._conversation_pages.clear()
+        self._page_records.clear()
+        self._active_pages.clear()
 
     async def status(self) -> dict:
         return {
@@ -222,22 +318,82 @@ class QwenService(ChatProvider):
             "conversations": len(self._conversation_pages),
         }
 
+    def _track_page(self, page: object) -> None:
+        self._page_records.setdefault(id(page), _PageRecord(page, time.monotonic()))
+        self._page_records[id(page)].last_used = time.monotonic()
+
+    def _remove_page(self, page: object) -> None:
+        for alias, candidate in list(self._conversation_pages.items()):
+            if candidate is page:
+                self._conversation_pages.pop(alias, None)
+        self._page_records.pop(id(page), None)
+        self._active_pages.discard(id(page))
+        self.browser.release_page(page)
+
+    async def cleanup_pages(self) -> int:
+        if self.idle_timeout_ms is None:
+            return 0
+        cutoff = time.monotonic() - int(self.idle_timeout_ms) / 1000
+        removed = 0
+        for record in list(self._page_records.values()):
+            if record.active or record.last_used > cutoff:
+                continue
+            page = record.page
+            self._remove_page(page)
+            if not page.is_closed():
+                await page.close()
+            removed += 1
+        return removed
+
+    def _mark_page_active(self, page: object) -> None:
+        record = self._page_records.get(id(page))
+        if record:
+            record.active += 1
+            self._active_pages.add(id(page))
+            record.last_used = time.monotonic()
+
+    def _mark_page_inactive(self, page: object) -> None:
+        record = self._page_records.get(id(page))
+        if record:
+            record.active = max(0, record.active - 1)
+            if not record.active:
+                self._active_pages.discard(id(page))
+
     async def delete_conversation(self, conversation_id: str) -> bool:
         page = self._conversation_pages.pop(conversation_id, None)
         if page is None:
             return False
         if not page.is_closed():
             await page.close()
-        self.browser.release_page(page)
+        self._remove_page(page)
         return True
 
     async def _page_for_conversation(self, conversation_id: str | None):
         if not conversation_id:
-            return await self.browser.page_for(self.name)
+            await self.cleanup_pages()
+            page = await self.browser.page_for(self.name)
+            if id(page) not in self._page_records and self.max_pages is not None and len(self._page_records) >= self.max_pages:
+                self.browser.release_page(page)
+                if not page.is_closed():
+                    await page.close()
+                raise PageCapacityError(
+                    f"Qwen page capacity reached ({self.max_pages}); close an idle conversation before opening another"
+                )
+            self._track_page(page)
+            return page
         page = self._conversation_pages.get(conversation_id)
         if page is not None and not page.is_closed():
+            self._track_page(page)
             return page
+        if page is not None:
+            self._remove_page(page)
+        await self.cleanup_pages()
+        if self.max_pages is not None and len(self._page_records) >= self.max_pages:
+            raise PageCapacityError(
+                f"Qwen page capacity reached ({self.max_pages}); close an idle conversation before opening another"
+            )
         page = await self.browser.page_for(self.name, conversation_id)
+        self._track_page(page)
         self._conversation_pages[conversation_id] = page
         return page
 
@@ -261,9 +417,14 @@ class QwenService(ChatProvider):
             attempts = self.restart_retries + 1
             for attempt in range(1, attempts + 1):
                 try:
-                    await self._authenticate(conversation_id)
                     page = await self._page_for_conversation(conversation_id)
-                    answer = await QwenChat(page, timeout_ms=self.timeout_ms).send_message(prompt)
+                    self._mark_page_active(page)
+                    try:
+                        await self._authenticate(conversation_id)
+                        page = await self._page_for_conversation(conversation_id)
+                        answer = await QwenChat(page, timeout_ms=self.timeout_ms).send_message(prompt)
+                    finally:
+                        self._mark_page_inactive(page)
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:

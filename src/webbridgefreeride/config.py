@@ -27,6 +27,8 @@ class BrowserConfig(BaseModel):
     executable_path: str | None = None
     cdp_endpoint: str | None = None
     restart_retries: int = Field(default=1, ge=0, le=5)
+    max_pages: int | None = Field(default=8, ge=1)
+    idle_timeout_ms: int | None = Field(default=300000, ge=0)
 
     @model_validator(mode="before")
     @classmethod

@@ -117,6 +117,8 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(cfg["server"]["port"], 11555)
         self.assertEqual(cfg["browser"]["mode"], "managed")
         self.assertEqual(cfg["browser"]["restart_retries"], 1)
+        self.assertEqual(cfg["browser"]["max_pages"], 8)
+        self.assertEqual(cfg["browser"]["idle_timeout_ms"], 300000)
         self.assertEqual(cfg["deepseek"]["login_timeout_ms"], 30000)
 
     def test_config_accepts_local_chromium_cdp_endpoint(self):
@@ -175,6 +177,17 @@ class Milestone2Tests(unittest.TestCase):
                     os.environ.pop("WEBBRIDGE_CONFIG", None)
                 else:
                     os.environ["WEBBRIDGE_CONFIG"] = old
+
+    def test_config_allows_explicit_disabled_page_cleanup(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text("browser:\n  max_pages:\n  idle_timeout_ms:\n")
+            cfg = load_config(path)
+        self.assertIsNone(cfg["browser"]["max_pages"])
+        self.assertIsNone(cfg["browser"]["idle_timeout_ms"])
 
     def test_invalid_config_fails_fast(self):
         from tempfile import TemporaryDirectory
@@ -413,6 +426,73 @@ class Milestone2Tests(unittest.TestCase):
     def test_provider_router_dispatches_prefixed_model(self):
         router = ProviderRouter({"fake": FakeProvider()}, "fake")
         self.assertEqual(router.provider_for_model("fake:any").name, "fake")
+
+
+class PageCapacityTests(unittest.IsolatedAsyncioTestCase):
+    def _deepseek(self, max_pages=8, idle_timeout_ms=300000):
+        from webbridgefreeride.service import DeepSeekService
+
+        config = load_config('/nonexistent')
+        config["browser"]["max_pages"] = max_pages
+        config["browser"]["idle_timeout_ms"] = idle_timeout_ms
+        service = DeepSeekService(config)
+        service.browser = Mock()
+        service.browser.release_page = Mock()
+        service.browser.page_for = AsyncMock()
+        return service
+
+    async def test_idle_cleanup_deduplicates_aliases_and_is_local_only(self):
+        service = self._deepseek(max_pages=1, idle_timeout_ms=0)
+        page = Mock()
+        page.is_closed.return_value = False
+        page.close = AsyncMock()
+        service._conversation_pages.update({"conversation": page, "session-key": page})
+        service._track_page(page)
+        self.assertEqual(await service.cleanup_pages(), 1)
+        self.assertEqual(service._conversation_pages, {})
+        page.close.assert_awaited_once()
+        service.browser.release_page.assert_called_once_with(page)
+
+    async def test_active_page_blocks_capacity_eviction(self):
+        service = self._deepseek(max_pages=1, idle_timeout_ms=0)
+        page = Mock()
+        page.is_closed.return_value = False
+        service._conversation_pages["active"] = page
+        service._track_page(page)
+        service._mark_page_active(page)
+        with self.assertRaisesRegex(RuntimeError, "capacity reached"):
+            await service._page_for_conversation("new")
+        service.browser.page_for.assert_not_awaited()
+
+    async def test_recent_page_is_retained_before_idle_threshold(self):
+        service = self._deepseek(max_pages=1, idle_timeout_ms=300000)
+        page = Mock()
+        page.is_closed.return_value = False
+        page.close = AsyncMock()
+        service._conversation_pages["recent"] = page
+        service._track_page(page)
+        self.assertEqual(await service.cleanup_pages(), 0)
+        page.close.assert_not_awaited()
+
+    async def test_default_page_is_counted_by_cap_tracking(self):
+        service = self._deepseek(max_pages=1)
+        page = Mock()
+        page.is_closed.return_value = False
+        service.browser.page_for = AsyncMock(return_value=page)
+        self.assertIs(await service._page_for_conversation(None), page)
+        self.assertEqual(len(service._page_records), 1)
+
+    async def test_concurrent_cleanup_does_not_close_active_page(self):
+        service = self._deepseek(max_pages=1, idle_timeout_ms=0)
+        page = Mock()
+        page.is_closed.return_value = False
+        page.close = AsyncMock()
+        service._conversation_pages["active"] = page
+        service._track_page(page)
+        service._mark_page_active(page)
+        await asyncio.gather(service.cleanup_pages(), service.cleanup_pages())
+        page.close.assert_not_awaited()
+        self.assertIn(id(page), service._page_records)
 
 
 class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
