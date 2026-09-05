@@ -111,6 +111,13 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(response.json()['error']['code'], 'model_not_found')
         self.provider.complete.assert_not_called()
 
+    def test_optional_bearer_auth(self):
+        with patch.object(main, 'gateway_api_key', 'secret'):
+            unauthorized = self.client.get('/v1/models')
+            authorized = self.client.get('/v1/models', headers={'Authorization':'Bearer secret'})
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(authorized.status_code, 200)
+
     def test_provider_error_and_stream_error(self):
         self.provider.complete = AsyncMock(side_effect=RuntimeError('secret internal detail'))
         self.assertEqual(self.post().status_code, 502)

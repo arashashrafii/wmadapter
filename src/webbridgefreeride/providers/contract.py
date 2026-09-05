@@ -11,6 +11,44 @@ class Message(BaseModel):
     name: str | None = None
 
 
+class CanonicalMessage(BaseModel):
+    """Provider-independent conversation message."""
+    role: Literal["system", "user", "assistant", "tool"]
+    content: Any = ""
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+
+
+class CanonicalTool(BaseModel):
+    type: Literal["function"] = "function"
+    function: dict[str, Any]
+
+
+class CanonicalRequest(BaseModel):
+    model: str
+    messages: list[CanonicalMessage]
+    tools: list[CanonicalTool] = Field(default_factory=list)
+    tool_choice: Any = None
+    stream: bool = False
+    temperature: float | None = None
+    max_tokens: int | None = None
+    conversation_id: str | None = None
+
+
+def canonicalize(request: ChatRequest) -> CanonicalRequest:
+    return CanonicalRequest(
+        model=request.model,
+        messages=[CanonicalMessage.model_validate(message.model_dump()) for message in request.messages],
+        tools=[CanonicalTool.model_validate(tool) for tool in request.tools or []],
+        tool_choice=request.tool_choice,
+        stream=request.stream,
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+        conversation_id=request.conversation_id or request.user,
+    )
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
     model: str = "deepseek-chat"
@@ -41,10 +79,12 @@ class ModelCapabilities(BaseModel):
     max_output_tokens: int | None = None
     sampling_controls: bool = False
     parallel_tool_calls: bool = False
+    reasoning: bool = False
 
 
 class ProviderRequest(BaseModel):
     chat: ChatRequest
+    canonical: CanonicalRequest | None = None
     conversation_id: str | None = None
     system_prompt: str = ""
     client_policy: ClientPolicy = ClientPolicy.GENERIC

@@ -6,15 +6,21 @@ from .normalizer import ToolProtocolNormalizer
 
 async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     chat = request.chat
-    tools = chat.tools if chat.tool_choice != "none" else None
-    if isinstance(chat.tool_choice, dict):
-        name = chat.tool_choice["function"]["name"]
+    canonical = request.canonical
+    messages = canonical.messages if canonical is not None else chat.messages
+    raw_tools = ([tool.model_dump() for tool in canonical.tools] if canonical is not None else chat.tools) or []
+    choice = canonical.tool_choice if canonical is not None else chat.tool_choice
+    tools = raw_tools if choice != "none" else None
+    if isinstance(choice, dict):
+        name = choice["function"]["name"]
         tools = [tool for tool in tools or [] if tool["function"]["name"] == name]
-    prompt = _prompt(chat.messages, request.system_prompt, tools, request.client_policy)
-    required = chat.tool_choice == "required" or isinstance(chat.tool_choice, dict)
+    adapter = getattr(provider, "protocol", None)
+    prompt = (adapter.prompt(messages, request.system_prompt, tools, request.client_policy)
+              if adapter else _prompt(messages, request.system_prompt, tools, request.client_policy))
+    required = choice == "required" or isinstance(choice, dict)
     if required:
         prompt += "\nTOOL CHOICE: You must return one of the listed tool calls, not a final text answer."
-    images = _image_attachments(chat.messages)
+    images = adapter.attachments(messages) if adapter else _image_attachments(messages)
     if images:
         if not provider.capabilities.image_input:
             raise ValueError("This provider does not support image input")
@@ -23,9 +29,8 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
         )
     else:
         answer = await provider.complete(prompt, conversation_id=request.conversation_id)
-    call, visible = await _resolve_web_answer(
-        provider, answer, chat.messages, tools, request.conversation_id, prompt
-    )
+    call, visible = await (adapter.resolve(provider, answer, messages, tools, request.conversation_id, prompt)
+                           if adapter else _resolve_web_answer(provider, answer, messages, tools, request.conversation_id, prompt))
     if call is None:
         call, visible = ToolProtocolNormalizer().normalize(visible, tools)
     if required and call is None:

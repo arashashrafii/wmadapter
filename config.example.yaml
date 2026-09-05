@@ -1,6 +1,8 @@
 server:
   host: 127.0.0.1
   port: 11555
+  # Optional. When set, clients must send Authorization: Bearer <api_key>.
+  api_key:
 
 browser:
   headless: true

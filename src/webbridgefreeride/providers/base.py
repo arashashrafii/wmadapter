@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from .contract import ModelCapabilities, ProviderRequest, ProviderResult
+from .webchat_adapter import WebChatTextAdapter
 from collections.abc import AsyncIterator
 
 
@@ -9,6 +10,7 @@ class ChatProvider(ABC):
     name: str
     model_ids: tuple[str, ...] = ()
     capabilities = ModelCapabilities()
+    protocol = WebChatTextAdapter()
 
     async def infer(self, request: ProviderRequest) -> ProviderResult:
         """V2 entrypoint; existing V1 subclasses need no new methods."""

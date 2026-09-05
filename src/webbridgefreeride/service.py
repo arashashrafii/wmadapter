@@ -10,6 +10,8 @@ from .providers.contract import ModelCapabilities
 from .providers.deepseek.chat import DeepSeekChat
 from .providers.deepseek.login import DeepSeekLogin
 from .providers.qwen.chat import QwenChat
+from .providers.deepseek.protocol import DeepSeekTextAdapter
+from .providers.qwen.protocol import QwenTextAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ class DeepSeekService(ChatProvider):
     name = "deepseek"
     model_ids = ("deepseek-chat", "deepseek-reasoner")
     capabilities = ModelCapabilities(image_input=True)
+    protocol = DeepSeekTextAdapter()
 
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
@@ -171,6 +174,7 @@ class QwenService(ChatProvider):
     name = "qwen"
     model_ids = ("qwen-chat",)
     capabilities = ModelCapabilities(image_input=False)
+    protocol = QwenTextAdapter()
 
     def __init__(self, config: dict):
         browser_cfg = config["browser"]

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock
 
-from webbridgefreeride.providers.contract import ChatRequest, Message, ProviderRequest
+from webbridgefreeride.providers.contract import ChatRequest, Message, ProviderRequest, canonicalize
 from webbridgefreeride.service import DeepSeekService, QwenService
 from webbridgefreeride.config import load_config
 
@@ -9,6 +9,16 @@ TOOLS = [{"type": "function", "function": {"name": "lookup", "parameters": {"typ
 
 
 class ContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_canonical_request_is_provider_independent(self):
+        request = ChatRequest(model='deepseek-chat', messages=[
+            Message(role='assistant', content=None, tool_calls=[{'id':'c1','type':'function','function':{'name':'x','arguments':'{}'}}]),
+            Message(role='tool', content='ok', tool_call_id='c1'),
+        ])
+        canonical = canonicalize(request)
+        self.assertEqual(canonical.messages[0].role, 'assistant')
+        self.assertEqual(canonical.messages[1].tool_call_id, 'c1')
+        self.assertEqual(canonical.tools, [])
+
     async def test_deepseek_v2_and_legacy(self):
         provider = DeepSeekService(load_config('/nonexistent'))
         provider.complete = AsyncMock(return_value='hello')

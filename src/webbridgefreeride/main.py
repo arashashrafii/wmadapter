@@ -19,7 +19,7 @@ from .providers.router import ProviderRouter
 from .security import redact
 from .service import DeepSeekService, QwenService
 
-from .providers.contract import Message, ChatRequest, ProviderRequest, ProviderResult
+from .providers.contract import Message, ChatRequest, ProviderRequest, ProviderResult, canonicalize
 from .providers.protocol import (
     _content_text,
     _image_attachments,
@@ -40,6 +40,15 @@ logger = logging.getLogger(__name__)
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
 router = ProviderRouter(providers, config["providers"]["default"])
 default_system_prompt = config["deepseek"].get("system_prompt", "")
+gateway_api_key = config["server"].get("api_key")
+
+
+def _authorize(request: Request) -> None:
+    """Optional local bearer auth; unset preserves existing loopback behavior."""
+    if not gateway_api_key:
+        return
+    if request.headers.get("authorization") != f"Bearer {gateway_api_key}":
+        raise HTTPException(401, "Invalid or missing bearer token", headers={"WWW-Authenticate": "Bearer"})
 
 
 
@@ -123,15 +132,10 @@ def _model_catalog():
 
 
 def _model_provider(model):
-    # Preserve provider-prefixed legacy aliases only for known models.
-    plain = model.split(":", 1)[-1]
-    name = _model_catalog().get(plain)
-    if name is None or (":" in model and model.split(":", 1)[0] != name):
-        raise HTTPException(404, "Unknown model")
-    provider = router.providers.get(name)
-    if provider is None:
-        raise HTTPException(404, "Model provider is not configured")
-    return provider
+    try:
+        return router.resolve_model(model)
+    except RuntimeError as exc:
+        raise HTTPException(404, "Unknown model") from exc
 
 
 @app.get("/props")
@@ -142,7 +146,8 @@ async def props(model: str, autoload: bool = False):
 
 
 @app.get("/v1/models")
-async def models():
+async def models(request: Request):
+    _authorize(request)
     return {"object": "list", "data": [
         {"id": model, "object": "model", "created": 0, "owned_by": name + "-web",
          "capabilities": router.providers[name].capabilities.model_dump()}
@@ -186,6 +191,7 @@ async def bind_conversation(payload: dict[str, str], model: str = "deepseek-chat
 
 @app.post("/v1/chat/completions")
 async def chat_completion(payload: ChatRequest, request: Request):
+    _authorize(request)
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
     validate_chat(payload, provider)
@@ -196,7 +202,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
         or _fallback_conversation_id(payload.messages)
     )
     inference = ProviderRequest(
-        chat=payload, conversation_id=conversation_id,
+        chat=payload, canonical=canonicalize(payload), conversation_id=conversation_id,
         system_prompt="" if provider.name == "qwen" else default_system_prompt,
         # The public gateway contract is deliberately independent of the
         # consuming agent (OpenClaw, Hermes, OpenCode, or another client).

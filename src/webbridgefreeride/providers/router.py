@@ -25,6 +25,14 @@ class ProviderRouter:
             raise RuntimeError(f"No provider configured for model {model!r}")
         return self.providers[provider_name]
 
+    def resolve_model(self, model: str) -> ChatProvider:
+        """Strict public model resolution; provider_for_model is legacy."""
+        plain = model.split(":", 1)[-1]
+        for provider in self.providers.values():
+            if plain in getattr(provider, "model_ids", ()):
+                return provider
+        raise RuntimeError(f"Unknown model {model!r}")
+
     async def start(self) -> None:
         await self.providers[self.default_provider].start()
 
