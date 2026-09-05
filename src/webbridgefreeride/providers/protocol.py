@@ -75,7 +75,8 @@ def _image_attachments(messages: list[Message]) -> list[str]:
     return attachments
 
 
-def _prompt(messages: list[Message], system_prompt: str = "", tools: list[dict[str, Any]] | None = None) -> str:
+def _prompt(messages: list[Message], system_prompt: str = "", tools: list[dict[str, Any]] | None = None,
+            client_policy: ClientPolicy | None = None) -> str:
     lines = []
     if system_prompt.strip() and not any(message.role.lower() == "system" for message in messages):
         lines.append(f"SYSTEM: {system_prompt.strip()}")
@@ -129,7 +130,8 @@ def _prompt(messages: list[Message], system_prompt: str = "", tools: list[dict[s
             if isinstance(item, dict) and isinstance(item.get("function"), dict)
         }
         conversation_text = " ".join(_content_text(message.content) for message in messages).lower()
-        openclaw_request = detect_client_policy(messages, tools) is ClientPolicy.OPENCLAW
+        selected_policy = client_policy if client_policy is not None else detect_client_policy(messages, tools)
+        openclaw_request = selected_policy is ClientPolicy.OPENCLAW
         if openclaw_request:
             lines.append(
                 "OPENCLAW DOCUMENTATION POLICY: This request concerns OpenClaw. Before choosing a solution, "
@@ -651,4 +653,3 @@ def _extract_tool_call(answer: str, tools: list[dict[str, Any]] | None) -> tuple
         }}, answer[:match_start].strip()
     except (TypeError, ValueError, json.JSONDecodeError):
         return None, answer
-

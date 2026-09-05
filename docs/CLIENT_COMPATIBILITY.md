@@ -55,6 +55,8 @@ verify a live website.
 All clients use base URL http://127.0.0.1:11555/v1 (adjust for the actual server
 port), model deepseek-chat or qwen-chat, and a non-secret dummy key if their
 SDK requires one. The gateway itself currently has no bearer authentication.
+The wire contract is client-brand neutral: the gateway does not select behavior
+by detecting OpenClaw, Hermes or OpenCode in message text.
 Do not infer limits from Web product names: context and output limits are
 unknown. Any manually configured client token budgets are operator estimates.
 Use generous request timeouts for browser latency.

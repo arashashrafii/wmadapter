@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
+from .policy import ClientPolicy
 
 class Message(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -46,6 +47,7 @@ class ProviderRequest(BaseModel):
     chat: ChatRequest
     conversation_id: str | None = None
     system_prompt: str = ""
+    client_policy: ClientPolicy = ClientPolicy.GENERIC
 
 
 class ProviderResult(BaseModel):

@@ -2,6 +2,8 @@ import unittest
 
 from webbridgefreeride.providers.normalizer import ToolProtocolNormalizer
 from webbridgefreeride.providers.policy import ClientPolicy, detect_client_policy
+from webbridgefreeride.providers.protocol import _prompt
+from webbridgefreeride.providers.contract import Message
 
 
 class PolicyLayerTests(unittest.TestCase):
@@ -20,3 +22,9 @@ class PolicyLayerTests(unittest.TestCase):
         )
         self.assertEqual(call["function"]["name"], "lookup")
         self.assertEqual(visible, "")
+
+    def test_explicit_generic_policy_is_brand_neutral(self):
+        messages = [Message(role="user", content="OpenClaw should use computer.act")]
+        prompt = _prompt(messages, tools=[{"type": "function", "function": {"name": "computer"}}],
+                         client_policy=ClientPolicy.GENERIC)
+        self.assertNotIn("OPENCLAW DOCUMENTATION POLICY", prompt)

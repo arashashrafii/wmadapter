@@ -198,6 +198,8 @@ async def chat_completion(payload: ChatRequest, request: Request):
     inference = ProviderRequest(
         chat=payload, conversation_id=conversation_id,
         system_prompt="" if provider.name == "qwen" else default_system_prompt,
+        # The public gateway contract is deliberately independent of the
+        # consuming agent (OpenClaw, Hermes, OpenCode, or another client).
     )
 
     async def infer():

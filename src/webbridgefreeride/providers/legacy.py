@@ -10,7 +10,7 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     if isinstance(chat.tool_choice, dict):
         name = chat.tool_choice["function"]["name"]
         tools = [tool for tool in tools or [] if tool["function"]["name"] == name]
-    prompt = _prompt(chat.messages, request.system_prompt, tools)
+    prompt = _prompt(chat.messages, request.system_prompt, tools, request.client_policy)
     required = chat.tool_choice == "required" or isinstance(chat.tool_choice, dict)
     if required:
         prompt += "\nTOOL CHOICE: You must return one of the listed tool calls, not a final text answer."

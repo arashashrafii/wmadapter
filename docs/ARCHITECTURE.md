@@ -33,6 +33,11 @@ No MCP server is needed for this boundary. A client may itself expose MCP
 functions as model tools; WebBridge simply preserves their schema and results.
 The OpenClaw plugin is optional session cleanup, not the model transport.
 
+The public gateway always uses the generic policy. It does not inspect message
+text to identify OpenClaw, OpenCode or Hermes. Historical OpenClaw workflow
+guidance remains available only to direct internal helper callers and is not
+part of the agent-facing contract.
+
 ### Model response recovery
 OpenClaw owns the research/action/verification loop and executes every tool.
 WebBridge preserves tool calls and results across requests. Both SSE and ordinary
