@@ -264,7 +264,7 @@ else
   fi
 fi
 SERVER_HOST="$API_HOST"
-BROWSER_MODE=$(ask "Launch Chromium yourself for login and service use? (yes/no)" "no")
+BROWSER_MODE=$(ask "Launch Chromium yourself for login and service use? (yes/no)" "yes")
 CDP_ENDPOINT=""
 CDP_PORT=""
 if [ "$BROWSER_MODE" = "yes" ]; then
@@ -283,7 +283,9 @@ write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH" "$SERVER_HOS
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
 INSTALL_BROWSER="no"
-INSTALL_BROWSER=$(ask "Install Playwright Chromium if needed? (yes/no)" "yes")
+if [ "$BROWSER_MODE" != "yes" ]; then
+  INSTALL_BROWSER=$(ask "Install Playwright Chromium if needed? (yes/no)" "yes")
+fi
 install_current_os
 stop_service
 if [ "$BROWSER_MODE" = "yes" ]; then
