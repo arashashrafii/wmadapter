@@ -279,7 +279,7 @@ def _fallback_after_tool(messages: list[Message], answer: str) -> str:
     return "No tool result is available; completion is not verified." if tool_activity else answer
 
 
-async def _resolve_web_answer(provider, answer, messages, tools, conversation_id, prompt):
+async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversation_id, prompt):
     """Repair a failed model response once; OpenClaw alone executes tools."""
     call, visible = _extract_tool_call(answer, tools)
     def violates_explicit_gui_constraint(candidate):
@@ -373,6 +373,15 @@ async def _resolve_web_answer(provider, answer, messages, tools, conversation_id
     if not call:
         visible = _clean_renderer_artifacts(visible)
     return call, visible
+
+
+async def _resolve_web_answer(provider, answer, messages, tools, conversation_id, prompt):
+    """Compatibility wrapper; new callers use ToolCallRecovery directly."""
+    from .recovery import ToolCallRecovery
+
+    return await ToolCallRecovery().resolve(
+        provider, answer, messages, tools, conversation_id, prompt
+    )
 
 
 def _clean_renderer_artifacts(answer: str) -> str:

@@ -32,3 +32,7 @@ class PolicyLayerTests(unittest.TestCase):
 
     def test_recovery_has_independent_provider_boundary(self):
         self.assertTrue(hasattr(ToolCallRecovery(), "resolve"))
+
+    def test_legacy_protocol_name_is_not_recovery_entrypoint(self):
+        from webbridgefreeride.providers.protocol import _legacy_resolve_web_answer
+        self.assertTrue(callable(_legacy_resolve_web_answer))

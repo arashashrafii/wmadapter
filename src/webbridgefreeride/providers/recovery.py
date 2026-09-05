@@ -20,8 +20,8 @@ class ToolCallRecovery:
         conversation_id: str | None,
         prompt: str,
     ) -> tuple[dict[str, Any] | None, str]:
-        from .protocol import _resolve_web_answer
+        from .protocol import _legacy_resolve_web_answer
 
-        return await _resolve_web_answer(
+        return await _legacy_resolve_web_answer(
             provider, answer, messages, tools, conversation_id, prompt
         )
