@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .protocol import _image_attachments, _prompt, _resolve_web_answer
+from .protocol import _image_attachments, _prompt
+from .recovery import ToolCallRecovery
 
 
 class WebChatTextAdapter:
@@ -15,4 +16,6 @@ class WebChatTextAdapter:
         return _image_attachments(messages)
 
     async def resolve(self, provider, answer: str, messages, tools, conversation_id, prompt):
-        return await _resolve_web_answer(provider, answer, messages, tools, conversation_id, prompt)
+        return await ToolCallRecovery().resolve(
+            provider, answer, messages, tools, conversation_id, prompt
+        )

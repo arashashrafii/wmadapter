@@ -17,6 +17,8 @@ The client agent owns tool execution and sends the result on its next request.
 - providers/protocol holds shared prompt, marker parsing and recovery behavior.
 - providers/webchat_adapter.py is the provider translation interface; DeepSeek
   and Qwen select explicit provider-owned protocol adapter classes.
+- providers/recovery.py is the provider-neutral recovery boundary. Its current
+  implementation delegates to the legacy protocol for rollback safety.
 - service.py owns DeepSeek/Qwen lifecycle, locks, retries and conversations.
   Provider chat/login/selectors retain site-specific DOM code; browser/elements
   contains the common visible-element lookup and BrowserManager owns profiles.
