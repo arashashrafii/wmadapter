@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["httpx>=0.28,<1.0"]
+test = ["httpx2>=2.0,<3.0"]
 
 [project.scripts]
 webbridgefreeride = "webbridgefreeride.__main__:main"

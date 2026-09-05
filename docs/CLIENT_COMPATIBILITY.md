@@ -25,7 +25,9 @@ used. These checks establish transport compatibility, not Web model quality.
 
 ## Repeat the tests
 
-Install the Python test extra and run from the repository root:
+Install the Python test extra and run from the repository root. The test client
+used by the supported Starlette release requires `httpx2`, which this extra
+installs:
 
 ```sh
 .venv/bin/python -m pip install -e '.[test]'
