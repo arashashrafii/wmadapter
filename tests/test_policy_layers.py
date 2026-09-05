@@ -29,6 +29,8 @@ class PolicyLayerTests(unittest.TestCase):
         prompt = _prompt(messages, tools=[{"type": "function", "function": {"name": "computer"}}],
                          client_policy=ClientPolicy.GENERIC)
         self.assertNotIn("OPENCLAW DOCUMENTATION POLICY", prompt)
+        self.assertNotIn("OPENCLAW CAPABILITY CHECK", prompt)
+        self.assertNotIn("DESKTOP GUI POLICY", prompt)
 
     def test_recovery_has_independent_provider_boundary(self):
         self.assertTrue(hasattr(ToolCallRecovery(), "resolve"))

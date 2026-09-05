@@ -27,3 +27,20 @@ def detect_client_policy(messages: list[Any], tools: list[dict[str, Any]] | None
     )
     markers = ("openclaw", "computer.act", "screen.snapshot", "openclaw plugin", "openclaw skill")
     return ClientPolicy.OPENCLAW if any(marker in text for marker in markers) else ClientPolicy.GENERIC
+
+
+_OPENCLAW_HEADINGS = (
+    "OPENCLAW CAPABILITY POLICY:", "OPENCLAW DOCUMENTATION POLICY:",
+    "RESEARCH-ACTION-VERIFICATION LOOP:", "OPENCLAW CAPABILITY CHECK:",
+    "SELF-REMEDIATION:", "DESKTOP GUI POLICY:", "APPLICATION VERIFICATION EXAMPLE:",
+    "PENDING TOOL RESULTS:", "MANDATORY FOLLOW-UP:", "STRUCTURED TOOL CALLS:",
+    "LAUNCH ORDER:", "BROWSER TOOL SHAPE:", "SELF-CORRECTION WORKFLOW:",
+)
+
+
+def strip_openclaw_instructions(prompt: str) -> str:
+    """Remove legacy client policy paragraphs from a generic request."""
+    return "\n\n".join(
+        part for part in prompt.split("\n\n")
+        if not part.startswith(_OPENCLAW_HEADINGS)
+    )

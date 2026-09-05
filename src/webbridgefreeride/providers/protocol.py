@@ -7,7 +7,7 @@ import re
 import uuid
 from typing import Any
 from .contract import Message
-from .policy import ClientPolicy, detect_client_policy
+from .policy import ClientPolicy, detect_client_policy, strip_openclaw_instructions
 
 def _content_text(content: Any) -> str:
     if isinstance(content, str):
@@ -228,7 +228,10 @@ def _prompt(messages: list[Message], system_prompt: str = "", tools: list[dict[s
                 "FINAL TOOL PROTOCOL: A tool result is already available above. "
                 "Use it to answer the user; call another tool only if the result is insufficient."
             )
-    return "\n\n".join(lines)
+    result = "\n\n".join(lines)
+    if client_policy is ClientPolicy.GENERIC:
+        result = strip_openclaw_instructions(result)
+    return result
 
 
 def _is_title_request(messages: list[Message]) -> bool:
