@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 
 from .browser.manager import BrowserManager
 from .providers.base import ChatProvider
+from .providers.contract import ModelCapabilities
 from .providers.deepseek.chat import DeepSeekChat
 from .providers.deepseek.login import DeepSeekLogin
 from .providers.qwen.chat import QwenChat
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class DeepSeekService(ChatProvider):
     name = "deepseek"
+    capabilities = ModelCapabilities(image_input=True)
 
     def __init__(self, config: dict):
         browser_cfg = config["browser"]

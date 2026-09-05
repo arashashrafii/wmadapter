@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from .contract import ModelCapabilities, ProviderRequest, ProviderResult
 from collections.abc import AsyncIterator
 
 
 class ChatProvider(ABC):
     name: str
+    capabilities = ModelCapabilities()
+
+    async def infer(self, request: ProviderRequest) -> ProviderResult:
+        """V2 entrypoint; existing V1 subclasses need no new methods."""
+        from .legacy import infer_legacy
+        return await infer_legacy(self, request)
+
+    async def stream_infer(self, request: ProviderRequest) -> AsyncIterator[ProviderResult]:
+        """Buffered normalized result; incremental providers may override."""
+        yield await self.infer(request)
+
 
     @abstractmethod
     async def start(self) -> None:
