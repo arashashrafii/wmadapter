@@ -52,9 +52,12 @@ openclaw plugins install --link "$PWD/openclaw-plugin" --force
 openclaw plugins enable webbridgefreeride-openclaw
 ```
 
-Each OpenClaw session maps to a separate browser conversation. Deleting an
-OpenClaw session releases its local browser page; deleting the remote DeepSeek
-conversation still depends on DeepSeek's web UI.
+Each OpenClaw session maps to a separate browser conversation. When the
+OpenClaw cleanup plugin receives a session-deleted event, WebBridge uses the
+DeepSeek Web UI to delete the matching remote conversation before closing its
+local browser page. Deleting all OpenClaw sessions therefore deletes each
+matching DeepSeek conversation; unrelated DeepSeek conversations are never
+selected.
 
 For OpenClaw, configure the model as `webbridge/deepseek-chat`. The bridge
 passes OpenClaw's tool definitions to DeepSeek Web in a strict text protocol and

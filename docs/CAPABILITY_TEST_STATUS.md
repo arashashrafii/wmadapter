@@ -24,11 +24,11 @@ Status meanings:
 | 6 | Independent sessions and memory | TODO | Must prove session isolation and memory read/write behavior. |
 | 7 | Multiple agents and delegation | TODO | Must create/delegate to an agent and verify the returned result. |
 | 8 | Skills and persistent workflows | TODO | Must invoke a matching skill and verify its workflow is followed. |
-| 9 | Plugins and added capabilities | TODO | Must verify plugin discovery/activation and one plugin-provided capability. |
-| 10 | Scheduling (cron, heartbeat, automation) | TODO | Must create a harmless test schedule, observe one execution, then clean it up. |
-| 11 | Messaging channels | TODO | Must test only configured/authorized channels; record unavailable channels separately. |
-| 12 | Mobile/node camera, screen, and voice | TODO | Requires a paired node; currently no paired node is recorded. |
-| 13 | Access control, sandbox, and command approval | TODO | Must verify policy boundaries and approval behavior without weakening security. |
+| 9 | Plugins and added capabilities | DONE | The OpenClaw `duckduckgo` plugin is installed, loaded, and selected as the enabled web-search provider. A Web UI agent test completed successfully using `web_search` with no tool failures and returned two Python.org links. |
+| 10 | Scheduling (cron, heartbeat, automation) | DONE | OpenClaw 2026.8.1 executed a one-shot command job at its scheduled time (`TEST10_CRON_OK`); the delete-after-run job was disabled after success. Existing heartbeat and cron jobs also report successful last runs. Delivery was not requested for the test and Telegram fallback has no configured chatId. |
+| 11 | Messaging channels | BLOCKED | Telegram is configured, but OpenClaw reports its account as `not-running/recovering` with `channel stop timed out after 5000ms`; no authorized destination was available for a real message test. Discord and Slack are not configured. |
+| 12 | Mobile/node camera, screen, and voice | BLOCKED | OpenClaw `nodes status`, `nodes list`, and `nodes pending` all returned empty results; no paired or pending mobile/node is available for camera, screen, or voice testing. |
+| 13 | Access control, sandbox, and command approval | PARTIAL | Read-only policy checks completed: approvals have no pending requests; effective exec policy is `security=full`, `ask=off`, `askFallback=deny`; main and test agent sandbox mode is `off` with channel/node tools denied. Security audit found one critical unallowlisted extension and warnings for unsandboxed runtime/filesystem access and missing trusted proxies. Interactive approval behavior remains unverified. |
 
 ## Execution protocol
 
@@ -62,4 +62,22 @@ Status meanings:
   step02-patch-retry-20260902.
 - Capability 3: OpenClaw browser login and Atimode account-page verification
   performed on 2026-09-02.
+- Capability 10: OpenClaw one-shot cron job `test10-one-shot-20260903` ran
+  successfully on 2026-09-03 with output `TEST10_CRON_OK`; run history was
+  verified and the one-shot job was disabled after execution.
+- Capability 9: OpenClaw plugin inspection confirmed `duckduckgo` is loaded and
+  selected by `tools.web.search.provider`. Session
+  `agent:main:test-live-search-20260904` completed a live `web_search` call
+  successfully and returned two Python.org links.
+- Capability 11: `channels list --json` found only the configured Telegram
+  account; `channels status --json` reported it as not running/recovering, so
+  no external message was sent. Discord and Slack are unavailable.
+- Capability 12: `nodes status`, `nodes list`, and `nodes pending` returned no
+  nodes or pairing requests. The available camera and screen commands require
+  a paired node, so media/node testing is blocked pending pairing.
+- Capability 13: Read-only `approvals get/pending`, `exec-policy show`, and
+  `sandbox explain --agent main` checks completed. No approval was pending;
+  sandbox mode is off and the effective policy has `ask=off`. `security audit`
+  reported one critical `plugins.allow` finding plus two warnings. No security
+  remediation or policy change was applied.
 - Unit contract coverage: tests/test_openclaw_compat.py.

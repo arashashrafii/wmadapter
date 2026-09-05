@@ -6,6 +6,22 @@ CHAT_INPUTS = [
     "textarea.d96f2d2a",
 ]
 
+FILE_INPUTS = [
+    'input[type="file"]',
+]
+
+ATTACH_BUTTONS = [
+    'button[aria-label*="Attach"]',
+    'button[aria-label*="Upload"]',
+    '[role="button"][aria-label*="Attach"]',
+    '[role="button"][aria-label*="Upload"]',
+]
+
+SEND_BUTTONS = [
+    '[role="button"].ds-button--primary:not(.ds-button--disabled)',
+    'button[type="submit"]:not([disabled])',
+]
+
 RESPONSE_BLOCKS = [
     ".ds-markdown",
     "[class*='ds-markdown']",

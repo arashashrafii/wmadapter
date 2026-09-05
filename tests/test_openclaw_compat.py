@@ -10,6 +10,7 @@ from webbridgefreeride.main import (
     _clean_renderer_artifacts,
     _extract_tool_call,
     _fallback_after_tool,
+    _image_attachments,
     _prompt,
     _sse,
 )
@@ -21,6 +22,19 @@ EXEC_TOOL = [{
         "name": "exec",
         "description": "Run a command",
         "parameters": {"type": "object", "properties": {"command": {"type": "string"}}},
+    },
+}]
+
+SHOW_WIDGET_TOOL = [{
+    "type": "function",
+    "function": {
+        "name": "show_widget",
+        "description": "Show a visual widget",
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string"},
+            "widget_code": {"type": "string"},
+            "kind": {"type": "string"},
+        }},
     },
 }]
 
@@ -45,6 +59,36 @@ class OpenClawCompatibilityTests(unittest.TestCase):
         self.assertEqual(request.messages[0].sender, "owner")
         self.assertEqual(request.metadata["session"], "agent:main:test")
 
+    def test_only_inline_images_are_forwarded_for_web_upload(self):
+        inline = "data:image/png;base64,Zm9v"
+        attachments = _image_attachments([
+            Message(role="user", content=[
+                {"type": "text", "text": "describe it"},
+                {"type": "image_url", "image_url": {"url": inline}},
+                {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}},
+            ])
+        ])
+        self.assertEqual(attachments, [inline])
+
+    def test_openclaw_image_data_attachment_is_normalized_for_web_upload(self):
+        attachments = _image_attachments([
+            Message(role="user", content={
+                "type": "image",
+                "mimeType": "image/webp",
+                "data": "Zm9v",
+            })
+        ])
+        self.assertEqual(attachments, ["data:image/webp;base64,Zm9v"])
+
+    def test_nested_openclaw_media_part_is_forwarded(self):
+        inline = "data:image/jpeg;base64,Zm9v"
+        attachments = _image_attachments([
+            Message(role="user", content="describe", media={
+                "parts": [{"type": "image_url", "image_url": {"url": inline}}]
+            })
+        ])
+        self.assertEqual(attachments, [inline])
+
     def test_assistant_tool_calls_and_tool_results_round_trip_into_prompt(self):
         messages = [
             Message(role="user", content="Check status"),
@@ -66,6 +110,118 @@ class OpenClawCompatibilityTests(unittest.TestCase):
         self.assertIn("plugins provide extra tools", prompt)
         self.assertIn("Never claim that a task was completed", prompt)
 
+    def test_prompt_requires_evidence_driven_self_correction_loop(self):
+        prompt = _prompt([Message(role="user", content="Create and verify a project")], tools=EXEC_TOOL)
+        self.assertIn("ACTION -> OBSERVE RESULT -> VERIFY", prompt)
+        self.assertIn("If verification fails, correct the action and try again", prompt)
+        self.assertIn("Never report an application opened without observable evidence", prompt)
+
+    def test_prompt_requires_verification_after_file_or_app_changes(self):
+        prompt = _prompt([Message(role="user", content="Open the generated project in VS Code")], tools=EXEC_TOOL)
+        self.assertIn("After creating, editing, deleting, or opening something", prompt)
+        self.assertIn("inspect or query the resulting state before claiming success", prompt)
+
+    def test_prompt_requires_real_vscode_workspace_evidence(self):
+        prompt = _prompt([Message(role="user", content="Open the project in VS Code")], tools=EXEC_TOOL)
+        self.assertIn("For VS Code, use `code --status`", prompt)
+        self.assertIn("Workspace Stats", prompt)
+        self.assertIn("`code --list-extensions` is not proof", prompt)
+
+    def test_prompt_continues_when_command_output_is_pending(self):
+        prompt = _prompt([Message(role="user", content="Verify the application")], tools=EXEC_TOOL)
+        self.assertIn("Command still running", prompt)
+        self.assertIn("poll or retrieve its final output", prompt)
+        self.assertIn("Do not treat a pending command as failure or success", prompt)
+
+    def test_prompt_forbids_narrating_a_missing_verification_step(self):
+        prompt = _prompt([Message(role="user", content="Finish the verification")], tools=EXEC_TOOL)
+        self.assertIn("If evidence is missing, emit the next tool call now", prompt)
+        self.assertIn("Do not merely say that you will verify", prompt)
+
+    def test_prompt_forbids_using_bash_code_as_a_tool_call(self):
+        prompt = _prompt([Message(role="user", content="Run a command")], tools=EXEC_TOOL)
+        self.assertIn("Never use a Bash/code block as a substitute for a tool call", prompt)
+        self.assertIn("Do not recommend or execute destructive commands", prompt)
+
+    def test_prompt_does_not_trust_stale_history_as_tool_evidence(self):
+        prompt = _prompt([Message(role="user", content="Open the application")], tools=EXEC_TOOL)
+        self.assertIn("Treat prior assistant claims, PIDs, and suggested commands as unverified history", prompt)
+        self.assertIn("For the current user request, emit the tool call before any explanation", prompt)
+
+    def test_prompt_requires_launch_before_verification_for_open_requests(self):
+        prompt = _prompt([Message(role="user", content="Open VS Code")], tools=EXEC_TOOL)
+        self.assertIn("Research and capability checks may precede an authorized launch", prompt)
+        self.assertIn("A status or `which` check alone does not perform the requested launch", prompt)
+
+    def test_prompt_requires_real_desktop_control_for_gui_requests(self):
+        computer_tools = EXEC_TOOL + [{
+            "type": "function",
+            "function": {
+                "name": "computer",
+                "description": "See and control the desktop UI",
+                "parameters": {"type": "object"},
+            },
+        }]
+        prompt = _prompt(
+            [Message(role="user", content="Open VLC with its graphical interface and press Play")],
+            tools=computer_tools,
+        )
+        self.assertIn("DESKTOP GUI POLICY", prompt)
+        self.assertIn("computer", prompt)
+        self.assertIn("Do not substitute cvlc", prompt)
+        self.assertIn("screen.snapshot", prompt)
+
+    def test_prompt_reports_missing_gui_capability_instead_of_faking_success(self):
+        prompt = _prompt(
+            [Message(role="user", content="Click the Play button in VLC")],
+            tools=EXEC_TOOL,
+        )
+        self.assertIn("and no `computer` tool is listed", prompt)
+        self.assertIn("do not claim GUI control", prompt)
+
+    def test_prompt_requires_verified_openclaw_capability_and_command_usage(self):
+        prompt = _prompt([Message(role="user", content="Set up desktop control")], tools=EXEC_TOOL)
+        self.assertIn("OPENCLAW CAPABILITY CHECK", prompt)
+        self.assertIn("verify the exact command", prompt)
+        self.assertIn("Do not guess or present an unverified command", prompt)
+        self.assertIn("Every user request that asks for an action must end", prompt)
+
+    def test_prompt_requires_self_remediation_before_reporting_a_blocker(self):
+        prompt = _prompt([Message(role="user", content="Make desktop control work")], tools=EXEC_TOOL)
+        self.assertIn("SELF-REMEDIATION", prompt)
+        self.assertIn("attempt safe remediation", prompt)
+        self.assertIn("Before reporting a blocker", prompt)
+        self.assertIn("verify that remediation changed the capability", prompt)
+
+    def test_openclaw_requests_require_official_docs_research(self):
+        prompt = _prompt(
+            [Message(role="user", content="How do I fix the OpenClaw node and plugin setup?")],
+            tools=EXEC_TOOL,
+        )
+        self.assertIn("OPENCLAW DOCUMENTATION POLICY", prompt)
+        self.assertIn("https://docs.openclaw.ai/", prompt)
+        self.assertIn("search the official documentation", prompt)
+        self.assertIn("Do not rely on memory", prompt)
+
+    def test_openclaw_requests_use_research_action_verify_loop(self):
+        prompt = _prompt(
+            [Message(role="user", content="Enable OpenClaw desktop control and test it")],
+            tools=EXEC_TOOL,
+        )
+        self.assertIn("RESEARCH-ACTION-VERIFICATION LOOP", prompt)
+        self.assertIn("return the research result", prompt)
+        self.assertIn("send the verified action", prompt)
+        self.assertIn("retry with a corrected action", prompt)
+        self.assertIn("Google search only as a fallback", prompt)
+
+    def test_all_requests_use_evidence_and_consistency_loop(self):
+        prompt = _prompt([Message(role="user", content="What is the safest answer?" )], tools=EXEC_TOOL)
+        self.assertIn("UNIVERSAL RELIABILITY LOOP", prompt)
+        self.assertIn("decompose the question", prompt)
+        self.assertIn("cross-check calculations", prompt)
+        self.assertIn("Never invent facts", prompt)
+        self.assertIn("state uncertainty", prompt)
+
     def test_browser_prompt_documents_fill_shape(self):
         browser_tool = [{"type": "function", "function": {"name": "browser"}}]
         prompt = _prompt([Message(role="user", content="Log in")], tools=browser_tool)
@@ -81,6 +237,40 @@ class OpenClawCompatibilityTests(unittest.TestCase):
         self.assertEqual(call["function"]["name"], "exec")
         self.assertEqual(json.loads(call["function"]["arguments"]), {"command": "pwd"})
         self.assertEqual(visible, "")
+
+    def test_action_input_tool_call_compatibility_is_structured_and_allowlisted(self):
+        call, visible = _extract_tool_call(
+            'Action: exec\nAction Input: {"command":"pwd"}',
+            EXEC_TOOL,
+        )
+        self.assertEqual(call["function"]["name"], "exec")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {"command": "pwd"})
+        self.assertEqual(visible, "")
+
+    def test_action_input_unknown_tool_is_not_executed(self):
+        call, visible = _extract_tool_call(
+            'Action: rm_everything\nAction Input: {}',
+            EXEC_TOOL,
+        )
+        self.assertIsNone(call)
+        self.assertIn("Action: rm_everything", visible)
+
+    def test_show_widget_tool_call_is_forwarded_only_when_structured(self):
+        call, visible = _extract_tool_call(
+            '<tool_call>{"name":"show_widget","arguments":{"title":"Chart","widget_code":"<svg></svg>","kind":"html"}}</tool_call>',
+            SHOW_WIDGET_TOOL,
+        )
+        self.assertEqual(call["function"]["name"], "show_widget")
+        self.assertEqual(json.loads(call["function"]["arguments"])["kind"], "html")
+        self.assertEqual(visible, "")
+
+    def test_show_widget_markup_in_plain_text_is_not_executed(self):
+        call, visible = _extract_tool_call(
+            '<show_widget>{"title":"Chart","widget_code":"<svg></svg>"}</show_widget>',
+            SHOW_WIDGET_TOOL,
+        )
+        self.assertIsNone(call)
+        self.assertIn("show_widget", visible)
 
     def test_legacy_tool_call_is_supported(self):
         call, visible = _extract_tool_call(
@@ -146,7 +336,7 @@ class OpenClawCompatibilityTests(unittest.TestCase):
         }])]
         self.assertEqual(
             _fallback_after_tool(messages, ""),
-            "The requested tool completed, but no output was returned.",
+            "No tool result is available; completion is not verified.",
         )
 
     def test_renderer_labels_are_removed_from_tool_result_text(self):
@@ -178,7 +368,7 @@ class OpenClawCompatibilityTests(unittest.TestCase):
 
     def test_persian_and_markdown_content_remain_unchanged(self):
         content = "# پاسخ\n\nسلام ایران 🇮🇷\n\n```python\nprint('ok')\n```"
-        self.assertEqual(_prompt([Message(role="user", content=content)]), f"USER: {content}")
+        self.assertTrue(_prompt([Message(role="user", content=content)]).startswith(f"USER: {content}"))
 
     def test_conversation_history_is_kept_in_order(self):
         prompt = _prompt([

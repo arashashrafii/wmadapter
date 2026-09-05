@@ -1,0 +1,138 @@
+{
+  "traceSchema": "openclaw-trajectory",
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-05T06:52:42.852Z",
+  "traceId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
+  "sessionId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
+  "sessionKey": "agent:main:webbridge-recovery-live-20260905",
+  "finalStatus": "interrupted",
+  "aborted": true,
+  "externalAbort": false,
+  "timedOut": true,
+  "idleTimedOut": false,
+  "timedOutDuringCompaction": false,
+  "timedOutDuringToolExecution": false,
+  "timedOutByRunBudget": true,
+  "promptError": "request timed out",
+  "promptErrorSource": "compaction",
+  "compactionCount": 0,
+  "assistantTexts": [],
+  "finalPromptText": "می‌خواهم بتوانی VLC را روی دسکتاپ من باز کنی و با رابط آن کار کنی. مشکل فعلی را خودت پیدا کن و با مراجعه به منابع معتبر برای حل آن پیش برو. نتیجه را واقعاً آزمایش کن؛ اگر مجوز مشخصی از من لازم است همان را بپرس. اطلاعات و حساب‌ها را حذف نکن.",
+  "itemLifecycle": {
+    "startedCount": 30,
+    "completedCount": 30,
+    "activeCount": 0
+  },
+  "toolMetas": [
+    {
+      "toolName": "exec",
+      "meta": "which vlc && pgrep -a vlc (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_627b40eedd5d4db288cf29f24077ed49",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "vlc --intf rc --rc-host localhost:8080 --no-video-title-show --play-and-exit --no-qt --no-qt-privacy-ask (agent) · pty",
+      "replaySafe": false,
+      "toolCallId": "call_499f3673e4f34438a9f3ce38ae390338",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "print text -> run nc localhost (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_14923b79d7c546c4ab2ac5d69a762d61",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "print text -> run nc localhost (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_e136c1ef51c24e6389fbcb32db970d49",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "print text -> run vlc rc (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_9bee33f2cb8f43698b3483ef1ca26b41",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "ss -tulpn | grep -E '8080|vlc' (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_eef75714240c44078fa546a09f6344fa",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "print text -> run socat (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_98d3fd5c54764db8af1f64f12896e6c2",
+      "isError": true
+    },
+    {
+      "toolName": "exec",
+      "meta": "print text -> run telnet localhost (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_a2dd247c911d4869b3bacd7be26b20af",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "ps aux | grep -E 'vlc|707172' | grep -v grep (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_191104b8a07a4323ae8101a23c3c1d1d",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "print text -> run nc 0 → print text (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_8346378aba24478a9da35608927da64e",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "vlc --intf rc --rc-host localhost:9999 --no-video-title-sho…vacy-ask /usr/share/vlc/samples/elephant.mpg 2>&1 | head -20 (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_2cc1ac5fcfae4eaeb979a8ec297c0eae",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "vlc --intf rc --rc-host localhost:9999 --no-video-title-sho…mkv' -o -name '*.mpg' 2>/dev/null | head -1) 2>&1 | head -10 (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_14bd3870c4db4d6983086bcd8e0bda0c",
+      "isError": true
+    },
+    {
+      "toolName": "exec",
+      "meta": "find files named \".mp4\" in /usr -> show first 3 lines (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_279c2458312444b49fbef7b942081dfa",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "vlc --intf rc --rc-host localhost:9999 --play-and-exit /usr…owser/media/cursor-logo-for-light-theme.webm 2>&1 | head -20 (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_ec91cfa30501489089c2da4612e9dc18",
+      "isError": false
+    },
+    {
+      "toolName": "exec",
+      "meta": "print text -> run nc localhost (agent)",
+      "replaySafe": false,
+      "toolCallId": "call_efd6bf641fd448809a0bbc650743868b",
+      "isError": false
+    }
+  ],
+  "didSendViaMessagingTool": false,
+  "successfulCronAdds": 0,
+  "messagingToolSentTexts": [],
+  "messagingToolSentMediaUrls": [],
+  "messagingToolSentTargets": []
+}

@@ -1,7 +1,7 @@
 {
   "id": "webbridgefreeride-openclaw",
   "name": "WebBridge FreeRide cleanup",
-  "description": "Release WebBridge browser sessions when OpenClaw sessions are deleted.",
+  "description": "Delete matching DeepSeek Web conversations when OpenClaw sessions are deleted.",
   "activation": { "onStartup": true },
   "configSchema": { "type": "object", "additionalProperties": false }
 }

@@ -29,8 +29,9 @@ It is not the paid DeepSeek API.
   browser/action=act/kind=fill arguments from top-level ref/text into
   OpenClaw's required fields array.
 - User-level systemd service support in install.sh and uninstall.sh.
-- Optional openclaw-plugin cleanup plugin for releasing local pages when
-  OpenClaw sessions are deleted.
+- Optional openclaw-plugin cleanup plugin for deleting the matching DeepSeek
+  Web conversation through its UI before releasing the local page when an
+  OpenClaw session is deleted.
 
 ## Verified tests
 

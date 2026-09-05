@@ -1,0 +1,263 @@
+{
+  "traceSchema": "openclaw-trajectory",
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-05T06:52:42.851Z",
+  "traceId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
+  "sessionId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
+  "sessionKey": "agent:main:webbridge-recovery-live-20260905",
+  "harness": {
+    "type": "openclaw",
+    "name": "OpenClaw",
+    "version": "2026.8.1",
+    "os": {
+      "platform": "linux",
+      "arch": "x64",
+      "release": "7.0.0-31-generic",
+      "label": "linux 7.0.0-31-generic (x64)"
+    },
+    "runtime": {
+      "node": "v24.18.1"
+    },
+    "invocation": [
+      "/usr/local/bin/node",
+      "~/.npm-global/lib/node_modules/openclaw/dist/index.js",
+      "gateway",
+      "--port",
+      "18789"
+    ],
+    "entrypoint": "~/.npm-global/lib/node_modules/openclaw/dist/index.js",
+    "workspaceDir": "$OPENCLAW_STATE_DIR/workspace",
+    "sessionFile": "~/agent:main:webbridge-recovery-live-20260905"
+  },
+  "model": {
+    "provider": "webbridge",
+    "name": "deepseek-chat",
+    "api": "openai-completions",
+    "fastMode": false,
+    "thinkLevel": "off",
+    "reasoningLevel": "off"
+  },
+  "config": {
+    "redacted": {
+      "meta": {
+        "lastTouchedVersion": "2026.8.1",
+        "migrations": {
+          "modelPolicyAllowlist": true
+        }
+      },
+      "wizard": {
+        "lastRunAt": "2026-08-31T11:51:41.802Z",
+        "lastRunVersion": "2026.8.1",
+        "lastRunCommand": "doctor",
+        "lastRunMode": "local"
+      },
+      "ui": {
+        "prefs": {
+          "sidebarEntries": [
+            "route:sessions"
+          ]
+        }
+      },
+      "auth": {
+        "profiles": {
+          "webbridge:default": {
+            "provider": "webbridge",
+            "mode": "api_key"
+          }
+        }
+      },
+      "models": {
+        "mode": "merge",
+        "providers": {
+          "free-127-0-0-1-11343": {
+            "baseUrl": "http://127.0.0.1:11343/v1",
+            "api": "openai-completions",
+            "models": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "webbridge": {
+            "baseUrl": "http://127.0.0.1:11556/v1",
+            "auth": "api-key",
+            "models": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          }
+        }
+      },
+      "agents": {
+        "ownership": "explicit",
+        "defaults": {
+          "model": {
+            "primary": "webbridge/deepseek-chat",
+            "fallbacks": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "models": {
+            "free-127-0-0-1-11343/openrouter/free": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "openrouter/nvidia/nemotron-3.5-lightning:free": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "openrouter/free": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "openrouter/google/gemma-4-26b-a4b-it:free": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "webbridge/deepseek-chat": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "webbridge/deepseek-reasoner": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "webbridge/qwen-chat": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "modelPolicy": {
+            "allow": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "workspace": "$OPENCLAW_STATE_DIR/workspace",
+          "compaction": {
+            "mode": "safeguard"
+          },
+          "heartbeat": {
+            "agentId": "main"
+          },
+          "systemAgent": {
+            "agentId": "main"
+          },
+          "maxConcurrent": 8,
+          "subagents": {
+            "allowAgents": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "maxConcurrent": 8,
+            "archiveAfterMinutes": 60
+          }
+        },
+        "entries": {
+          "main": {
+            "workspace": "$OPENCLAW_STATE_DIR/workspace",
+            "subagents": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "test7-agent-20260903": {
+            "name": "test7-agent-20260903",
+            "workspace": "/tmp/openclaw-test7-agent-20260903",
+            "agentDir": "$OPENCLAW_STATE_DIR/agents/test7-agent-20260903/agent",
+            "model": "webbridge/deepseek-chat",
+            "identity": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          }
+        }
+      },
+      "tools": {
+        "profile": "coding",
+        "alsoAllow": [
+          "group:ui",
+          "group:plugins",
+          "group:nodes",
+          "group:messaging",
+          "group:media",
+          "group:agents",
+          "group:automation"
+        ],
+        "web": {
+          "search": {
+            "enabled": true,
+            "provider": "duckduckgo"
+          }
+        },
+        "loopDetection": {
+          "enabled": true
+        }
+      },
+      "bindings": [
+        {
+          "agentId": "main",
+          "match": {
+            "channel": "telegram",
+            "accountId": "*"
+          }
+        }
+      ],
+      "messages": {
+        "ackReactionScope": "group-mentions"
+      },
+      "commands": {
+        "native": "auto",
+        "nativeSkills": "auto",
+        "restart": true
+      },
+      "session": {
+        "dmScope": "per-channel-peer"
+      },
+      "hooks": {
+        "internal": {
+          "enabled": true,
+          "entries": {
+            "boot-md": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          }
+        }
+      },
+      "channels": {
+        "telegram": "[Truncated]"
+      },
+      "talk": "[Truncated]",
+      "gateway": "[Truncated]",
+      "skills": "[Truncated]",
+      "plugins": "[Truncated]"
+    },
+    "runtime": "[Truncated]"
+  },
+  "plugins": "[Truncated]",
+  "skills": "[Truncated]",
+  "prompting": "[Truncated]",
+  "redaction": "[Truncated]",
+  "metadata": "[Truncated]"
+}

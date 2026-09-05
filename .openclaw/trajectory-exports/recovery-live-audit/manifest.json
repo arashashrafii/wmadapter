@@ -1,0 +1,53 @@
+{
+  "traceSchema": "openclaw-trajectory",
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-05T06:52:42.851Z",
+  "traceId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
+  "sessionId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
+  "sessionKey": "agent:main:webbridge-recovery-live-20260905",
+  "workspaceDir": "$WORKSPACE_DIR",
+  "leafId": "f13c67cb-3899-4886-b85d-9930d3d36a9b",
+  "eventCount": 58,
+  "runtimeEventCount": 7,
+  "transcriptEventCount": 51,
+  "sourceFiles": {
+    "session": "agent:…0905"
+  },
+  "supplementalFiles": [
+    "metadata.json",
+    "artifacts.json",
+    "prompts.json"
+  ],
+  "contents": [
+    {
+      "path": "metadata.json",
+      "mediaType": "application/json",
+      "bytes": 7197
+    },
+    {
+      "path": "artifacts.json",
+      "mediaType": "application/json",
+      "bytes": 4842
+    },
+    {
+      "path": "prompts.json",
+      "mediaType": "application/json",
+      "bytes": 1194
+    },
+    {
+      "path": "events.jsonl",
+      "mediaType": "application/x-ndjson",
+      "bytes": 82779
+    },
+    {
+      "path": "session-branch.json",
+      "mediaType": "application/json",
+      "bytes": 12630
+    },
+    {
+      "path": "tools.json",
+      "mediaType": "application/json",
+      "bytes": 11705
+    }
+  ]
+}

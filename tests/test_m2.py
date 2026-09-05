@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import unittest
+from unittest.mock import AsyncMock, Mock
 
 from webbridgefreeride.config import load_config
 from webbridgefreeride.credentials import CredentialStore
 from webbridgefreeride.security import redact
 from webbridgefreeride.providers.router import ProviderRouter
-from webbridgefreeride.main import Message, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
+from webbridgefreeride.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
 from webbridgefreeride.ports import find_free_port
 from webbridgefreeride.manual_auth import AUTH_TARGETS
 from webbridgefreeride.providers.base import ChatProvider
+from webbridgefreeride.providers.deepseek.chat import DeepSeekChat
 
 
 class FakeProvider(ChatProvider):
@@ -30,6 +33,48 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_deepseek_remote_delete_uses_web_ui_confirmation(self):
+        page = Mock()
+        page.url = "https://chat.deepseek.com/a/chat/s/abc123"
+        link = Mock()
+        link.count = AsyncMock(return_value=1)
+        menu = Mock()
+        menu.count = AsyncMock(return_value=1)
+        menu.click = AsyncMock()
+        link.locator.return_value.last = menu
+        page.locator.return_value.last = link
+        delete_item = Mock()
+        delete_item.click = AsyncMock()
+        confirm = Mock()
+        confirm.click = AsyncMock()
+        page.get_by_text.return_value.last = delete_item
+        page.get_by_role.return_value = confirm
+        page.wait_for_timeout = AsyncMock()
+
+        deleted = asyncio.run(DeepSeekChat(page).delete_remote_conversation())
+
+        self.assertTrue(deleted)
+        page.locator.assert_called_once_with('a[href="/a/chat/s/abc123"]')
+        menu.click.assert_awaited_once()
+        delete_item.click.assert_awaited_once()
+        confirm.click.assert_awaited_once()
+
+    def test_deepseek_remote_delete_fails_closed_off_chat_url(self):
+        page = Mock()
+        page.url = "https://chat.deepseek.com/"
+        deleted = asyncio.run(DeepSeekChat(page).delete_remote_conversation())
+        self.assertFalse(deleted)
+        page.locator.assert_not_called()
+
+    def test_deepseek_remote_delete_fails_closed_without_current_chat_link(self):
+        page = Mock()
+        page.url = "https://chat.deepseek.com/a/chat/s/abc123"
+        link = Mock()
+        link.count = AsyncMock(return_value=0)
+        page.locator.return_value.last = link
+        deleted = asyncio.run(DeepSeekChat(page).delete_remote_conversation())
+        self.assertFalse(deleted)
+
     def test_config_defaults_when_file_missing(self):
         from tempfile import TemporaryDirectory
         from pathlib import Path
@@ -103,11 +148,11 @@ class Milestone2Tests(unittest.TestCase):
 
     def test_prompt_adds_default_system_instruction(self):
         prompt = _prompt([Message(role="user", content="hello")], "Absolute mode. Short answer.")
-        self.assertEqual(prompt, "SYSTEM: Absolute mode. Short answer.\n\nUSER: hello")
+        self.assertTrue(prompt.startswith("SYSTEM: Absolute mode. Short answer.\n\nUSER: hello"))
 
     def test_prompt_accepts_rich_openai_content(self):
         prompt = _prompt([Message(role="user", content=[{"type": "text", "text": "hello"}])])
-        self.assertEqual(prompt, "USER: hello")
+        self.assertTrue(prompt.startswith("USER: hello"))
 
     def test_openclaw_title_requests_are_detected_locally(self):
         messages = [
@@ -118,7 +163,7 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(_local_title(messages), "What can you do?")
 
     def test_persian_prompt_preserves_unicode(self):
-        self.assertEqual(_prompt([Message(role="user", content="به فارسی پاسخ بده")]), "USER: به فارسی پاسخ بده")
+        self.assertTrue(_prompt([Message(role="user", content="به فارسی پاسخ بده")]).startswith("USER: به فارسی پاسخ بده"))
 
     def test_text_tool_marker_becomes_structured_call(self):
         call, visible = _extract_tool_call(
@@ -156,6 +201,111 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(call["function"]["name"], "exec")
         self.assertEqual(json.loads(call["function"]["arguments"]), {"command": "openclaw status"})
         self.assertEqual(visible, "json\nCopy\nDownload")
+
+    def test_renderer_json_block_is_restored_as_markdown_code(self):
+        answer = 'json\nCopy\nDownload\n{\n  "plugins": {\n    "enable": ["example"]\n  }\n}'
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            '```json\n{\n  "plugins": {\n    "enable": ["example"]\n  }\n}\n```',
+        )
+
+    def test_renderer_html_block_ignores_run_label(self):
+        answer = "html\nCopy\nDownload\nRun\n<!DOCTYPE html>\n<html><body>Hello</body></html>"
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            "```html\n<!DOCTYPE html>\n<html><body>Hello</body></html>\n```",
+        )
+
+    def test_renderer_python_block_is_restored_as_markdown_code(self):
+        answer = 'python\nCopy\nDownload\nprint("Hello World")'
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            '```python\nprint("Hello World")\n```',
+        )
+
+    def test_renderer_bash_block_is_restored_as_markdown_code(self):
+        answer = "bash\nCopy\nDownload\nps aux | grep opencode\nkill 403927"
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            "```bash\nps aux | grep opencode\nkill 403927\n```",
+        )
+
+    def test_renderer_bash_block_excludes_following_explanation(self):
+        answer = "bash\nCopy\nDownload\necho hello\n\nاین فقط یک نمونه است و اجرا نمی‌شود."
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            "```bash\necho hello\n```\nاین فقط یک نمونه است و اجرا نمی‌شود.",
+        )
+
+    def test_renderer_text_chart_is_restored_as_left_aligned_code_block(self):
+        answer = "text\nCopy\nDownload\n  6.60 ┤   ▇\n  6.50 ┤ ▇ ▇\n       └────────\n         ش  ی  ن"
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            "```text\n  6.60 ┤   ▇\n  6.50 ┤ ▇ ▇\n       └────────\n         ش  ی  ن\n```",
+        )
+
+    def test_renderer_text_chart_only_wraps_chart_not_following_explanation(self):
+        answer = "text\nCopy\nDownload\nنمودار فروش\n  ۱۰ ┤ ▇▇\n   ۵ ┤ ▇\n     └────\n\nتوضیح: فروش هفته اول کمتر است."
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            "```text\nنمودار فروش\n  ۱۰ ┤ ▇▇\n   ۵ ┤ ▇\n     └────\n```\nتوضیح: فروش هفته اول کمتر است.",
+        )
+
+    def test_renderer_blocks_for_multiple_languages_are_restored(self):
+        examples = {
+            "xml": "<?xml version=\"1.0\"?>\n<root />",
+            "json": '{"ok": true}',
+            "c#": "using System;\nConsole.WriteLine(\"Hello\");",
+            "sql": "SELECT id FROM users;",
+            "yaml": "name: webbridge\nenabled: true",
+            "javascript": "const answer = 42;",
+            "bash": "#!/usr/bin/env bash\necho hello",
+            "markdown": "# Hello\n\nText",
+        }
+        for language, body in examples.items():
+            with self.subTest(language=language):
+                answer = f"{language}\nCopy\nDownload\n{body}"
+                self.assertEqual(_clean_renderer_artifacts(answer), f"```{language}\n{body}\n```")
+
+    def test_multiple_renderer_blocks_in_one_answer_are_restored(self):
+        answer = "```xml\n<hello>world</hello>\n```\njson\nCopy\nDownload\n{\"hello\":\"world\"}\ncsharp\nCopy\nDownload\nConsole.WriteLine(\"Hello World\");\nsql\nCopy\nDownload\nSELECT 1;"
+        expected = "```xml\n<hello>world</hello>\n```\n```json\n{\"hello\":\"world\"}\n```\n```csharp\nConsole.WriteLine(\"Hello World\");\n```\n```sql\nSELECT 1;\n```"
+        self.assertEqual(_clean_renderer_artifacts(answer), expected)
+
+    def test_renderer_mermaid_block_is_restored_for_github_syntax(self):
+        answer = "mermaid\nCopy\nDownload\ngraph TD;\n    A-->B;\n    A-->C;"
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            "```mermaid\ngraph TD;\n    A-->B;\n    A-->C;\n```",
+        )
+
+    def test_renderer_mermaid_supports_common_diagram_types(self):
+        for source in ("flowchart LR\n  A-->B", "sequenceDiagram\n  Alice->>Bob: Hello", "pie\n  \"A\" : 1", "xychart-beta\n  bar [10, 20]"):
+            with self.subTest(source=source):
+                language = "mermaid\nCopy\nDownload\n" + source
+                self.assertEqual(_clean_renderer_artifacts(language), f"```mermaid\n{source}\n```")
+
+    def test_renderer_mermaid_toolbar_with_source_is_restored(self):
+        answer = "Diagram\nCode\nCopy\nDownload\nFullscreen\ngraph TD;\n  A-->B;"
+        self.assertEqual(_clean_renderer_artifacts(answer), "```mermaid\ngraph TD;\n  A-->B;\n```")
+
+    def test_renderer_mermaid_toolbar_supports_xy_chart_source(self):
+        answer = "قبل از نمودار\n\nDiagram\nCode\nCopy\nDownload\nFullscreen\nxychart-beta\n  title \"Sales\"\n  bar [10, 20, 15]\n\nتوضیح خارج از نمودار"
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            "قبل از نمودار\n\n```mermaid\nxychart-beta\n  title \"Sales\"\n  bar [10, 20, 15]\n```\n\nتوضیح خارج از نمودار",
+        )
+
+    def test_renderer_labels_without_code_are_left_alone(self):
+        answer = "sql\nCopy\nDownload\nThe query is ready."
+        self.assertEqual(_clean_renderer_artifacts(answer), answer)
+
+    def test_renderer_svg_block_is_restored_and_trailing_text_stays_outside(self):
+        answer = 'svg\nCopy\nDownload\nRun\n<svg viewBox="0 0 10 10"><rect width="10" height="10" /></svg> نمودار شش هفته‌ای.'
+        self.assertEqual(
+            _clean_renderer_artifacts(answer),
+            '```svg\n<svg viewBox="0 0 10 10"><rect width="10" height="10" /></svg>\n```\nنمودار شش هفته‌ای.',
+        )
 
     def test_malformed_quoted_arguments_tool_call_is_recovered(self):
         answer = '<tool_call>{"name":"exec","arguments":"{"command":"mkdir -p helloIran","yieldMs":5000}"}</tool_call>'

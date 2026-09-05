@@ -1,0 +1,312 @@
+[
+  {
+    "name": "agents_list",
+    "description": "List configured agent ids with name/model/runtime metadata, allowed as `sessions_spawn(runtime:\"subagent\")` targets.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "apply_patch",
+    "description": "Patch one/many files. Input requires *** Begin Patch and *** End Patch.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "input"
+      ],
+      "properties": {
+        "input": {
+          "type": "string",
+          "description": "Patch content using the *** Begin Patch/End Patch format."
+        }
+      }
+    }
+  },
+  {
+    "name": "ask_user",
+    "description": "Ask the human user 1-3 structured questions and wait for their answer; `multiSelect` allows picking several options and `timeoutSeconds` bounds the wait. Use only when blocked on a decision genuinely theirs that cannot be resolved from the request, code, or sensible defaults; never ask whether to proceed or confirm a plan. Ask exactly one question per call unless several answers must be submitted together; one single-select question uses native controls on supported messaging channels. Put every selectable choice in `options`, never only in the question text. Put the recommended option first and suffix its label with ` (Recommended)`. Use `multiSelect` only when the user may choose several options at once; otherwise omit it. Do not include an Other option; free text is added automatically. If the result is no_answer, continue with best judgment.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "questions"
+      ],
+      "properties": {
+        "questions": {
+          "type": "array",
+          "items": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "minItems": 1,
+          "maxItems": 3
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "description": "Maximum human wait in seconds; default 900, clamped 30-3600. Earlier run cancellation or overall run timeout still applies."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "automations",
+    "description": "[Malformed diagnostic JSON redacted]",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "type": "string"
+        },
+        "gatewayUrl": {
+          "type": "string"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "includeDisabled": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Maximum jobs returned by action=\"list\""
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Job offset for action=\"list\"; use nextOffset to load the next page"
+        },
+        "job": {
+          "type": "object",
+          "properties": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "additionalProperties": true,
+          "description": "[Malformed diagnostic JSON redacted]"
+        },
+        "jobId": "[Truncated]",
+        "id": "[Truncated]",
+        "in": "[Truncated]",
+        "text": "[Truncated]",
+        "mode": "[Truncated]",
+        "runMode": "[Truncated]",
+        "contextMessages": "[Truncated]",
+        "agentId": "[Truncated]",
+        "sessionKey": "[Truncated]"
+      },
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "browser",
+    "description": "Control the browser via OpenClaw's browser control server. Available actions: doctor, status, start, stop, profiles, importprofile, tabs, open, focus, close, snapshot, screenshot, navigate, console, requests, errors, text, emulate, pdf, download, waitfordownload, upload, dialog, act. Browser choice: omit profile to use the configured default (normally the isolated OpenClaw-managed `openclaw` browser). When existing logins/cookies matter, use action=profiles to inspect available profiles, then select the appropriate profile by name. Do not assume a profile name. Use only when the task requires an existing session and the user has authorized it. Use action=importprofile on macOS to copy cookies from an authorized Chrome-family system profile into a fresh managed profile; this may show a Keychain consent prompt. For Chrome MCP existing-session profiles, omit timeoutMs on act:type, hover, scrollIntoView, drag, select, and fill; that driver rejects per-call timeout overrides for those actions. act:evaluate supports timeoutMs. When a node-hosted browser proxy is available, the tool may auto-route to it. Pin a node with node=<id|name> or target=\"node\". When using refs from snapshot (e.g. e12), keep the same tab: prefer passing targetId from the snapshot response into subsequent actions (act/click/type/etc). For tab operations, targetId also accepts tabId handles (t1) and labels from action=tabs. For multi-step browser work, login checks, stale refs, duplicate tabs, or Google Meet flows, use the bundled browser-automation skill when it is available. For stable, self-resolving refs across calls, use snapshot with refs=\"aria\" (Playwright aria-ref ids). Default refs=\"role\" are role+name-based. Repeated compatible snapshots with stable document identity mark newly appeared ref-bearing elements with [new]. navigate returns the loaded page's compact snapshot inline (efficient interactive tier; use action=snapshot for a full snapshot); do not call snapshot after navigate. Batch act results that report a cross-document navigation also include fresh page state; After a single act that triggers navigation, snapshot before using refs. Use snapshot+act for UI automation. Avoid act:wait by default; use only in exceptional cases when no reliable UI state exists. For page prose, use action=text with optional selector and maxChars; it reads the first selector match, else article, main, or body. Use efficient snapshots for controls; they omit most prose. Use snapshot query to keep lines matching all whitespace-separated tokens, case-insensitively; matching lines retain element refs. Use requests for the recent network log; filter matches URL/type, limit defaults to 50, and clear=true clears the collected log after reading. Use errors for page errors; limit defaults to 50, clear=true clears after reading. Use emulate with device, colorScheme, timezoneId, or locale; at least one setting is required. For file chooser uploads, pass the trigger ref with paths in the same upload call when available; use paths-only arming only when a later trigger is intentional. Use inputRef or element to set a file input directly. target selects browser location (sandbox|host|node). Default: host. Host target allowed.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "type": "string"
+        },
+        "target": {
+          "enum": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string",
+          "description": "Profile; omit for configured default."
+        },
+        "browser": {
+          "type": "string"
+        },
+        "systemProfile": {
+          "type": "string"
+        },
+        "into": {
+          "type": "string"
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          }
+        },
+        "targetUrl": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxChars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mode": {
+          "enum": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "type": "string"
+        },
+        "snapshotFormat": {
+          "enum": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "type": "string"
+        },
+        "refs": {
+          "enum": {
+            "truncated": true,
+            "reason": "trajectory-depth-limit",
+            "limitDepth": 6
+          },
+          "type": "string"
+        },
+        "interactive": {
+          "type": "boolean"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "frame": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "boolean",
+          "description": "Label snapshot/screenshot refs."
+        },
+        "urls": {
+          "type": "boolean"
+        },
+        "fullPage": {
+          "type": "boolean"
+        },
+        "path": "[Truncated]",
+        "element": "[Truncated]",
+        "type": "[Truncated]",
+        "level": "[Truncated]",
+        "filter": "[Truncated]",
+        "clear": "[Truncated]",
+        "query": "[Truncated]",
+        "device": "[Truncated]",
+        "colorScheme": "[Truncated]",
+        "timezoneId": "[Truncated]",
+        "locale": "[Truncated]",
+        "paths": "[Truncated]",
+        "inputRef": "[Truncated]",
+        "dialogId": "[Truncated]",
+        "accept": "[Truncated]",
+        "promptText": "[Truncated]",
+        "kind": "[Truncated]",
+        "targetId": "[Truncated]",
+        "ref": "[Truncated]",
+        "actions": "[Truncated]",
+        "stopOnError": "[Truncated]",
+        "doubleClick": "[Truncated]",
+        "button": "[Truncated]",
+        "modifiers": "[Truncated]",
+        "x": "[Truncated]",
+        "y": "[Truncated]",
+        "text": "[Truncated]",
+        "submit": "[Truncated]",
+        "slowly": "[Truncated]",
+        "key": "***",
+        "delayMs": "[Truncated]",
+        "startRef": "[Truncated]",
+        "endRef": "[Truncated]",
+        "values": "[Truncated]",
+        "fields": "[Truncated]",
+        "width": "[Truncated]",
+        "height": "[Truncated]",
+        "timeMs": "[Truncated]",
+        "selector": "[Truncated]",
+        "url": "<redacted>",
+        "loadState": "[Truncated]",
+        "textGone": "[Truncated]"
+      }
+    }
+  },
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]",
+  "[Truncated]"
+]
