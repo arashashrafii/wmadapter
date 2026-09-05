@@ -7,7 +7,7 @@ from webbridgefreeride.providers.contract import Message
 from webbridgefreeride.providers.recovery import ToolCallRecovery
 
 
-class PolicyLayerTests(unittest.TestCase):
+class PolicyLayerTests(unittest.IsolatedAsyncioTestCase):
     def test_generic_clients_do_not_receive_openclaw_policy(self):
         message = type("Message", (), {"role": "user", "content": "Use the listed function"})()
         self.assertIs(detect_client_policy([message], [{"type": "function"}]), ClientPolicy.GENERIC)
@@ -44,3 +44,14 @@ class PolicyLayerTests(unittest.TestCase):
         from webbridgefreeride.config import load_config
         provider = DeepSeekService(load_config('/nonexistent'))
         self.assertIs(provider.protocol.recovery, provider.protocol.recovery)
+
+    async def test_recovery_implementation_does_not_call_legacy_function(self):
+        from unittest.mock import AsyncMock, patch
+        provider = type("Provider", (), {})()
+        provider.complete = AsyncMock(return_value="repaired")
+        with patch("webbridgefreeride.providers.protocol._legacy_resolve_web_answer", side_effect=AssertionError):
+            call, visible = await ToolCallRecovery().resolve(
+                provider, "", [], None, "session", "USER: hi"
+            )
+        self.assertIsNone(call)
+        self.assertEqual(visible, "repaired")
