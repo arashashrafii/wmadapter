@@ -29,6 +29,7 @@ class DeepSeekService(ChatProvider):
             profile_path=browser_cfg.get("profile_dir", ".webbridge-profile"),
             headless=browser_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
+            cdp_endpoint=browser_cfg.get("cdp_endpoint"),
         )
         self.chat_url = deepseek_cfg.get("chat_url", "https://chat.deepseek.com/")
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
@@ -183,6 +184,7 @@ class QwenService(ChatProvider):
             profile_path=qwen_cfg.get("profile_dir", ".webbridge-profile/qwen"),
             headless=qwen_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
+            cdp_endpoint=browser_cfg.get("cdp_endpoint"),
         )
         self.chat_url = qwen_cfg.get("chat_url", "https://chat.qwen.ai/")
         self.timeout_ms = int(qwen_cfg.get("timeout_ms", 180000))

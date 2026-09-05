@@ -18,6 +18,7 @@ class BrowserConfig(BaseModel):
     headless: bool = True
     profile_dir: str = ".webbridge-profile"
     executable_path: str | None = None
+    cdp_endpoint: str | None = None
     restart_retries: int = Field(default=1, ge=0, le=5)
 
 

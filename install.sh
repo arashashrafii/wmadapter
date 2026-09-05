@@ -89,7 +89,7 @@ resolve_browser_path() {
   fi
 }
 write_config() {
-  local provider="$1" chat_url="$2" headless="$3" executable_path="$4" server_host="$5"
+  local provider="$1" chat_url="$2" headless="$3" executable_path="$4" server_host="$5" cdp_endpoint="$6"
   cat > config.yaml <<YAML
 server:
   host: ${server_host}
@@ -99,6 +99,7 @@ browser:
   headless: ${headless}
   profile_dir: ./.webbridge-profile
   executable_path: ${executable_path}
+  cdp_endpoint: ${cdp_endpoint:-null}
   restart_retries: 1
 
 # Provider selected by the installer.
@@ -263,7 +264,21 @@ else
   fi
 fi
 SERVER_HOST="$API_HOST"
-write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH" "$SERVER_HOST"
+BROWSER_MODE=$(ask "Launch Chromium yourself for login and service use? (yes/no)" "no")
+CDP_ENDPOINT=""
+CDP_PORT=""
+if [ "$BROWSER_MODE" = "yes" ]; then
+  if [ -z "$EXECUTABLE_PATH" ]; then
+    echo "A system Chromium installation is required for this mode. Rerun and choose Chromium installation." >&2
+    exit 1
+  fi
+  CDP_PORT=$(ask "Local Chromium debugging port" "9222")
+  case "$CDP_PORT" in
+    ''|*[!0-9]*) echo "Invalid local debugging port: ${CDP_PORT}" >&2; exit 1 ;;
+  esac
+  CDP_ENDPOINT="http://127.0.0.1:${CDP_PORT}"
+fi
+write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH" "$SERVER_HOST" "$CDP_ENDPOINT"
 
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
@@ -271,14 +286,22 @@ INSTALL_BROWSER="no"
 INSTALL_BROWSER=$(ask "Install Playwright Chromium if needed? (yes/no)" "yes")
 install_current_os
 stop_service
-say "Opening the browser for manual authentication..."
-AUTH_ARGS=(auth "$PROVIDER")
-if [ -n "$EXECUTABLE_PATH" ]; then
-  AUTH_ARGS+=(--executable-path "$EXECUTABLE_PATH")
-fi
-if ! .venv/bin/python -m webbridgefreeride "${AUTH_ARGS[@]}"; then
-  echo "Manual authentication failed or was cancelled." >&2
-  exit 1
+if [ "$BROWSER_MODE" = "yes" ]; then
+  PROFILE_PATH="${PROJECT_DIR}/.webbridge-profile"
+  say "Start Chromium yourself, complete login, and leave that window open:"
+  printf '  %q --remote-debugging-address=127.0.0.1 --remote-debugging-port=%q --user-data-dir=%q %q\n' \
+    "$EXECUTABLE_PATH" "$CDP_PORT" "$PROFILE_PATH" "$CHAT_URL"
+  read -r -p "Press Enter after ${PROVIDER} is logged in and the Chromium window remains open: " _
+else
+  say "Opening the browser for manual authentication..."
+  AUTH_ARGS=(auth "$PROVIDER")
+  if [ -n "$EXECUTABLE_PATH" ]; then
+    AUTH_ARGS+=(--executable-path "$EXECUTABLE_PATH")
+  fi
+  if ! .venv/bin/python -m webbridgefreeride "${AUTH_ARGS[@]}"; then
+    echo "Manual authentication failed or was cancelled." >&2
+    exit 1
+  fi
 fi
 start_service 0
 install_openclaw_cleanup_plugin

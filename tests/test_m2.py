@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from webbridgefreeride.config import load_config
 from webbridgefreeride.credentials import CredentialStore
@@ -14,6 +14,7 @@ from webbridgefreeride.ports import find_free_port
 from webbridgefreeride.manual_auth import AUTH_TARGETS
 from webbridgefreeride.providers.base import ChatProvider
 from webbridgefreeride.providers.deepseek.chat import DeepSeekChat
+from webbridgefreeride.browser.manager import BrowserManager
 
 
 class FakeProvider(ChatProvider):
@@ -84,6 +85,16 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(cfg["server"]["port"], 11555)
         self.assertEqual(cfg["browser"]["restart_retries"], 1)
         self.assertEqual(cfg["deepseek"]["login_timeout_ms"], 30000)
+
+    def test_config_accepts_local_chromium_cdp_endpoint(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text("browser:\n  cdp_endpoint: http://127.0.0.1:9222\n")
+            cfg = load_config(path)
+        self.assertEqual(cfg["browser"]["cdp_endpoint"], "http://127.0.0.1:9222")
 
     def test_find_free_port_skips_busy_port(self):
         import socket
@@ -348,6 +359,28 @@ class Milestone2Tests(unittest.TestCase):
     def test_provider_router_dispatches_prefixed_model(self):
         router = ProviderRouter({"fake": FakeProvider()}, "fake")
         self.assertEqual(router.provider_for_model("fake:any").name, "fake")
+
+
+class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cdp_mode_attaches_without_closing_user_chromium(self):
+        context = Mock()
+        context.close = AsyncMock()
+        browser = Mock(contexts=[context])
+        chromium = Mock()
+        chromium.connect_over_cdp = AsyncMock(return_value=browser)
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock()
+        starter.start = AsyncMock(return_value=playwright)
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
+            self.assertIs(await manager.start(), context)
+            chromium.connect_over_cdp.assert_awaited_once_with("http://127.0.0.1:9222")
+            await manager.stop()
+
+        context.close.assert_not_awaited()
+        playwright.stop.assert_awaited_once()
 
 
 

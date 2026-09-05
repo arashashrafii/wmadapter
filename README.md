@@ -40,6 +40,13 @@ Interactive setup:
 
 The installer sets up a local Python environment, lets you choose DeepSeek Web or Qwen Web, opens a browser for manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. If Chrome or Chromium is unavailable, it offers to install the system Chromium package on supported Linux distributions. No paid API key is required.
 
+For WebChat sites that reject a browser launched by automation during sign-in,
+choose `Launch Chromium yourself for login and service use?` in the installer.
+It prints a command that starts local Chromium with an isolated profile and a
+loopback-only debugging endpoint. Complete login in that Chromium window and
+leave it open while WebBridge runs. WebBridge attaches to that session; it does
+not launch a second browser or attempt to bypass the site's CAPTCHA.
+
 The local installer creates a user-level systemd service named `webbridgefreeride.service`. Remove the local installation with:
 
 ```bash
