@@ -384,6 +384,63 @@ class Milestone2Tests(unittest.TestCase):
 
 
 class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
+    def _managed_playwright(self, contexts):
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(side_effect=contexts)
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock()
+        starter.start = AsyncMock(return_value=playwright)
+        return starter, chromium, playwright
+
+    async def test_managed_disconnect_marks_manager_dead_and_recovers_once(self):
+        first = Mock(pages=[])
+        first.browser = None
+        first.close = AsyncMock()
+        second = Mock(pages=[])
+        second.browser = None
+        second.close = AsyncMock()
+        starter, chromium, _ = self._managed_playwright([first, second])
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager()
+            self.assertIs(await manager.start(), first)
+            self.assertTrue(manager.is_running)
+            context_callback = first.on.call_args.args[1]
+            context_callback()
+            self.assertFalse(manager.is_running)
+            self.assertIs(await manager.start(), second)
+            self.assertEqual(chromium.launch_persistent_context.await_count, 2)
+
+    async def test_healthy_context_is_reused_without_relaunch(self):
+        context = Mock(pages=[])
+        context.browser = None
+        starter, chromium, _ = self._managed_playwright([context])
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager()
+            self.assertIs(await manager.start(), context)
+            self.assertIs(await manager.start(), context)
+            chromium.launch_persistent_context.assert_awaited_once()
+
+    async def test_managed_recovery_failure_clears_state(self):
+        context = Mock(pages=[])
+        context.browser = None
+        context.close = AsyncMock()
+        starter, chromium, playwright = self._managed_playwright([context])
+        chromium.launch_persistent_context.side_effect = [context, RuntimeError("launch failed")]
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager()
+            await manager.start()
+            context.on.call_args.args[1]()
+            with self.assertRaisesRegex(RuntimeError, "launch failed"):
+                await manager.start()
+            self.assertFalse(manager.is_running)
+            self.assertIsNone(manager.context)
+            self.assertIsNone(manager.playwright)
+            playwright.stop.assert_awaited()
+
     async def test_cdp_mode_attaches_without_closing_user_chromium(self):
         context = Mock()
         context.close = AsyncMock()
@@ -403,6 +460,34 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
 
         context.close.assert_not_awaited()
         playwright.stop.assert_awaited_once()
+
+    async def test_cdp_disconnect_recovers_without_closing_user_chromium(self):
+        first_context = Mock(pages=[])
+        first_browser = Mock(contexts=[first_context])
+        first_context.browser = first_browser
+        first_context.close = AsyncMock()
+        second_context = Mock(pages=[])
+        second_browser = Mock(contexts=[second_context])
+        second_context.browser = second_browser
+        chromium = Mock()
+        chromium.connect_over_cdp = AsyncMock(side_effect=[first_browser, second_browser])
+        first_playwright = Mock(chromium=chromium)
+        first_playwright.stop = AsyncMock()
+        second_playwright = Mock(chromium=chromium)
+        second_playwright.stop = AsyncMock()
+        starter = Mock()
+        starter.start = AsyncMock(side_effect=[first_playwright, second_playwright])
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
+            self.assertIs(await manager.start(), first_context)
+            disconnect_callback = first_browser.on.call_args.args[1]
+            disconnect_callback()
+            self.assertFalse(manager.is_running)
+            self.assertIs(await manager.start(), second_context)
+
+        first_context.close.assert_not_awaited()
+        first_playwright.stop.assert_awaited_once()
 
 
 
