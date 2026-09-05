@@ -89,8 +89,10 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         clock = Mock()
         clock.time.side_effect = [0, 0, 2]
         with patch('webbridgefreeride.providers.qwen.chat.asyncio.get_running_loop', return_value=clock), patch('webbridgefreeride.providers.qwen.chat.asyncio.sleep', new=AsyncMock()):
-            with self.assertRaises(TimeoutError):
+            from webbridgefreeride.providers.submit import SubmitState, UncertainSubmitError
+            with self.assertRaises(UncertainSubmitError):
                 await chat.send_message('hi')
+            self.assertEqual(chat.submit_state, SubmitState.SUBMITTED_UNCERTAIN)
 
     async def test_partial_deepseek_timeout_is_not_success(self):
         from unittest.mock import patch, Mock
@@ -106,5 +108,43 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         clock = Mock()
         clock.time.side_effect = [0, 0, 2]
         with patch('webbridgefreeride.providers.deepseek.chat.asyncio.get_running_loop', return_value=clock), patch('webbridgefreeride.providers.deepseek.chat.asyncio.sleep', new=AsyncMock()):
-            with self.assertRaises(TimeoutError):
+            from webbridgefreeride.providers.submit import SubmitState, UncertainSubmitError
+            with self.assertRaises(UncertainSubmitError):
                 await chat.send_message('hi')
+            self.assertEqual(chat.submit_state, SubmitState.SUBMITTED_UNCERTAIN)
+
+    async def test_qwen_service_does_not_retry_uncertain_submission(self):
+        from unittest.mock import patch, AsyncMock
+        from webbridgefreeride.providers.qwen.chat import QwenChat
+        from webbridgefreeride.providers.submit import UncertainSubmitError
+        from webbridgefreeride.service import QwenService
+
+        provider = QwenService(load_config('/nonexistent'))
+        provider._authenticate = AsyncMock()
+        provider._page_for_conversation = AsyncMock(return_value=AsyncMock())
+        provider.browser.restart = AsyncMock()
+        chat = QwenChat(AsyncMock())
+        chat.send_message = AsyncMock(side_effect=UncertainSubmitError())
+        with patch('webbridgefreeride.service.QwenChat', return_value=chat):
+            with self.assertRaises(UncertainSubmitError):
+                await provider.complete('hello')
+        chat.send_message.assert_awaited_once_with('hello')
+        provider.browser.restart.assert_not_awaited()
+
+    async def test_deepseek_attachment_uncertain_submission_is_not_retried(self):
+        from unittest.mock import patch, AsyncMock
+        from webbridgefreeride.providers.deepseek.chat import DeepSeekChat
+        from webbridgefreeride.providers.submit import UncertainSubmitError
+        from webbridgefreeride.service import DeepSeekService
+
+        provider = DeepSeekService(load_config('/nonexistent'))
+        provider._authenticate = AsyncMock()
+        provider._page_for_conversation = AsyncMock(return_value=AsyncMock())
+        provider.browser.restart = AsyncMock()
+        chat = DeepSeekChat(AsyncMock())
+        chat.send_message = AsyncMock(side_effect=UncertainSubmitError())
+        with patch('webbridgefreeride.service.DeepSeekChat', return_value=chat):
+            with self.assertRaises(UncertainSubmitError):
+                await provider.complete_with_attachments('hello', attachments=['data:image/png;base64,aA=='])
+        chat.send_message.assert_awaited_once_with('hello', attachments=['data:image/png;base64,aA=='])
+        provider.browser.restart.assert_not_awaited()

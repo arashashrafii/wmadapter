@@ -6,12 +6,14 @@ from playwright.async_api import Page
 from ...browser.elements import first_visible
 
 from .selectors import CHAT_INPUTS, RESPONSE_BLOCKS
+from ..submit import PreSubmitError, SubmitState, UncertainSubmitError
 
 
 class QwenChat:
     def __init__(self, page: Page, timeout_ms: int = 180000):
         self.page = page
         self.timeout_ms = timeout_ms
+        self.submit_state = SubmitState.NOT_SUBMITTED
 
     async def _first_visible(self, selectors: list[str]):
         return await first_visible(self.page, selectors, "Qwen")
@@ -48,29 +50,40 @@ class QwenChat:
         return "\n".join(lines).strip()
 
     async def send_message(self, message: str) -> str:
-        input_box = await self._first_visible(CHAT_INPUTS)
-        await self.page.wait_for_timeout(1000)
-        previous_counts = await self._response_counts()
+        self.submit_state = SubmitState.NOT_SUBMITTED
+        try:
+            input_box = await self._first_visible(CHAT_INPUTS)
+            await self.page.wait_for_timeout(1000)
+            previous_counts = await self._response_counts()
 
-        await input_box.click()
-        await input_box.fill(message)
-        await self.page.wait_for_timeout(300)
-        await input_box.press("Enter")
+            await input_box.click()
+            await input_box.fill(message)
+            await self.page.wait_for_timeout(300)
+            self.submit_state = SubmitState.SUBMITTING
+            self.submit_state = SubmitState.SUBMITTED_UNCERTAIN
+            await input_box.press("Enter")
 
-        deadline = asyncio.get_running_loop().time() + self.timeout_ms / 1000
-        last_text = ""
-        stable_rounds = 0
+            deadline = asyncio.get_running_loop().time() + self.timeout_ms / 1000
+            last_text = ""
+            stable_rounds = 0
 
-        while asyncio.get_running_loop().time() < deadline:
-            text = await self._latest_response_text(previous_counts)
-            if text:
-                if text == last_text:
-                    stable_rounds += 1
-                else:
-                    stable_rounds = 0
-                    last_text = text
-                if stable_rounds >= 2:
-                    return text
-            await asyncio.sleep(1)
+            while asyncio.get_running_loop().time() < deadline:
+                text = await self._latest_response_text(previous_counts)
+                if text:
+                    if text == last_text:
+                        stable_rounds += 1
+                    else:
+                        stable_rounds = 0
+                        last_text = text
+                    if stable_rounds >= 2:
+                        self.submit_state = SubmitState.COMPLETED
+                        return text
+                await asyncio.sleep(1)
 
-        raise TimeoutError("Qwen response was not detected before timeout")
+            raise TimeoutError("Qwen response was not detected before timeout")
+        except UncertainSubmitError:
+            raise
+        except Exception as exc:
+            if self.submit_state in (SubmitState.SUBMITTING, SubmitState.SUBMITTED_UNCERTAIN):
+                raise UncertainSubmitError(str(exc)) from exc
+            raise PreSubmitError(str(exc)) from exc

@@ -12,6 +12,7 @@ from .providers.deepseek.login import DeepSeekLogin
 from .providers.qwen.chat import QwenChat
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
+from .providers.submit import PreSubmitError, UncertainSubmitError
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,11 @@ class DeepSeekService(ChatProvider):
                     answer = await chat.send_message(prompt)
                     self.last_error = None
                     return answer
+                except UncertainSubmitError as exc:
+                    self.ready = False
+                    self.last_error = str(exc)
+                    logger.warning("DeepSeek submission is uncertain: %s", exc)
+                    raise
                 except Exception as exc:
                     self.ready = False
                     self.last_error = str(exc)
@@ -150,6 +156,11 @@ class DeepSeekService(ChatProvider):
                     answer = await chat.send_message(prompt, attachments=attachments or [])
                     self.last_error = None
                     return answer
+                except UncertainSubmitError as exc:
+                    self.ready = False
+                    self.last_error = str(exc)
+                    logger.warning("DeepSeek attachment submission is uncertain: %s", exc)
+                    raise
                 except Exception as exc:
                     self.ready = False
                     self.last_error = str(exc)
@@ -255,6 +266,11 @@ class QwenService(ChatProvider):
                     answer = await QwenChat(page, timeout_ms=self.timeout_ms).send_message(prompt)
                     self.last_error = None
                     return answer
+                except UncertainSubmitError as exc:
+                    self.ready = False
+                    self.last_error = str(exc)
+                    logger.warning("Qwen submission is uncertain: %s", exc)
+                    raise
                 except Exception as exc:
                     self.ready = False
                     self.last_error = str(exc)

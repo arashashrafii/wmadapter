@@ -11,12 +11,14 @@ from playwright.async_api import Page
 from ...browser.elements import first_visible
 
 from .selectors import ATTACH_BUTTONS, CHAT_INPUTS, FILE_INPUTS, RESPONSE_BLOCKS, SEND_BUTTONS
+from ..submit import PreSubmitError, SubmitState, UncertainSubmitError
 
 
 class DeepSeekChat:
     def __init__(self, page: Page, timeout_ms: int = 180000):
         self.page = page
         self.timeout_ms = timeout_ms
+        self.submit_state = SubmitState.NOT_SUBMITTED
 
     async def _first_visible(self, selectors: list[str]):
         return await first_visible(self.page, selectors, "DeepSeek")
@@ -121,8 +123,12 @@ class DeepSeekChat:
             await self.page.wait_for_timeout(1500)
 
     async def send_message(self, message: str, attachments: list[str] | None = None) -> str:
-        input_box = await self._first_visible(CHAT_INPUTS)
-        response_locator = await self._response_locator()
+        self.submit_state = SubmitState.NOT_SUBMITTED
+        try:
+            input_box = await self._first_visible(CHAT_INPUTS)
+            response_locator = await self._response_locator()
+        except Exception as exc:
+            raise PreSubmitError(str(exc)) from exc
         previous_count = await response_locator.count()
         previous_text = ""
         if previous_count:
@@ -148,25 +154,16 @@ class DeepSeekChat:
             else:
                 button = await self._enabled_send_button()
             if button is not None:
+                self.submit_state = SubmitState.SUBMITTING
+                self.submit_state = SubmitState.SUBMITTED_UNCERTAIN
                 await button.click()
                 sent = True
             if not sent:
                 if attachments:
                     raise TimeoutError("DeepSeek send button did not become enabled after image upload")
+                self.submit_state = SubmitState.SUBMITTING
+                self.submit_state = SubmitState.SUBMITTED_UNCERTAIN
                 await input_box.press("Enter")
-            else:
-                # Some DeepSeek builds expose the send control before React
-                # has wired its click handler. If the draft remains, retry
-                # through the focused composer instead of waiting forever.
-                await self.page.wait_for_timeout(500)
-                try:
-                    draft = await input_box.evaluate(
-                        "element => element.value || element.textContent || ''"
-                    )
-                except Exception:
-                    draft = ""
-                if draft:
-                    await input_box.press("Enter")
 
             deadline = asyncio.get_running_loop().time() + self.timeout_ms / 1000
             last_text = ""
@@ -189,10 +186,17 @@ class DeepSeekChat:
                         # A short pause is common while DeepSeek renders Markdown;
                         # require a longer stable window before returning the answer.
                         if stable_rounds >= 5:
+                            self.submit_state = SubmitState.COMPLETED
                             return text
                 await asyncio.sleep(1)
 
             raise TimeoutError("DeepSeek response was not detected before timeout")
+        except UncertainSubmitError:
+            raise
+        except Exception as exc:
+            if self.submit_state in (SubmitState.SUBMITTING, SubmitState.SUBMITTED_UNCERTAIN):
+                raise UncertainSubmitError(str(exc)) from exc
+            raise PreSubmitError(str(exc)) from exc
         finally:
             if attachment_directory is not None:
                 attachment_directory.cleanup()
