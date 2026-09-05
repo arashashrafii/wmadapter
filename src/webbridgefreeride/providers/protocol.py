@@ -379,10 +379,8 @@ async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversa
 
 
 async def _resolve_web_answer(provider, answer, messages, tools, conversation_id, prompt):
-    """Compatibility wrapper; new callers use ToolCallRecovery directly."""
-    from .recovery import ToolCallRecovery
-
-    return await ToolCallRecovery().resolve(
+    """Legacy helper wrapper; provider adapters use ToolCallRecovery directly."""
+    return await _legacy_resolve_web_answer(
         provider, answer, messages, tools, conversation_id, prompt
     )
 
