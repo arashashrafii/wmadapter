@@ -64,6 +64,14 @@ No MCP dependency and no fake GPT Web or OX Alpha implementation.
 
 ## Implementation outcome
 
+The contract migration is complete through steps 1-10: V1 behavior is
+documented, contract/error tests exist, reasoning metadata and optional bearer
+auth are present, public routing has one strict resolver, canonical messages and
+tools are introduced, the API converts into them, ChatProvider accepts them via
+ProviderRequest, legacy text completion remains available, and DeepSeek/Qwen
+use explicit protocol adapter classes. Browser behavior, MCP, GPT/OX and true
+incremental streaming were intentionally unchanged.
+
 - c6c97bb records the baseline and plan.
 - defa0c1 adds contract.py, the shared legacy protocol and DeepSeek V2 support;
   89 tests pass. main helper imports remain available.

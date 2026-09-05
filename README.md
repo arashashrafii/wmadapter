@@ -204,3 +204,6 @@ now return 404 instead of silently falling back to the default provider.
 106 unit/contract tests and real client SDK transport checks passed against a
 fixture provider. Current live WebChat behavior and full agent runs remain
 unverified by this migration. No MCP dependency or GPT/OX placeholder was added.
+Incoming OpenAI messages are converted into a provider-independent canonical
+contract before DeepSeek or Qwen adapters are called. Optional bearer
+authentication is enabled with `server.api_key` in `config.yaml`.

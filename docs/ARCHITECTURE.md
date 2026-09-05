@@ -9,12 +9,14 @@ The client agent owns tool execution and sends the result on its next request.
 
 - main:app is the application; api/server re-exports it for compatibility.
 - api/validation validates the HTTP subset before any browser request.
-- providers/contract defines ChatRequest, ProviderRequest, ProviderResult and
-  ModelCapabilities. main still re-exports old schema/helper names.
+- providers/contract defines external DTOs plus provider-independent canonical
+  messages, requests, tools and results. main converts the DTO once at the boundary.
 - ChatProvider.infer is the V2 interface. Its default legacy adapter serializes
   messages/tools, calls the unchanged complete(prompt)->str method, then
   normalizes the Web response. V1 subclasses remain valid.
 - providers/protocol holds shared prompt, marker parsing and recovery behavior.
+- providers/webchat_adapter.py is the provider translation interface; DeepSeek
+  and Qwen select explicit provider-owned protocol adapter classes.
 - service.py owns DeepSeek/Qwen lifecycle, locks, retries and conversations.
   Provider chat/login/selectors retain site-specific DOM code; browser/elements
   contains the common visible-element lookup and BrowserManager owns profiles.
@@ -37,6 +39,10 @@ The public gateway always uses the generic policy. It does not inspect message
 text to identify OpenClaw, OpenCode or Hermes. Historical OpenClaw workflow
 guidance remains available only to direct internal helper callers and is not
 part of the agent-facing contract.
+
+Bearer authentication is optional: configure `server.api_key` and send
+`Authorization: Bearer <key>`. With no key configured, existing loopback
+behavior remains unchanged.
 
 ### Model response recovery
 OpenClaw owns the research/action/verification loop and executes every tool.
