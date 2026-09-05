@@ -72,6 +72,7 @@ class DeepSeekService(ChatProvider):
             logger.warning("DeepSeek remote conversation deletion failed: %s", exc)
             deleted = False
         finally:
+            self.browser.release_page(page)
             if not page.is_closed():
                 await page.close()
         return deleted
@@ -91,7 +92,7 @@ class DeepSeekService(ChatProvider):
 
     async def _page_for_conversation(self, conversation_id: str | None):
         if not conversation_id:
-            return await self.browser.page()
+            return await self.browser.page_for(self.name)
         page = self._conversation_pages.get(conversation_id)
         if page is not None and not page.is_closed():
             return page
@@ -99,8 +100,7 @@ class DeepSeekService(ChatProvider):
             session_id, session_key = next(iter(self._conversation_bindings.items()))
         else:
             session_id = session_key = None
-        context = await self.browser.start()
-        page = await context.new_page()
+        page = await self.browser.page_for(self.name, conversation_id)
         self._conversation_pages[conversation_id] = page
         if session_id:
             self._conversation_pages[session_id] = page
@@ -217,16 +217,16 @@ class QwenService(ChatProvider):
             return False
         if not page.is_closed():
             await page.close()
+        self.browser.release_page(page)
         return True
 
     async def _page_for_conversation(self, conversation_id: str | None):
         if not conversation_id:
-            return await self.browser.page()
+            return await self.browser.page_for(self.name)
         page = self._conversation_pages.get(conversation_id)
         if page is not None and not page.is_closed():
             return page
-        context = await self.browser.start()
-        page = await context.new_page()
+        page = await self.browser.page_for(self.name, conversation_id)
         self._conversation_pages[conversation_id] = page
         return page
 

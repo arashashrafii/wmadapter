@@ -37,6 +37,11 @@ The client agent owns tool execution and sends the result on its next request.
   restore headed mode on the same profile; the resulting error identifies
   whether restoration succeeded. CDP mode remains a separate attach path and
   never participates in this lock or handoff and never closes the user browser.
+- BrowserManager page ownership is provider-scoped. DeepSeek and Qwen claim
+  only pages matching their own WebChat origin; unrelated tabs and pages
+  claimed by the other provider are skipped, and a close event releases the
+  claim. Managed contexts are manager-owned; CDP contexts remain user-owned,
+  so provider selection never closes unrelated tabs or the user's browser.
 - Model discovery comes from registered provider model_ids and capabilities.
   GPT Web/OX Alpha are extension targets only; no dummy adapters are registered.
 

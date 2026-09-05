@@ -5,11 +5,17 @@ import asyncio
 import os
 import fcntl
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlsplit
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 
 
 class BrowserManager:
+    _PROVIDER_HOSTS = {
+        "deepseek": {"chat.deepseek.com"},
+        "qwen": {"chat.qwen.ai"},
+    }
+
     def __init__(
         self,
         profile_path: str = ".webbridge-profile",
@@ -30,6 +36,9 @@ class BrowserManager:
         self._stale_browser: Browser | None = None
         self._stale_playwright: Playwright | None = None
         self._lock_fd: int | None = None
+        self._page_owners: dict[int, str] = {}
+        self._page_claims: dict[tuple[str, str | None], Page] = {}
+        self._owned_pages: dict[int, Page] = {}
 
     def _acquire_profile_lock(self) -> None:
         if self.cdp_endpoint or self._lock_fd is not None:
@@ -75,6 +84,62 @@ class BrowserManager:
         browser = getattr(context, "browser", None)
         if browser is not None:
             browser.on("disconnected", self._mark_disconnected)
+
+    @classmethod
+    def _provider_page_allowed(cls, owner: str, page: Page) -> bool:
+        hosts = cls._PROVIDER_HOSTS.get(owner)
+        if not hosts:
+            raise ValueError(f"Unknown browser page owner: {owner}")
+        try:
+            return urlsplit(page.url).hostname in hosts
+        except Exception:
+            return False
+
+    def _release_page(self, page: Page) -> None:
+        page_id = id(page)
+        self._page_owners.pop(page_id, None)
+        self._owned_pages.pop(page_id, None)
+        for key, claimed in list(self._page_claims.items()):
+            if claimed is page:
+                self._page_claims.pop(key, None)
+
+    def _claim_page(self, owner: str, page: Page, conversation_id: str | None) -> Page:
+        page_id = id(page)
+        existing_owner = self._page_owners.get(page_id)
+        if existing_owner is not None and existing_owner != owner:
+            raise RuntimeError("browser page is owned by another provider")
+        self._page_owners[page_id] = owner
+        self._owned_pages[page_id] = page
+        self._page_claims[(owner, conversation_id)] = page
+        page.on("close", lambda *_args: self._release_page(page))
+        return page
+
+    async def page_for(self, owner: str, conversation_id: str | None = None) -> Page:
+        """Return a page claimed by owner and matching its provider origin."""
+        await self.start()
+        key = (owner, conversation_id)
+        claimed = self._page_claims.get(key)
+        if claimed is not None and not claimed.is_closed():
+            return claimed
+        self._page_claims.pop(key, None)
+        for page in self.context.pages:
+            if page.is_closed() or not self._provider_page_allowed(owner, page):
+                continue
+            page_id = id(page)
+            page_owner = self._page_owners.get(page_id)
+            if page_owner is not None and page_owner != owner:
+                continue
+            if conversation_id is not None and any(
+                claimed_page is page and claim_owner == owner and claim_id != conversation_id
+                for (claim_owner, claim_id), claimed_page in self._page_claims.items()
+            ):
+                continue
+            return self._claim_page(owner, page, conversation_id)
+        page = await self.context.new_page()
+        return self._claim_page(owner, page, conversation_id)
+
+    def release_page(self, page: Page) -> None:
+        self._release_page(page)
 
     async def _discard_stale(self) -> None:
         context = self._stale_context
@@ -194,6 +259,9 @@ class BrowserManager:
         self._stale_context = None
         self._stale_browser = None
         self._stale_playwright = None
+        self._page_owners.clear()
+        self._page_claims.clear()
+        self._owned_pages.clear()
         if context is not None:
             try:
                 if not self.cdp_endpoint:

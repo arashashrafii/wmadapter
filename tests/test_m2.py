@@ -632,6 +632,74 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         first_context.close.assert_not_awaited()
         first_playwright.stop.assert_awaited_once()
 
+    async def test_cdp_page_selection_is_provider_aware_and_order_independent(self):
+        unrelated = Mock(url="https://example.com", pages=[])
+        deepseek_page = Mock(url="https://chat.deepseek.com/", pages=[])
+        qwen_page = Mock(url="https://chat.qwen.ai/", pages=[])
+        for page in (unrelated, deepseek_page, qwen_page):
+            page.is_closed.return_value = False
+        context = Mock(pages=[unrelated, qwen_page, deepseek_page])
+        browser = Mock(contexts=[context])
+        chromium = Mock()
+        chromium.connect_over_cdp = AsyncMock(return_value=browser)
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock(start=AsyncMock(return_value=playwright))
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
+            self.assertIs(await manager.page_for("deepseek", "d1"), deepseek_page)
+            self.assertIs(await manager.page_for("qwen", "q1"), qwen_page)
+            await manager.stop()
+
+    async def test_page_claim_isolated_and_released_on_close(self):
+        deepseek_page = Mock(url="https://chat.deepseek.com/")
+        deepseek_page.is_closed.return_value = False
+        qwen_replacement = Mock(url="about:blank")
+        qwen_replacement.is_closed.return_value = False
+        deepseek_replacement = Mock(url="about:blank")
+        deepseek_replacement.is_closed.return_value = False
+        context = Mock(pages=[deepseek_page])
+        context.new_page = AsyncMock(side_effect=[qwen_replacement, deepseek_replacement])
+        browser = Mock(contexts=[context])
+        chromium = Mock()
+        chromium.connect_over_cdp = AsyncMock(return_value=browser)
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock(start=AsyncMock(return_value=playwright))
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
+            self.assertIs(await manager.page_for("deepseek", "d1"), deepseek_page)
+            self.assertIs(await manager.page_for("qwen", "q1"), qwen_replacement)
+            deepseek_close = deepseek_page.on.call_args.args[1]
+            deepseek_page.is_closed.return_value = True
+            deepseek_close()
+            self.assertIs(await manager.page_for("deepseek", "d2"), deepseek_replacement)
+            await manager.stop()
+
+        deepseek_page.close.assert_not_called()
+
+    async def test_managed_page_selection_skips_unrelated_tab(self):
+        unrelated = Mock(url="https://example.com")
+        unrelated.is_closed.return_value = False
+        owned = Mock(url="https://chat.deepseek.com/")
+        owned.is_closed.return_value = False
+        context = Mock(pages=[unrelated, owned])
+        context.browser = None
+        context.close = AsyncMock()
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(return_value=context)
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock(start=AsyncMock(return_value=playwright))
+        profile = f"/tmp/webbridge-managed-page-{id(context)}"
+
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile)
+            self.assertIs(await manager.page_for("deepseek", "d1"), owned)
+            await manager.stop()
+
 
 
 if __name__ == "__main__":
