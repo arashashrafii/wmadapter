@@ -46,6 +46,34 @@ detect_browser() {
   done
   return 1
 }
+install_system_chromium() {
+  local package_manager
+  package_manager=""
+  for package_manager in apt-get dnf pacman zypper apk; do
+    if command -v "$package_manager" >/dev/null 2>&1; then
+      break
+    fi
+    package_manager=""
+  done
+  if [ -z "$package_manager" ]; then
+    echo "No supported package manager found. Install Chromium manually, then rerun this installer." >&2
+    return 1
+  fi
+  say "Installing Chromium with ${package_manager}; your system may ask for your password."
+  case "$package_manager" in
+    apt-get)
+      if sudo apt-get install -y chromium; then
+        :
+      else
+        sudo apt-get install -y chromium-browser
+      fi
+      ;;
+    dnf) sudo dnf install -y chromium ;;
+    pacman) sudo pacman -S --needed --noconfirm chromium ;;
+    zypper) sudo zypper --non-interactive install chromium ;;
+    apk) sudo apk add chromium ;;
+  esac
+}
 resolve_browser_path() {
   local requested="$1"
   case "${requested,,}" in
@@ -210,8 +238,21 @@ HEADLESS=$(ask "Run browser headless? (true/false)" "true")
 EXECUTABLE_PATH=$(ask "Chrome/Chromium executable path or name (blank for auto-detect)" "")
 if [ -z "$EXECUTABLE_PATH" ]; then
   EXECUTABLE_PATH="$(detect_browser || true)"
+  if [ -z "$EXECUTABLE_PATH" ]; then
+    INSTALL_SYSTEM_CHROMIUM=$(ask "No Chrome/Chromium found. Install Chromium now? (yes/no)" "yes")
+    if [ "$INSTALL_SYSTEM_CHROMIUM" = "yes" ]; then
+      install_system_chromium
+      EXECUTABLE_PATH="$(detect_browser || true)"
+      if [ -z "$EXECUTABLE_PATH" ]; then
+        echo "Chromium was installed but could not be found on PATH. Reopen the terminal or provide its path and rerun." >&2
+        exit 1
+      fi
+    fi
+  fi
   if [ -n "$EXECUTABLE_PATH" ]; then
     say "Using installed browser: ${EXECUTABLE_PATH}"
+  else
+    say "No system browser selected. Playwright Chromium can be installed below."
   fi
 else
   REQUESTED_BROWSER="$EXECUTABLE_PATH"
