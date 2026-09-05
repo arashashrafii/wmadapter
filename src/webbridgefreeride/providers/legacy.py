@@ -1,6 +1,7 @@
 """Compatibility adapter for existing complete(prompt)->str providers."""
 from .contract import ProviderRequest, ProviderResult
 from .protocol import _prompt, _image_attachments, _resolve_web_answer
+from .normalizer import ToolProtocolNormalizer
 
 
 async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
@@ -25,6 +26,8 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     call, visible = await _resolve_web_answer(
         provider, answer, chat.messages, tools, request.conversation_id, prompt
     )
+    if call is None:
+        call, visible = ToolProtocolNormalizer().normalize(visible, tools)
     if required and call is None:
         raise ValueError("Web model did not honor required tool_choice")
     return ProviderResult(content=None if call else visible,

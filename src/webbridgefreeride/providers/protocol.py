@@ -7,6 +7,7 @@ import re
 import uuid
 from typing import Any
 from .contract import Message
+from .policy import ClientPolicy, detect_client_policy
 
 def _content_text(content: Any) -> str:
     if isinstance(content, str):
@@ -128,9 +129,7 @@ def _prompt(messages: list[Message], system_prompt: str = "", tools: list[dict[s
             if isinstance(item, dict) and isinstance(item.get("function"), dict)
         }
         conversation_text = " ".join(_content_text(message.content) for message in messages).lower()
-        openclaw_request = any(term in conversation_text for term in (
-            "openclaw", "node", "computer.act", "screen.snapshot", "plugin", "skill", "gateway",
-        ))
+        openclaw_request = detect_client_policy(messages, tools) is ClientPolicy.OPENCLAW
         if openclaw_request:
             lines.append(
                 "OPENCLAW DOCUMENTATION POLICY: This request concerns OpenClaw. Before choosing a solution, "
@@ -652,5 +651,4 @@ def _extract_tool_call(answer: str, tools: list[dict[str, Any]] | None) -> tuple
         }}, answer[:match_start].strip()
     except (TypeError, ValueError, json.JSONDecodeError):
         return None, answer
-
 
