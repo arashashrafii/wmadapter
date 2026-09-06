@@ -96,8 +96,9 @@ server:
   port: ${API_PORT}
 
 browser:
+  mode: managed
   headless: ${headless}
-  profile_dir: ./.mimicgate-profile
+  profile_dir: ~/.local/share/mimicgate/profiles/${provider}
   executable_path: ${executable_path}
   cdp_endpoint: ${cdp_endpoint:-null}
   restart_retries: 1
@@ -108,7 +109,7 @@ provider_choice: ${provider}
 qwen:
   chat_url: ${chat_url}
   auth: google
-  profile_dir: ./.mimicgate-profile/qwen
+  profile_dir: ~/.local/share/mimicgate/profiles/qwen
   headless: ${headless}
 
 deepseek:
@@ -144,6 +145,7 @@ install_current_os() {
   fi
   .venv/bin/python -m pip install --upgrade pip
   .venv/bin/pip install -e .
+  .venv/bin/python -m playwright install chromium
 }
 write_service() {
   local login_mode="$1"
@@ -218,51 +220,14 @@ fi
 
 CHAT_URL="$(provider_url "$PROVIDER")"
 HEADLESS="false"
-EXECUTABLE_PATH=$(ask "Chrome/Chromium executable path or name (blank for auto-detect)" "")
-if [ -z "$EXECUTABLE_PATH" ]; then
-  EXECUTABLE_PATH="$(detect_browser || true)"
-  if [ -z "$EXECUTABLE_PATH" ]; then
-    INSTALL_SYSTEM_CHROMIUM=$(ask "No Chrome/Chromium found. Install Chromium now? (yes/no)" "yes")
-    if [ "$INSTALL_SYSTEM_CHROMIUM" = "yes" ]; then
-      install_system_chromium
-      EXECUTABLE_PATH="$(detect_browser || true)"
-      if [ -z "$EXECUTABLE_PATH" ]; then
-        echo "Chromium was installed but could not be found on PATH. Reopen the terminal or provide its path and rerun." >&2
-        exit 1
-      fi
-    fi
-  fi
-  if [ -n "$EXECUTABLE_PATH" ]; then
-    say "Using installed browser: ${EXECUTABLE_PATH}"
-  else
-    echo "System Chromium is required. Install it now or provide its executable path and rerun." >&2
-    exit 1
-  fi
-else
-  REQUESTED_BROWSER="$EXECUTABLE_PATH"
-  if ! EXECUTABLE_PATH="$(resolve_browser_path "$REQUESTED_BROWSER")"; then
-    echo "Browser executable not found: ${REQUESTED_BROWSER}" >&2
-    echo "Enter a valid executable path, google-chrome, or chromium." >&2
-    exit 1
-  fi
-fi
 SERVER_HOST="$API_HOST"
-CDP_PORT=$(ask "Local Chromium debugging port" "9222")
-case "$CDP_PORT" in
-  ''|*[!0-9]*) echo "Invalid local debugging port: ${CDP_PORT}" >&2; exit 1 ;;
-esac
-CDP_ENDPOINT="http://127.0.0.1:${CDP_PORT}"
-write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$EXECUTABLE_PATH" "$SERVER_HOST" "$CDP_ENDPOINT"
+write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "" "$SERVER_HOST" ""
 
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
 install_current_os
 stop_service
-PROFILE_PATH="${PROJECT_DIR}/.mimicgate-profile"
-say "Start Chromium yourself, complete login, and leave that window open:"
-printf '  %q --remote-debugging-address=127.0.0.1 --remote-debugging-port=%q --user-data-dir=%q %q\n' \
-  "$EXECUTABLE_PATH" "$CDP_PORT" "$PROFILE_PATH" "$CHAT_URL"
-read -r -p "Press Enter after ${PROVIDER} is logged in and the Chromium window remains open: " _
+say "MimicGate will open its dedicated Playwright Chromium profile for login."
 start_service 0
 say "Waiting for API health after login..."
 if ! wait_health; then

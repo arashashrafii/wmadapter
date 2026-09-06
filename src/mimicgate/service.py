@@ -15,6 +15,7 @@ from .providers.qwen.chat import QwenChat
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
 from .providers.submit import PreSubmitError, UncertainSubmitError
+from .config import provider_profile_dir
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class DeepSeekService(ChatProvider):
         browser_cfg = config["browser"]
         deepseek_cfg = config["deepseek"]
         self.browser = BrowserManager(
-            profile_path=browser_cfg.get("profile_dir", ".mimicgate-profile"),
+            profile_path=browser_cfg.get("profile_dir", provider_profile_dir("deepseek")),
             headless=browser_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
@@ -282,7 +283,7 @@ class QwenService(ChatProvider):
         browser_cfg = config["browser"]
         qwen_cfg = config.get("qwen", {})
         self.browser = BrowserManager(
-            profile_path=qwen_cfg.get("profile_dir", ".mimicgate-profile/qwen"),
+            profile_path=qwen_cfg.get("profile_dir", provider_profile_dir("qwen")),
             headless=qwen_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .browser.manager import BrowserManager
-from .config import canonical_path, load_config
+from .config import canonical_path, load_config, provider_profile_dir
 from .providers.deepseek.login import DeepSeekLogin
 from .providers.qwen.chat import QwenChat
 
@@ -19,12 +19,12 @@ class AuthTarget:
 AUTH_TARGETS = {
     "deepseek": AuthTarget(
         url="https://chat.deepseek.com/",
-        profile_dir=".mimicgate-profile",
+        profile_dir=provider_profile_dir("deepseek"),
         google_selectors=(),
     ),
     "qwen": AuthTarget(
         url="https://chat.qwen.ai/",
-        profile_dir=".mimicgate-profile/qwen",
+        profile_dir=provider_profile_dir("qwen"),
         google_selectors=(
             'button:has-text("Google")',
             'div[role=button]:has-text("Google")',
@@ -63,9 +63,9 @@ async def run_manual_auth(
     if browser_cfg.get("mode", "managed") == "cdp":
         raise RuntimeError("Manual authentication requires browser.mode=managed; CDP mode is attach-only")
     target = AUTH_TARGETS[provider]
-    profile_value = browser_cfg.get("profile_dir", ".mimicgate-profile")
+    profile_value = browser_cfg.get("profile_dir", provider_profile_dir(provider))
     if provider == "qwen":
-        profile_value = config.get("qwen", {}).get("profile_dir", ".mimicgate-profile/qwen")
+        profile_value = config.get("qwen", {}).get("profile_dir", provider_profile_dir("qwen"))
     configured_executable = browser_cfg.get("executable_path")
     configured_executable = canonical_path(configured_executable) if configured_executable else None
     override_executable = canonical_path(executable_path) if executable_path else None

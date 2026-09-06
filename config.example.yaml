@@ -8,7 +8,7 @@ browser:
   # managed uses MimicGate's persistent profile; use cdp to attach to CDP.
   mode: managed
   headless: true
-  profile_dir: ./.mimicgate-profile
+  profile_dir: ~/.local/share/mimicgate/profiles/deepseek
   executable_path:
   cdp_endpoint:
   restart_retries: 1
@@ -27,7 +27,7 @@ qwen:
   chat_url: https://chat.qwen.ai/
   headless: false
   auth: google
-  profile_dir: ./.mimicgate-profile/qwen
+  profile_dir: ~/.local/share/mimicgate/profiles/qwen
 
 providers:
   default: deepseek

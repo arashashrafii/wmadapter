@@ -12,6 +12,11 @@ def canonical_path(value: str | Path) -> str:
     return str(Path(value).expanduser().resolve())
 
 
+def provider_profile_dir(provider: str) -> str:
+    root = Path(os.getenv("MIMICGATE_DATA_DIR", "~/.local/share/mimicgate")).expanduser()
+    return str(root / "profiles" / provider)
+
+
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=11555, ge=1, le=65535)
@@ -23,7 +28,7 @@ class BrowserConfig(BaseModel):
     # to an already-running Chromium exposed through CDP.
     mode: Literal["managed", "cdp"] = "managed"
     headless: bool = True
-    profile_dir: str = ".mimicgate-profile"
+    profile_dir: str = provider_profile_dir("deepseek")
     executable_path: str | None = None
     cdp_endpoint: str | None = None
     restart_retries: int = Field(default=1, ge=0, le=5)
@@ -53,7 +58,7 @@ class DeepSeekConfig(BaseModel):
 class QwenConfig(BaseModel):
     chat_url: str = "https://chat.qwen.ai/"
     auth: str = "manual"
-    profile_dir: str = ".mimicgate-profile/qwen"
+    profile_dir: str = provider_profile_dir("qwen")
     headless: bool = False
     timeout_ms: int = Field(default=180000, ge=1000)
 

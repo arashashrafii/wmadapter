@@ -3,10 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 import asyncio
 import os
-import fcntl
 import json
 import time
 import uuid
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - exercised on Windows
+    fcntl = None
+    import msvcrt
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
@@ -74,8 +78,11 @@ class BrowserManager:
         self.profile_path.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except (BlockingIOError, OSError) as exc:
             details = ""
             try:
                 metadata = json.loads(self._lock_metadata_path.read_text())
@@ -106,7 +113,10 @@ class BrowserManager:
         if self._lock_fd is None:
             return
         try:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            else:
+                msvcrt.locking(self._lock_fd, msvcrt.LK_UNLCK, 1)
         finally:
             os.close(self._lock_fd)
             self._lock_fd = None
