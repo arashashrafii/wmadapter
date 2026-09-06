@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -754,6 +755,42 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
                 await second.start()
             self.assertIsNone(second.playwright)
             await first.stop()
+
+    async def test_profile_lock_metadata_is_diagnostic_and_removed_by_owner(self):
+        profile = "/tmp/webbridge-lock-metadata-test"
+        context = Mock(pages=[])
+        context.browser = None
+        context.close = AsyncMock()
+        starter, _, _ = self._managed_playwright([context])
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=profile, executable_path="/usr/bin/chromium")
+            await manager.start()
+            metadata_path = manager.profile_path / ".webbridge-profile.lock.json"
+            metadata = json.loads(metadata_path.read_text())
+            self.assertEqual(metadata["owner_pid"], os.getpid())
+            self.assertEqual(metadata["profile"], str(manager.profile_path))
+            self.assertEqual(metadata["executable"], "/usr/bin/chromium")
+            self.assertEqual(metadata["mode"], "headed")
+            await manager.stop()
+            self.assertFalse(metadata_path.exists())
+
+    async def test_stale_profile_metadata_is_replaced_without_singleton_deletion(self):
+        profile = "/tmp/webbridge-stale-metadata-test"
+        manager = BrowserManager(profile_path=profile)
+        manager.profile_path.mkdir(parents=True, exist_ok=True)
+        metadata_path = manager.profile_path / ".webbridge-profile.lock.json"
+        metadata_path.write_text(json.dumps({"owner_pid": 1, "profile": "/old/profile"}))
+        singleton = manager.profile_path / "SingletonLock"
+        singleton.write_text("preserve")
+        context = Mock(pages=[])
+        context.browser = None
+        context.close = AsyncMock()
+        starter, _, _ = self._managed_playwright([context])
+        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+            await manager.start()
+            self.assertEqual(json.loads(metadata_path.read_text())["profile"], str(manager.profile_path))
+            await manager.stop()
+        self.assertTrue(singleton.exists())
 
     async def test_handoff_cancellation_releases_profile_lock(self):
         context = Mock(pages=[])

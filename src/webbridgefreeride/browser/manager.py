@@ -4,6 +4,9 @@ from pathlib import Path
 import asyncio
 import os
 import fcntl
+import json
+import time
+import uuid
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
@@ -46,6 +49,8 @@ class BrowserManager:
         self._stale_browser: Browser | None = None
         self._stale_playwright: Playwright | None = None
         self._lock_fd: int | None = None
+        self._lock_metadata_path = self.profile_path / ".webbridge-profile.lock.json"
+        self._lock_token: str | None = None
         self._page_owners: dict[int, str] = {}
         self._page_claims: dict[tuple[str, str | None], Page] = {}
         self._owned_pages: dict[int, Page] = {}
@@ -71,9 +76,31 @@ class BrowserManager:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
+            details = ""
+            try:
+                metadata = json.loads(self._lock_metadata_path.read_text())
+                details = f" (owner pid={metadata.get('owner_pid')}, profile={metadata.get('profile')})"
+            except (OSError, ValueError, TypeError):
+                pass
             os.close(fd)
-            raise RuntimeError(f"Browser profile is locked: {self.profile_path}") from exc
+            raise RuntimeError(f"Browser profile is locked: {self.profile_path}{details}") from exc
         self._lock_fd = fd
+        self._lock_token = f"{os.getpid()}-{time.time_ns()}-{uuid.uuid4().hex}"
+        metadata = {
+            "owner_pid": os.getpid(),
+            "owner_process_group": os.getpgid(0),
+            "executable": self.executable_path,
+            "profile": str(self.profile_path),
+            "started_at": time.time(),
+            "mode": "headless" if self.headless else "headed",
+            "lock_token": self._lock_token,
+        }
+        temporary = self.profile_path / f".webbridge-profile.lock.{self._lock_token}.tmp"
+        try:
+            temporary.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
+            os.replace(temporary, self._lock_metadata_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _release_profile_lock(self) -> None:
         if self._lock_fd is None:
@@ -83,6 +110,14 @@ class BrowserManager:
         finally:
             os.close(self._lock_fd)
             self._lock_fd = None
+            if self._lock_token is not None:
+                try:
+                    metadata = json.loads(self._lock_metadata_path.read_text())
+                    if metadata.get("lock_token") == self._lock_token:
+                        self._lock_metadata_path.unlink(missing_ok=True)
+                except (OSError, ValueError, TypeError):
+                    pass
+            self._lock_token = None
 
     @property
     def is_running(self) -> bool:
