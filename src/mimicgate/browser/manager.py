@@ -220,7 +220,13 @@ class BrowserManager:
         if primary is not None and not primary.is_closed():
             return primary
         candidates = [page for page in self.context.pages if not page.is_closed() and self._provider_page_allowed(owner, page)]
-        primary = candidates[0] if candidates else await self.context.new_page()
+        if candidates:
+            primary = candidates[0]
+        else:
+            # Persistent headed contexts normally start with one about:blank page;
+            # reuse it so login never creates a duplicate tab before navigation.
+            existing = [page for page in self.context.pages if not page.is_closed()]
+            primary = existing[0] if existing else await self.context.new_page()
         self._primary_pages[owner] = primary
         for extra in candidates[1:]:
             await extra.close()
@@ -281,12 +287,22 @@ class BrowserManager:
                 self.context = self.browser.contexts[0]
                 self._register_liveness(self.context)
                 return self.context
-            self.context = await self.playwright.chromium.launch_persistent_context(
-                user_data_dir=str(self.profile_path),
-                headless=self.headless,
-                executable_path=self.executable_path,
-                viewport={"width": 1440, "height": 1000},
-            )
+            launch_kwargs = {
+                "user_data_dir": str(self.profile_path),
+                "headless": self.headless,
+                "executable_path": self.executable_path,
+                "viewport": {"width": 1440, "height": 1000},
+            }
+            if not self.headless:
+                # Keep interactive login app-like while leaving headless API and CDP untouched.
+                launch_kwargs["args"] = [
+                    "--app=about:blank",
+                    "--disable-sync",
+                    "--disable-default-apps",
+                    "--disable-extensions",
+                    "--no-first-run",
+                ]
+            self.context = await self.playwright.chromium.launch_persistent_context(**launch_kwargs)
             self._register_liveness(self.context)
             self.lifecycle_state = LifecycleState.RUNNING
         except Exception:

@@ -699,6 +699,13 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             headless=False,
             executable_path=executable,
             viewport={"width": 1440, "height": 1000},
+            args=[
+                "--app=about:blank",
+                "--disable-sync",
+                "--disable-default-apps",
+                "--disable-extensions",
+                "--no-first-run",
+            ],
         )
         headless_chromium.launch_persistent_context.assert_awaited_once_with(
             user_data_dir=profile,
@@ -709,6 +716,39 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         headed.close.assert_awaited_once()
         headed_playwright.stop.assert_awaited_once()
         await manager.stop()
+
+    async def test_headed_login_uses_one_app_page_and_headless_has_no_app_args(self):
+        page = Mock(url="about:blank")
+        page.is_closed.return_value = False
+        context = Mock(pages=[page], browser=None)
+        context.close = AsyncMock()
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(return_value=context)
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock(start=AsyncMock(return_value=playwright))
+
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/mimicgate-app-{id(context)}", headless=False)
+            self.assertIs(await manager.primary_page("deepseek"), page)
+            self.assertEqual(len(context.pages), 1)
+            await manager.stop()
+        kwargs = chromium.launch_persistent_context.await_args.kwargs
+        self.assertIn("--app=about:blank", kwargs["args"])
+        self.assertIn("--disable-sync", kwargs["args"])
+
+        headless_context = Mock(pages=[], browser=None)
+        headless_context.close = AsyncMock()
+        headless_chromium = Mock()
+        headless_chromium.launch_persistent_context = AsyncMock(return_value=headless_context)
+        headless_playwright = Mock(chromium=headless_chromium)
+        headless_playwright.stop = AsyncMock()
+        headless_starter = Mock(start=AsyncMock(return_value=headless_playwright))
+        with patch("mimicgate.browser.manager.async_playwright", return_value=headless_starter):
+            manager = BrowserManager(profile_path=f"/tmp/mimicgate-headless-{id(context)}", headless=True)
+            await manager.start()
+            await manager.stop()
+        self.assertNotIn("args", headless_chromium.launch_persistent_context.await_args.kwargs)
 
     async def test_handoff_auth_probe_failure_restores_headed_session(self):
         headed = Mock(pages=[])
