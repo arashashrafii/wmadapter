@@ -66,7 +66,7 @@ profile where possible, and reports the handoff failure. CDP mode remains a
 separate operator-selected attach path and does not use this handoff or close
 the user's browser.
 
-The local installer creates a user-level systemd service named `webbridgefreeride.service`. Remove the local installation with:
+The local installer creates a user-level systemd service named `webbridgefreeride.service`. Remove the local installation with `./uninstall.sh`; plugin and systemd teardown is bounded and best-effort, so failures are reported while safe local cleanup continues.
 
 ```bash
 ./uninstall.sh
