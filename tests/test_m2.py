@@ -54,6 +54,7 @@ class Milestone2Tests(unittest.TestCase):
         page = AsyncMock()
         manager = Mock()
         manager.page = AsyncMock(return_value=page)
+        manager.primary_page = AsyncMock(return_value=page)
         manager.handoff_to_headless = AsyncMock()
         manager.stop = AsyncMock()
         config = {

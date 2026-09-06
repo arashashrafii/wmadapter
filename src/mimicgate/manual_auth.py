@@ -35,6 +35,7 @@ AUTH_TARGETS = {
         ),
     ),
 }
+_AUTH_TASKS: dict[int, asyncio.Task] = {}
 
 
 async def _click_first_visible(page, selectors: tuple[str, ...], timeout: int = 1500) -> bool:
@@ -56,6 +57,21 @@ async def _authenticated(provider: str, page, target: AuthTarget) -> bool:
 
 
 async def _wait_for_auth(provider: str, page, target: AuthTarget, timeout_s: int = 300) -> None:
+    key = id(page)
+    existing = _AUTH_TASKS.get(key)
+    if existing is not None:
+        await asyncio.shield(existing)
+        return
+    task = asyncio.create_task(_wait_for_auth_once(provider, page, target, timeout_s))
+    _AUTH_TASKS[key] = task
+    try:
+        await asyncio.shield(task)
+    finally:
+        if _AUTH_TASKS.get(key) is task:
+            _AUTH_TASKS.pop(key, None)
+
+
+async def _wait_for_auth_once(provider: str, page, target: AuthTarget, timeout_s: int) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_s
     while asyncio.get_running_loop().time() < deadline:
         try:
@@ -98,7 +114,7 @@ async def run_manual_auth(
         executable_path=configured_executable,
     )
     try:
-        page = await browser.page()
+        page = await browser.primary_page(provider)
         await page.goto(target.url, wait_until="domcontentloaded")
         if use_google:
             clicked = await _click_first_visible(page, target.google_selectors)
@@ -107,7 +123,6 @@ async def run_manual_auth(
         print(f"Complete {provider} authentication in the opened browser; MimicGate will continue automatically.")
         await _wait_for_auth(provider, page, target)
         async def auth_probe(page) -> bool:
-            await page.goto(target.url, wait_until="domcontentloaded")
             if provider == "deepseek":
                 return await DeepSeekLogin(page, target.url).is_authenticated()
             return await QwenChat(page).is_authenticated()

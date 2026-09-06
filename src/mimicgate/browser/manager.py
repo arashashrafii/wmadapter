@@ -58,6 +58,7 @@ class BrowserManager:
         self._page_owners: dict[int, str] = {}
         self._page_claims: dict[tuple[str, str | None], Page] = {}
         self._owned_pages: dict[int, Page] = {}
+        self._primary_pages: dict[str, Page] = {}
         self._lifecycle_lock = asyncio.Lock()
         self.lifecycle_state = LifecycleState.STOPPED
 
@@ -169,6 +170,9 @@ class BrowserManager:
         for key, claimed in list(self._page_claims.items()):
             if claimed is page:
                 self._page_claims.pop(key, None)
+        for owner, primary in list(self._primary_pages.items()):
+            if primary is page:
+                self._primary_pages.pop(owner, None)
 
     def _claim_page(self, owner: str, page: Page, conversation_id: str | None) -> Page:
         page_id = id(page)
@@ -204,6 +208,19 @@ class BrowserManager:
             return self._claim_page(owner, page, conversation_id)
         page = await self.context.new_page()
         return self._claim_page(owner, page, conversation_id)
+
+    async def primary_page(self, owner: str) -> Page:
+        """Return one provider login page and close only extra managed pages."""
+        await self.start()
+        primary = self._primary_pages.get(owner)
+        if primary is not None and not primary.is_closed():
+            return primary
+        candidates = [page for page in self.context.pages if not page.is_closed() and self._provider_page_allowed(owner, page)]
+        primary = candidates[0] if candidates else await self.context.new_page()
+        self._primary_pages[owner] = primary
+        for extra in candidates[1:]:
+            await extra.close()
+        return primary
 
     def release_page(self, page: Page) -> None:
         self._release_page(page)
@@ -345,6 +362,7 @@ class BrowserManager:
         self._page_owners.clear()
         self._page_claims.clear()
         self._owned_pages.clear()
+        self._primary_pages.clear()
         failure = None
         if context is not None:
             try:
