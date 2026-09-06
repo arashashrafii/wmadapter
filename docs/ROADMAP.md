@@ -57,7 +57,6 @@ Exit criteria:
 Goal: make the project installable and safe enough for external self-hosted users.
 
 Issues:
-- #12 Add production packaging, installation, and Docker support
 - #13 Add multi-user credential/session isolation
 - #14 Finalize public documentation, security guidance, and maintenance policy
 

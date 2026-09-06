@@ -144,6 +144,9 @@ Then start the bridge:
 
 The server defaults to `http://127.0.0.1:11555`.
 
+Container packaging is temporarily unavailable. Use the local virtual
+environment and optional user-level systemd service described here.
+
 For automatic login recovery without storing secrets in `config.yaml`, save encrypted local credentials outside the repository:
 
 ```bash
@@ -213,12 +216,6 @@ curl http://127.0.0.1:11555/v1/chat/completions \
     "stream": true,
     "messages": [{"role": "user", "content": "Reply only with: OK"}]
   }'
-```
-
-Docker:
-
-```bash
-docker compose up --build
 ```
 
 Security and maintenance notes live in `docs/SECURITY.md` and `docs/MAINTENANCE.md`.
