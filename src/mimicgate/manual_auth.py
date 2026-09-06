@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import asyncio
 from typing import Any
 
 from .browser.manager import BrowserManager
@@ -48,6 +49,24 @@ async def _click_first_visible(page, selectors: tuple[str, ...], timeout: int = 
     return False
 
 
+async def _authenticated(provider: str, page, target: AuthTarget) -> bool:
+    if provider == "deepseek":
+        return await DeepSeekLogin(page, target.url).is_authenticated()
+    return await QwenChat(page).is_authenticated()
+
+
+async def _wait_for_auth(provider: str, page, target: AuthTarget, timeout_s: int = 300) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    while asyncio.get_running_loop().time() < deadline:
+        try:
+            if await _authenticated(provider, page, target):
+                return
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+    raise RuntimeError(f"Timed out waiting for {provider} authentication; login remains user-driven")
+
+
 async def run_manual_auth(
     provider: str,
     *,
@@ -85,9 +104,8 @@ async def run_manual_auth(
             clicked = await _click_first_visible(page, target.google_selectors)
             if not clicked:
                 print("Google sign-in button was not detected automatically. Click it manually in the browser.")
-        print(f"Complete {provider} authentication in the opened browser.")
-        print("Press Enter here after the chat page is logged in and usable.")
-        input()
+        print(f"Complete {provider} authentication in the opened browser; MimicGate will continue automatically.")
+        await _wait_for_auth(provider, page, target)
         async def auth_probe(page) -> bool:
             await page.goto(target.url, wait_until="domcontentloaded")
             if provider == "deepseek":
