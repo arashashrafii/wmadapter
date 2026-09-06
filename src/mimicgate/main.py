@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import logging
 import time
 import uuid
@@ -84,12 +85,27 @@ def _sse(data: dict[str, Any] | str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    retry_task = None
     try:
         await router.start()
     except Exception as exc:
         providers["deepseek"].last_error = str(exc)
         logger.warning("Startup provider readiness check failed: %s", exc)
+    async def retry_provider_startup():
+        while True:
+            await asyncio.sleep(2)
+            for name in config["providers"].get("enabled", [config["providers"]["default"]]):
+                provider = providers[name]
+                if provider.ready:
+                    continue
+                try:
+                    await provider.start()
+                except Exception as exc:
+                    provider.last_error = str(exc)
+    retry_task = asyncio.create_task(retry_provider_startup())
     yield
+    retry_task.cancel()
+    await asyncio.gather(retry_task, return_exceptions=True)
     await router.stop()
 
 
@@ -102,6 +118,8 @@ def _error(message, kind="invalid_request_error", code=None):
 
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request, exc):
+    if exc.status_code == 503 and str(exc.detail) == "provider_login_required":
+        return JSONResponse(_error("Provider login is required", "provider_error", "provider_login_required"), status_code=503)
     kind = "provider_error" if exc.status_code >= 500 else "invalid_request_error"
     code = "model_not_found" if exc.status_code == 404 and "model" in str(exc.detail).lower() else kind
     return JSONResponse(_error(str(exc.detail), kind, code), status_code=exc.status_code)
@@ -123,7 +141,10 @@ async def ready():
     status = await router.status()
     enabled = config["providers"].get("enabled", [config["providers"]["default"]])
     ready_value = all(status.get(name, {}).get("ready") for name in enabled)
-    return {"status": "ready" if ready_value else "not_ready", "providers": redact(status)}
+    payload = {"status": "ready" if ready_value else "not_ready", "providers": redact(status)}
+    if not ready_value:
+        return JSONResponse(payload, status_code=503)
+    return payload
 
 
 def _model_catalog():
@@ -136,6 +157,9 @@ def _model_provider(model):
         return router.resolve_model(model)
     except RuntimeError as exc:
         raise HTTPException(404, "Unknown model") from exc
+    if not provider.ready:
+        raise HTTPException(503, "provider_login_required")
+    return provider
 
 
 @app.get("/props")

@@ -19,6 +19,8 @@ from .config import provider_profile_dir
 
 logger = logging.getLogger(__name__)
 
+AUTH_STATES = ("STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION", "READY")
+
 
 class PageCapacityError(RuntimeError):
     """No idle Gateway-owned page is available within the configured cap."""
@@ -52,6 +54,9 @@ class DeepSeekService(ChatProvider):
         self.restart_retries = int(browser_cfg.get("restart_retries", 1))
         self.last_error: str | None = None
         self.ready = False
+        self.auth_state = "STARTING"
+        self.reason_code = "starting"
+        self.updated_at = time.time()
         self._conversation_pages: dict[str, object] = {}
         self._conversation_bindings: dict[str, str] = {}
         self.max_pages = browser_cfg.get("max_pages", 8)
@@ -61,6 +66,7 @@ class DeepSeekService(ChatProvider):
         self._request_lock = asyncio.Lock()
 
     async def start(self) -> None:
+        self._set_auth_state("CHECKING_SESSION", "checking_session")
         await self._authenticate()
 
     async def stop(self) -> None:
@@ -78,7 +84,15 @@ class DeepSeekService(ChatProvider):
             "ready": self.ready,
             "last_error": self.last_error,
             "conversations": len(self._conversation_pages),
+            "state": self.auth_state,
+            "reason_code": self.reason_code,
+            "updated_at": self.updated_at,
         }
+
+    def _set_auth_state(self, state: str, reason_code: str) -> None:
+        self.auth_state = state
+        self.reason_code = reason_code
+        self.updated_at = time.time()
 
     def _track_page(self, page: object) -> None:
         self._page_records.setdefault(id(page), _PageRecord(page, time.monotonic()))
@@ -192,10 +206,16 @@ class DeepSeekService(ChatProvider):
         return page
 
     async def _authenticate(self, conversation_id: str | None = None) -> None:
+        self._set_auth_state("AUTHENTICATING", "provider_session_check")
         page = await self._page_for_conversation(conversation_id)
         login = DeepSeekLogin(page, self.chat_url, timeout_ms=self.login_timeout_ms)
-        await login.ensure_authenticated()
+        try:
+            await login.ensure_authenticated()
+        except Exception as exc:
+            self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
+            raise exc
         self.ready = True
+        self._set_auth_state("READY", "authenticated")
         self.last_error = None
 
     async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
@@ -293,6 +313,9 @@ class QwenService(ChatProvider):
         self.restart_retries = int(browser_cfg.get("restart_retries", 1))
         self.last_error: str | None = None
         self.ready = False
+        self.auth_state = "STARTING"
+        self.reason_code = "starting"
+        self.updated_at = time.time()
         self._conversation_pages: dict[str, object] = {}
         self.max_pages = browser_cfg.get("max_pages", 8)
         self.idle_timeout_ms = browser_cfg.get("idle_timeout_ms", 300000)
@@ -317,7 +340,15 @@ class QwenService(ChatProvider):
             "ready": self.ready,
             "last_error": self.last_error,
             "conversations": len(self._conversation_pages),
+            "state": self.auth_state,
+            "reason_code": self.reason_code,
+            "updated_at": self.updated_at,
         }
+
+    def _set_auth_state(self, state: str, reason_code: str) -> None:
+        self.auth_state = state
+        self.reason_code = reason_code
+        self.updated_at = time.time()
 
     def _track_page(self, page: object) -> None:
         self._page_records.setdefault(id(page), _PageRecord(page, time.monotonic()))
@@ -399,6 +430,7 @@ class QwenService(ChatProvider):
         return page
 
     async def _authenticate(self, conversation_id: str | None = None) -> None:
+        self._set_auth_state("AUTHENTICATING", "provider_session_check")
         page = await self._page_for_conversation(conversation_id)
         chat = QwenChat(page, timeout_ms=self.timeout_ms)
         if await chat.is_authenticated():
@@ -409,8 +441,10 @@ class QwenService(ChatProvider):
         await page.wait_for_timeout(3000)
         chat = QwenChat(page, timeout_ms=self.timeout_ms)
         if not await chat.is_authenticated():
+            self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
             raise RuntimeError("Qwen is not logged in. Run `.venv/bin/mimicgate auth qwen` and log in manually.")
         self.ready = True
+        self._set_auth_state("READY", "authenticated")
         self.last_error = None
 
     async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
