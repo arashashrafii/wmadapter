@@ -21,7 +21,6 @@ secret or public trust root is stored in this repository.
 | Linux | Adapter contract | Playwright Chromium | `install.sh` is the current local adapter. |
 | macOS | Adapter contract | Playwright Chromium | Native packaging is pending. |
 | Windows | Adapter contract | Playwright Chromium | Native packaging is pending. |
-| Android | Unsupported | None | Client-only use through the local/API boundary is supported. |
 
 The current implementation provides testable integrity, cache ordering,
 staging, and adapter contracts. Publishing real artifacts, CDN/mirror

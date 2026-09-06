@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from mimicgate.browser.distribution import Artifact, activate_atomically, source_order, verify_artifact, verify_manifest
-from mimicgate.installers import UnsupportedPlatformError, installer_adapter
+from mimicgate.installers import installer_adapter
 
 
 class DistributionTests(unittest.TestCase):
@@ -34,5 +34,3 @@ class DistributionTests(unittest.TestCase):
             activate_atomically(staging, root / "active")
             self.assertEqual((root / "active" / "browser").read_text(), "ok")
         self.assertEqual(installer_adapter("linux").platform_name, "linux")
-        with self.assertRaises(UnsupportedPlatformError):
-            installer_adapter("android")

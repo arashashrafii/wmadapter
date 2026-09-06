@@ -36,6 +36,4 @@ def installer_adapter(system: str | None = None) -> InstallerAdapter:
         return MacOSInstaller()
     if name in {"windows", "win32"}:
         return WindowsInstaller()
-    if name in {"android", "androidlinux"}:
-        raise UnsupportedPlatformError("Android is unsupported for the MimicGate gateway; use an OpenAI-compatible client-only device.")
     raise UnsupportedPlatformError(f"Unsupported installer platform: {name}")
