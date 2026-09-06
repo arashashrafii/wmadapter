@@ -283,7 +283,7 @@ install_openclaw_cleanup_plugin
 
 say "Waiting for API health after login..."
 if ! wait_health; then
-  echo "Server did not become healthy after login. Check webbridgefreeride.install.log." >&2
+  echo "Server did not become healthy after login. Check the legacy webbridgefreeride.install.log." >&2
   exit 1
 fi
 

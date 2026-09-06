@@ -4,8 +4,8 @@ MimicGate is a local OpenAI-compatible gateway for authenticated DeepSeek Web
 and Qwen Web sessions. It drives provider web pages through a user-owned
 browser profile and exposes the verified HTTP boundary to OpenCode, Hermes,
 OpenClaw, and compatible clients. It does not use the paid DeepSeek API.
-The historical WebBridgeFreeRide command, import namespace, configuration paths,
-and environment variables remain supported compatibility aliases.
+The historical `webbridgefreeride` command and import namespace, configuration
+paths, and environment variables remain supported compatibility aliases.
 
 The provider side is Web-only: DeepSeek and Qwen are accessed through their
 browser chat pages.
@@ -66,7 +66,10 @@ profile where possible, and reports the handoff failure. CDP mode remains a
 separate operator-selected attach path and does not use this handoff or close
 the user's browser.
 
-The local installer creates a user-level systemd service named `webbridgefreeride.service`. Remove the local installation with `./uninstall.sh`; plugin and systemd teardown is bounded and best-effort, so failures are reported while safe local cleanup continues.
+The local installer creates a user-level systemd service named
+`webbridgefreeride.service` for compatibility. Remove the local installation
+with `./uninstall.sh`; plugin and systemd teardown is bounded and best-effort,
+so failures are reported while safe local cleanup continues.
 
 ```bash
 ./uninstall.sh
