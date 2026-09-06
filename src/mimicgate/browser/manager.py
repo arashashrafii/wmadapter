@@ -38,6 +38,7 @@ class BrowserManager:
         headless: bool = False,
         executable_path: str | None = None,
         cdp_endpoint: str | None = None,
+        on_disconnect: Callable[[str], None] | None = None,
     ):
         self.profile_path = Path(canonical_path(profile_path))
         login_mode = os.getenv("MIMICGATE_LOGIN") == "1"
@@ -45,6 +46,7 @@ class BrowserManager:
         self.headless = False if login_mode or xvfb else headless
         self.executable_path = canonical_path(executable_path) if executable_path else None
         self.cdp_endpoint = cdp_endpoint
+        self.on_disconnect = on_disconnect
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -135,6 +137,8 @@ class BrowserManager:
         return self.context is not None and self._live
 
     def _mark_disconnected(self, *_args) -> None:
+        if self.on_disconnect is not None:
+            self.on_disconnect("browser_disconnected")
         if self.context is not None:
             self._stale_context = self.context
         if self.browser is not None:

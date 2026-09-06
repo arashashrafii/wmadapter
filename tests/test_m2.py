@@ -12,10 +12,11 @@ from mimicgate.security import redact
 from mimicgate.providers.router import ProviderRouter
 from mimicgate.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
 from mimicgate.ports import find_free_port
-from mimicgate.manual_auth import AUTH_TARGETS, run_manual_auth
+from mimicgate.manual_auth import AUTH_TARGETS, _wait_for_auth, run_manual_auth
 from mimicgate.providers.base import ChatProvider
 from mimicgate.providers.deepseek.chat import DeepSeekChat
 from mimicgate.browser.manager import BrowserManager
+from mimicgate.service import AUTH_STATES, DeepSeekService
 
 
 class FakeProvider(ChatProvider):
@@ -35,6 +36,30 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_login_cancelled_is_stable_and_explicit_retry_is_single_attempt(self):
+        service = DeepSeekService(load_config())
+        service._on_browser_disconnect("browser_disconnected")
+        self.assertEqual(service.auth_state, "LOGIN_CANCELLED")
+        self.assertIn("LOGIN_CANCELLED", AUTH_STATES)
+        service.start = AsyncMock()
+        asyncio.run(service.retry_login())
+        service.start.assert_awaited_once()
+        self.assertEqual(service.auth_state, "STARTING")
+
+    def test_cancelled_provider_does_not_launch_for_chat(self):
+        service = DeepSeekService(load_config())
+        service._set_auth_state("LOGIN_CANCELLED", "browser_disconnected")
+        service.browser.page_for = AsyncMock()
+        with self.assertRaisesRegex(RuntimeError, "provider_login_required"):
+            asyncio.run(service._page_for_conversation(None))
+        service.browser.page_for.assert_not_awaited()
+
+    def test_closed_login_page_stops_auth_watcher(self):
+        page = Mock()
+        page.is_closed.return_value = True
+        with self.assertRaisesRegex(RuntimeError, "login cancelled"):
+            asyncio.run(_wait_for_auth("deepseek", page, AUTH_TARGETS["deepseek"], timeout_s=120))
+
     def test_manual_auth_rejects_cdp_mode(self):
         config = {"browser": {"mode": "cdp"}}
         with self.assertRaisesRegex(RuntimeError, "browser.mode=managed"):
@@ -52,6 +77,7 @@ class Milestone2Tests(unittest.TestCase):
         from pathlib import Path
 
         page = AsyncMock()
+        page.is_closed.return_value = False
         manager = Mock()
         manager.page = AsyncMock(return_value=page)
         manager.primary_page = AsyncMock(return_value=page)

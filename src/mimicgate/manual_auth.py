@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import asyncio
+import inspect
 from typing import Any
 
 from .browser.manager import BrowserManager
@@ -74,6 +75,11 @@ async def _wait_for_auth(provider: str, page, target: AuthTarget, timeout_s: int
 async def _wait_for_auth_once(provider: str, page, target: AuthTarget, timeout_s: int) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_s
     while asyncio.get_running_loop().time() < deadline:
+        closed = page.is_closed()
+        if inspect.isawaitable(closed):
+            closed = await closed
+        if closed:
+            raise RuntimeError(f"{provider} login cancelled: browser page was closed")
         try:
             if await _authenticated(provider, page, target):
                 return

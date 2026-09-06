@@ -20,7 +20,10 @@ from .config import provider_profile_dir
 
 logger = logging.getLogger(__name__)
 
-AUTH_STATES = ("STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION", "READY")
+AUTH_STATES = (
+    "STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING",
+    "HANDOFF", "VERIFYING_SESSION", "READY", "LOGIN_CANCELLED",
+)
 
 
 class PageCapacityError(RuntimeError):
@@ -48,6 +51,7 @@ class DeepSeekService(ChatProvider):
             headless=browser_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
+            on_disconnect=self._on_browser_disconnect,
         )
         self.chat_url = deepseek_cfg.get("chat_url", "https://chat.deepseek.com/")
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
@@ -71,6 +75,17 @@ class DeepSeekService(ChatProvider):
         self.login_attempt_id = uuid.uuid4().hex
         self._set_auth_state("CHECKING_SESSION", "checking_session")
         await self._authenticate()
+
+    def _on_browser_disconnect(self, reason: str) -> None:
+        if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
+            self._set_auth_state("LOGIN_CANCELLED", reason)
+
+    async def retry_login(self) -> None:
+        """Explicitly reset a cancelled login and start exactly one attempt."""
+        self.ready = False
+        self.last_error = None
+        self._set_auth_state("STARTING", "explicit_retry")
+        await self.start()
 
     async def stop(self) -> None:
         await self.browser.stop()
@@ -172,6 +187,8 @@ class DeepSeekService(ChatProvider):
             self._conversation_bindings[session_id] = session_key
 
     async def _page_for_conversation(self, conversation_id: str | None):
+        if self.auth_state == "LOGIN_CANCELLED":
+            raise RuntimeError("provider_login_required")
         if not conversation_id:
             await self.cleanup_pages()
             page = await self.browser.page_for(self.name)
@@ -216,7 +233,8 @@ class DeepSeekService(ChatProvider):
         try:
             await login.ensure_authenticated()
         except Exception as exc:
-            self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
+            if self.auth_state != "LOGIN_CANCELLED":
+                self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
             raise exc
         self.ready = True
         self._set_auth_state("READY", "authenticated")
@@ -311,6 +329,7 @@ class QwenService(ChatProvider):
             headless=qwen_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
+            on_disconnect=self._on_browser_disconnect,
         )
         self.chat_url = qwen_cfg.get("chat_url", "https://chat.qwen.ai/")
         self.timeout_ms = int(qwen_cfg.get("timeout_ms", 180000))
@@ -330,7 +349,18 @@ class QwenService(ChatProvider):
 
     async def start(self) -> None:
         self.login_attempt_id = uuid.uuid4().hex
+        self._set_auth_state("CHECKING_SESSION", "checking_session")
         await self._authenticate()
+
+    def _on_browser_disconnect(self, reason: str) -> None:
+        if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
+            self._set_auth_state("LOGIN_CANCELLED", reason)
+
+    async def retry_login(self) -> None:
+        self.ready = False
+        self.last_error = None
+        self._set_auth_state("STARTING", "explicit_retry")
+        await self.start()
 
     async def stop(self) -> None:
         await self.browser.stop()
@@ -408,6 +438,8 @@ class QwenService(ChatProvider):
         return True
 
     async def _page_for_conversation(self, conversation_id: str | None):
+        if self.auth_state == "LOGIN_CANCELLED":
+            raise RuntimeError("provider_login_required")
         if not conversation_id:
             await self.cleanup_pages()
             page = await self.browser.page_for(self.name)
@@ -448,7 +480,8 @@ class QwenService(ChatProvider):
         await page.wait_for_timeout(3000)
         chat = QwenChat(page, timeout_ms=self.timeout_ms)
         if not await chat.is_authenticated():
-            self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
+            if self.auth_state != "LOGIN_CANCELLED":
+                self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
             raise RuntimeError("Qwen is not logged in. Run `.venv/bin/mimicgate auth qwen` and log in manually.")
         self.ready = True
         self._set_auth_state("READY", "authenticated")
