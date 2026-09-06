@@ -182,7 +182,7 @@ stop_service() {
 wait_health() {
   local i
   for i in $(seq 1 60); do
-    if curl -fsS "http://${API_HOST}:${API_PORT}/health" >/dev/null 2>&1; then
+    if curl -fsS "http://${API_HOST}:${API_PORT}/ready" >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
