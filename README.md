@@ -117,8 +117,8 @@ API provider.
 ## Linux quick start
 
 ```bash
-git clone https://github.com/arashashrafii/webbridgefreeride.git
-cd webbridgefreeride
+git clone https://github.com/arashashrafii/mimicgate.git
+cd mimicgate
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip

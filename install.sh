@@ -3,7 +3,7 @@ set -euo pipefail
 
 API_HOST="127.0.0.1"
 API_PORT="11555"
-REPO_URL="https://github.com/arashashrafii/webbridgefreeride"
+REPO_URL="https://github.com/arashashrafii/mimicgate"
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="webbridgefreeride.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
