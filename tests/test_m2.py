@@ -78,6 +78,7 @@ class Milestone2Tests(unittest.TestCase):
 
         page = AsyncMock()
         page.is_closed.return_value = False
+        page.url = "https://chat.qwen.ai/"
         manager = Mock()
         manager.page = AsyncMock(return_value=page)
         manager.primary_page = AsyncMock(return_value=page)
@@ -94,6 +95,7 @@ class Milestone2Tests(unittest.TestCase):
         kwargs = manager_class.call_args.kwargs
         self.assertEqual(kwargs["profile_path"], str(Path("./qwen-profile").resolve()))
         self.assertEqual(kwargs["executable_path"], str(Path("./chrome").resolve()))
+        page.goto.assert_not_awaited()
     def test_deepseek_remote_delete_uses_web_ui_confirmation(self):
         page = Mock()
         page.url = "https://chat.deepseek.com/a/chat/s/abc123"
@@ -729,12 +731,16 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter = Mock(start=AsyncMock(return_value=playwright))
 
         with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/mimicgate-app-{id(context)}", headless=False)
+            manager = BrowserManager(
+                profile_path=f"/tmp/mimicgate-app-{id(context)}",
+                headless=False,
+                launch_url="https://chat.deepseek.com/",
+            )
             self.assertIs(await manager.primary_page("deepseek"), page)
             self.assertEqual(len(context.pages), 1)
             await manager.stop()
         kwargs = chromium.launch_persistent_context.await_args.kwargs
-        self.assertIn("--app=about:blank", kwargs["args"])
+        self.assertIn("--app=https://chat.deepseek.com/", kwargs["args"])
         self.assertIn("--disable-sync", kwargs["args"])
 
         headless_context = Mock(pages=[], browser=None)

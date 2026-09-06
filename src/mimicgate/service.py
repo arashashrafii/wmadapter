@@ -46,14 +46,15 @@ class DeepSeekService(ChatProvider):
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
         deepseek_cfg = config["deepseek"]
+        self.chat_url = deepseek_cfg.get("chat_url", "https://chat.deepseek.com/")
         self.browser = BrowserManager(
             profile_path=browser_cfg.get("profile_dir", provider_profile_dir("deepseek")),
             headless=browser_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
             on_disconnect=self._on_browser_disconnect,
+            launch_url=self.chat_url,
         )
-        self.chat_url = deepseek_cfg.get("chat_url", "https://chat.deepseek.com/")
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
         self.login_timeout_ms = int(deepseek_cfg.get("login_timeout_ms", 30000))
         self.restart_retries = int(browser_cfg.get("restart_retries", 1))
@@ -324,14 +325,15 @@ class QwenService(ChatProvider):
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
         qwen_cfg = config.get("qwen", {})
+        self.chat_url = qwen_cfg.get("chat_url", "https://chat.qwen.ai/")
         self.browser = BrowserManager(
             profile_path=qwen_cfg.get("profile_dir", provider_profile_dir("qwen")),
             headless=qwen_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
             on_disconnect=self._on_browser_disconnect,
+            launch_url=self.chat_url,
         )
-        self.chat_url = qwen_cfg.get("chat_url", "https://chat.qwen.ai/")
         self.timeout_ms = int(qwen_cfg.get("timeout_ms", 180000))
         self.restart_retries = int(browser_cfg.get("restart_retries", 1))
         self.last_error: str | None = None

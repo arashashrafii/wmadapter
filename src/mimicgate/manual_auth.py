@@ -118,10 +118,13 @@ async def run_manual_auth(
         profile_path=canonical_path(profile_value),
         headless=False,
         executable_path=configured_executable,
+        launch_url=target.url,
     )
     try:
         page = await browser.primary_page(provider)
-        await page.goto(target.url, wait_until="domcontentloaded")
+        current_url = getattr(page, "url", "")
+        if not isinstance(current_url, str) or not current_url.startswith(target.url.rstrip("/")):
+            await page.goto(target.url, wait_until="domcontentloaded")
         if use_google:
             clicked = await _click_first_visible(page, target.google_selectors)
             if not clicked:

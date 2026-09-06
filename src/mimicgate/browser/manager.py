@@ -39,6 +39,7 @@ class BrowserManager:
         executable_path: str | None = None,
         cdp_endpoint: str | None = None,
         on_disconnect: Callable[[str], None] | None = None,
+        launch_url: str | None = None,
     ):
         self.profile_path = Path(canonical_path(profile_path))
         login_mode = os.getenv("MIMICGATE_LOGIN") == "1"
@@ -47,6 +48,10 @@ class BrowserManager:
         self.executable_path = canonical_path(executable_path) if executable_path else None
         self.cdp_endpoint = cdp_endpoint
         self.on_disconnect = on_disconnect
+        self.launch_url = launch_url
+        self.launch_info: dict[str, object] = {}
+        self.page_event_count = 0
+        self._launch_page_ids: set[int] = set()
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -152,6 +157,7 @@ class BrowserManager:
 
     def _register_liveness(self, context: BrowserContext) -> None:
         self._live = True
+        context.on("page", lambda *_args: setattr(self, "page_event_count", self.page_event_count + 1))
         context.on("close", self._mark_disconnected)
         browser = getattr(context, "browser", None)
         if browser is not None:
@@ -226,10 +232,17 @@ class BrowserManager:
             # Persistent headed contexts normally start with one about:blank page;
             # reuse it so login never creates a duplicate tab before navigation.
             existing = [page for page in self.context.pages if not page.is_closed()]
-            primary = existing[0] if existing else await self.context.new_page()
+            if not existing:
+                raise RuntimeError("managed login requires the browser launch page")
+            primary = existing[0]
         self._primary_pages[owner] = primary
         for extra in candidates[1:]:
             await extra.close()
+        for extra in list(self.context.pages):
+            if extra is primary or extra.is_closed() or id(extra) not in self._launch_page_ids:
+                continue
+            if getattr(extra, "url", "") in {"", "about:blank"}:
+                await extra.close()
         return primary
 
     def release_page(self, page: Page) -> None:
@@ -296,13 +309,25 @@ class BrowserManager:
             if not self.headless:
                 # Keep interactive login app-like while leaving headless API and CDP untouched.
                 launch_kwargs["args"] = [
-                    "--app=about:blank",
+                    f"--app={self.launch_url or 'about:blank'}",
                     "--disable-sync",
                     "--disable-default-apps",
                     "--disable-extensions",
                     "--no-first-run",
                 ]
+            self.launch_info = {
+                "argv": list(launch_kwargs.get("args", [])),
+                "executable": self.executable_path,
+                "profile": str(self.profile_path),
+                "headless": self.headless,
+                "revision": getattr(getattr(self.playwright, "chromium", None), "_revision", None),
+                "pid": None,
+            }
             self.context = await self.playwright.chromium.launch_persistent_context(**launch_kwargs)
+            self._launch_page_ids = {id(page) for page in self.context.pages}
+            browser_process = getattr(getattr(self.context, "browser", None), "_impl_obj", None)
+            process = getattr(browser_process, "_process", None) or getattr(browser_process, "process", None)
+            self.launch_info["pid"] = getattr(process, "pid", None)
             self._register_liveness(self.context)
             self.lifecycle_state = LifecycleState.RUNNING
         except Exception:
