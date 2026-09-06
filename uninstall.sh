@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="webbridgefreeride.service"
+SERVICE_NAME="mimicgate.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
 UNINSTALL_TIMEOUT_SEC="${UNINSTALL_TIMEOUT_SEC:-10}"
@@ -49,12 +49,6 @@ run_bounded() {
 }
 
 echo "Uninstalling MimicGate local service..."
-if command -v openclaw >/dev/null 2>&1; then
-  run_bounded "OpenClaw plugin disable" openclaw plugins disable webbridgefreeride-openclaw || true
-  run_bounded "OpenClaw plugin uninstall" openclaw plugins uninstall webbridgefreeride-openclaw || true
-else
-  echo "Warning: OpenClaw command is missing; plugin cleanup skipped." >&2
-fi
 if command -v systemctl >/dev/null 2>&1; then
   run_bounded "systemd service stop/disable" systemctl --user disable --now "$SERVICE_NAME" || true
   run_bounded "systemd daemon-reload" systemctl --user daemon-reload || true
@@ -67,12 +61,12 @@ rm -f -- "$SERVICE_FILE"
 
 # Keep local cleanup safe and idempotent: every target is rooted at this script
 # or is an explicitly configured generated unit path.
-rm -rf -- "$PROJECT_DIR/.venv" "$PROJECT_DIR/.webbridge-profile"
+rm -rf -- "$PROJECT_DIR/.venv" "$PROJECT_DIR/.mimicgate-profile"
 rm -f -- \
   "$PROJECT_DIR/.env" \
   "$PROJECT_DIR/config.yaml" \
-  "$PROJECT_DIR/.webbridgefreeride.pid" \
-  "$PROJECT_DIR/webbridgefreeride.install.log" \
-  "$PROJECT_DIR/webbridgefreeride.log"
+  "$PROJECT_DIR/.mimicgate.pid" \
+  "$PROJECT_DIR/mimicgate.install.log" \
+  "$PROJECT_DIR/mimicgate.log"
 
 echo "MimicGate local cleanup completed. Source files were kept in: $PROJECT_DIR"

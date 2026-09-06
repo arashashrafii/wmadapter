@@ -4,7 +4,7 @@ MimicGate is a local OpenAI-compatible gateway for authenticated DeepSeek Web
 and Qwen Web sessions. It drives provider web pages through a user-owned
 browser profile and exposes the verified HTTP boundary to OpenCode, Hermes,
 OpenClaw, and compatible clients. It does not use the paid DeepSeek API.
-The historical `webbridgefreeride` command and import namespace, configuration
+The historical `mimicgate` command and import namespace, configuration
 paths, and environment variables remain supported compatibility aliases.
 
 The provider side is Web-only: DeepSeek and Qwen are accessed through their
@@ -67,55 +67,16 @@ separate operator-selected attach path and does not use this handoff or close
 the user's browser.
 
 The local installer creates a user-level systemd service named
-`webbridgefreeride.service` for compatibility. Remove the local installation
-with `./uninstall.sh`; plugin and systemd teardown is bounded and best-effort,
-so failures are reported while safe local cleanup continues.
+`mimicgate.service` for compatibility. Remove the local installation
+with `./uninstall.sh`; systemd teardown is bounded and best-effort, so failures
+are reported while safe local cleanup continues.
 
 ```bash
 ./uninstall.sh
 ```
 
-When Qwen is selected and OpenClaw is installed, the installer can enable a
-small cleanup plugin for the browser adapter:
-
-```bash
-openclaw plugins install --link "$PWD/openclaw-plugin" --force
-openclaw plugins enable webbridgefreeride-openclaw
-```
-
-The plugin displays as `MimicGate cleanup`; the historical plugin identifier
-`webbridgefreeride-openclaw` remains an installation compatibility alias.
-
-Each OpenClaw session maps to a separate browser conversation. When the
-OpenClaw cleanup plugin receives a session-deleted event, MimicGate uses the
-DeepSeek Web UI to delete the matching remote conversation before closing its
-local browser page. Deleting all OpenClaw sessions therefore deletes each
-matching DeepSeek conversation; unrelated DeepSeek conversations are never
-selected.
-
-For OpenClaw, configure the model as `webbridge/deepseek-chat`. MimicGate
-passes OpenClaw's tool definitions to DeepSeek Web in a strict text protocol and
-converts a valid `<tool_call>...</tool_call>` response into an OpenAI-compatible
-`tool_calls` message. OpenClaw executes the tool and sends the result back on
-the next turn.
-
-OpenClaw configuration follows its custom-provider format:
-
-```json5
-{
-  models: { providers: { webbridge: {
-    baseUrl: "http://127.0.0.1:11555/v1",
-    apiKey: "local-webbridge",
-    api: "openai-completions",
-    models: [{ id: "deepseek-chat", name: "MimicGate DeepSeek Web",
-      reasoning: false, input: ["text"] }]
-  } } },
-  agents: { defaults: { model: { primary: "webbridge/deepseek-chat" } } }
-}
-```
-
-This provider is intentionally a free Web Chat adapter, not the paid DeepSeek
-API provider.
+MimicGate accepts standard OpenAI-compatible requests from local clients. The
+provider is a free Web Chat adapter, not the paid DeepSeek API provider.
 
 ## Linux quick start
 
@@ -156,13 +117,13 @@ For automatic login recovery without storing secrets in `config.yaml`, save encr
 .venv/bin/mimicgate credentials set
 ```
 
-The credential key is stored under `~/.config/webbridgefreeride/` and the encrypted credential file under `~/.local/share/webbridgefreeride/` by default.
+The credential key is stored under `~/.config/mimicgate/` and the encrypted credential file under `~/.local/share/mimicgate/` by default.
 
 Canonical environment variables use the `MIMICGATE_*` prefix, including
 `MIMICGATE_CONFIG`, `MIMICGATE_LOGIN`, `MIMICGATE_XVFB`, `MIMICGATE_KEY_FILE`,
 `MIMICGATE_CREDENTIAL_FILE`, and `MIMICGATE_URL`. The historical
-`WEBBRIDGE_*` names remain fallbacks; when both are set, the MimicGate name
-takes precedence. Existing `webbridgefreeride` profile, credential, log,
+`MIMICGATE_*` names remain fallbacks; when both are set, the MimicGate name
+takes precedence. Existing `mimicgate` profile, credential, log,
 service, and plugin paths remain valid compatibility paths.
 
 ## Qwen authentication
@@ -173,7 +134,7 @@ Create a persistent Qwen browser session with manual or Google authentication:
 .venv/bin/mimicgate auth qwen --google
 ```
 
-Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.webbridge-profile/qwen`.
+Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.mimicgate-profile/qwen`.
 
 ## Test
 

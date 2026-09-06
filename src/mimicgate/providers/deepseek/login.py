@@ -5,7 +5,6 @@ import os
 from playwright.async_api import Page
 
 from ...credentials import CredentialStore, CredentialStoreError
-from ...config import env_value
 from .selectors import CHAT_INPUTS, COOKIE_ACCEPT, LOGIN_AGREE, LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
 
 
@@ -44,7 +43,7 @@ class DeepSeekLogin:
         return False
 
     def _credentials(self) -> tuple[str, str] | None:
-        if env_value("MIMICGATE_LOGIN", "WEBBRIDGE_LOGIN") == "1":
+        if os.getenv("MIMICGATE_LOGIN") == "1":
             return None
         email = os.getenv("DEEPSEEK_EMAIL")
         password = os.getenv("DEEPSEEK_PASSWORD")

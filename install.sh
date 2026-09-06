@@ -5,7 +5,7 @@ API_HOST="127.0.0.1"
 API_PORT="11555"
 REPO_URL="https://github.com/arashashrafii/mimicgate"
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="webbridgefreeride.service"
+SERVICE_NAME="mimicgate.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
 DISPLAY_VALUE="${DISPLAY:-:0}"
@@ -97,7 +97,7 @@ server:
 
 browser:
   headless: ${headless}
-  profile_dir: ./.webbridge-profile
+  profile_dir: ./.mimicgate-profile
   executable_path: ${executable_path}
   cdp_endpoint: ${cdp_endpoint:-null}
   restart_retries: 1
@@ -108,7 +108,7 @@ provider_choice: ${provider}
 qwen:
   chat_url: ${chat_url}
   auth: google
-  profile_dir: ./.webbridge-profile/qwen
+  profile_dir: ./.mimicgate-profile/qwen
   headless: ${headless}
 
 deepseek:
@@ -125,7 +125,7 @@ providers:
 
 logging:
   level: INFO
-  file: webbridgefreeride.log
+  file: mimicgate.log
   max_bytes: 1000000
   backup_count: 3
 YAML
@@ -193,21 +193,6 @@ run_smoke() {
     -d "{\"model\":\"${SMOKE_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply exactly: MIMICGATE_OK\"}]}" >/tmp/mimicgate-smoke.json
   grep -q 'MIMICGATE_OK' /tmp/mimicgate-smoke.json
 }
-install_openclaw_cleanup_plugin() {
-  local openclaw_cmd
-  openclaw_cmd="$(command -v openclaw || true)"
-  if [ -z "$openclaw_cmd" ]; then
-    say "OpenClaw not found; cleanup integration can be installed later."
-    return 0
-  fi
-  if "$openclaw_cmd" plugins install --link "${PROJECT_DIR}/openclaw-plugin" --force >/dev/null 2>&1 \
-    && "$openclaw_cmd" plugins enable webbridgefreeride-openclaw >/dev/null 2>&1; then
-    say "Installed OpenClaw cleanup integration."
-  else
-    say "Could not install OpenClaw cleanup integration; see README for manual setup."
-  fi
-}
-
 need curl
 need systemctl
 API_PORT="$(find_free_port "$API_PORT")"
@@ -273,17 +258,15 @@ say "Manual browser authentication selected; no chatbot credentials will be stor
 
 install_current_os
 stop_service
-PROFILE_PATH="${PROJECT_DIR}/.webbridge-profile"
+PROFILE_PATH="${PROJECT_DIR}/.mimicgate-profile"
 say "Start Chromium yourself, complete login, and leave that window open:"
 printf '  %q --remote-debugging-address=127.0.0.1 --remote-debugging-port=%q --user-data-dir=%q %q\n' \
   "$EXECUTABLE_PATH" "$CDP_PORT" "$PROFILE_PATH" "$CHAT_URL"
 read -r -p "Press Enter after ${PROVIDER} is logged in and the Chromium window remains open: " _
 start_service 0
-install_openclaw_cleanup_plugin
-
 say "Waiting for API health after login..."
 if ! wait_health; then
-  echo "Server did not become healthy after login. Check the legacy webbridgefreeride.install.log." >&2
+  echo "Server did not become healthy after login. Check the legacy mimicgate.install.log." >&2
   exit 1
 fi
 

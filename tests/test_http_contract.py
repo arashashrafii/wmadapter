@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
-from webbridgefreeride import main
-from webbridgefreeride.api.server import app as alternate_app
-from webbridgefreeride.providers.base import ChatProvider
-from webbridgefreeride.providers.router import ProviderRouter
+from mimicgate import main
+from mimicgate.api.server import app as alternate_app
+from mimicgate.providers.base import ChatProvider
+from mimicgate.providers.router import ProviderRouter
 from test_contract_v2 import TOOLS
 
 
@@ -162,7 +162,7 @@ class HTTPContractTests(unittest.TestCase):
 
     def test_registry_extension_and_session_header(self):
         self.provider.model_ids += ('future-tested-model',)
-        response = self.client.post('/v1/chat/completions', headers={'x-openclaw-session-key':'session-key'}, json={
+        response = self.client.post('/v1/chat/completions', json={
             'model':'future-tested-model', 'messages':[{'role':'user','content':'hi'}]})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.provider.complete.call_args.kwargs['conversation_id'], 'session-key')
+        self.assertTrue(self.provider.complete.call_args.kwargs['conversation_id'].startswith('auto:'))

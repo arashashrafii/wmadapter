@@ -40,7 +40,7 @@ class DeepSeekService(ChatProvider):
         browser_cfg = config["browser"]
         deepseek_cfg = config["deepseek"]
         self.browser = BrowserManager(
-            profile_path=browser_cfg.get("profile_dir", ".webbridge-profile"),
+            profile_path=browser_cfg.get("profile_dir", ".mimicgate-profile"),
             headless=browser_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
@@ -282,7 +282,7 @@ class QwenService(ChatProvider):
         browser_cfg = config["browser"]
         qwen_cfg = config.get("qwen", {})
         self.browser = BrowserManager(
-            profile_path=qwen_cfg.get("profile_dir", ".webbridge-profile/qwen"),
+            profile_path=qwen_cfg.get("profile_dir", ".mimicgate-profile/qwen"),
             headless=qwen_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),

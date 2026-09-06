@@ -155,52 +155,13 @@ async def models(request: Request):
     ]}
 
 
-@app.delete("/v1/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str, model: str = "deepseek-chat"):
-    """Release the browser page associated with an OpenClaw session.
-
-    This endpoint intentionally does not claim to delete DeepSeek's remote
-    history: DeepSeek exposes that operation only through its web UI.
-    """
-    provider = router.provider_for_model(model)
-    deleted = await provider.delete_conversation(conversation_id)
-    return {"object": "conversation", "id": conversation_id, "deleted": deleted}
-
-
-@app.get("/v1/conversations/{conversation_id}")
-async def conversation_details(conversation_id: str, model: str = "deepseek-chat"):
-    """Expose only the active Web conversation URL to the trusted cleanup plugin."""
-    provider = router.provider_for_model(model)
-    url = provider.conversation_url(conversation_id) if hasattr(provider, "conversation_url") else None
-    return {"object": "conversation", "id": conversation_id, "url": url}
-
-
-@app.post("/v1/conversations/bind")
-async def bind_conversation(payload: dict[str, str], model: str = "deepseek-chat"):
-    """Bind OpenClaw session identifiers before the first MimicGate request."""
-    session_id = payload.get("session_id", "")
-    session_key = payload.get("session_key", "")
-    if not session_id or not session_key:
-        raise HTTPException(status_code=400, detail="session_id and session_key are required")
-    provider = router.provider_for_model(model)
-    if not hasattr(provider, "bind_conversation"):
-        raise HTTPException(status_code=400, detail="provider does not support session binding")
-    provider.bind_conversation(session_id, session_key)
-    return {"object": "conversation_binding", "session_id": session_id, "bound": True}
-
-
 @app.post("/v1/chat/completions")
 async def chat_completion(payload: ChatRequest, request: Request):
     _authorize(request)
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
     validate_chat(payload, provider)
-    conversation_id = (
-        request.headers.get("x-openclaw-session-key")
-        or request.headers.get("x-openclaw-session-id")
-        or payload.conversation_id or payload.user
-        or _fallback_conversation_id(payload.messages)
-    )
+    conversation_id = payload.conversation_id or payload.user or _fallback_conversation_id(payload.messages)
     inference = ProviderRequest(
         chat=payload, canonical=canonicalize(payload), conversation_id=conversation_id,
         system_prompt="" if provider.name == "qwen" else default_system_prompt,

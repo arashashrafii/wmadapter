@@ -25,7 +25,7 @@ def run_server() -> None:
         print(f"Port {configured_port} is busy; using {port} instead.")
     print(f"API URL: http://{host}:{port}/v1")
     uvicorn.run(
-        "webbridgefreeride.main:app",
+        "mimicgate.main:app",
         host=host,
         port=port,
         reload=False,

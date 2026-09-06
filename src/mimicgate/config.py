@@ -8,13 +8,6 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
-def env_value(canonical: str, legacy: str | None = None, default: str | None = None) -> str | None:
-    value = os.getenv(canonical)
-    if value is not None:
-        return value
-    return os.getenv(legacy, default) if legacy else default
-
-
 def canonical_path(value: str | Path) -> str:
     return str(Path(value).expanduser().resolve())
 
@@ -30,7 +23,7 @@ class BrowserConfig(BaseModel):
     # to an already-running Chromium exposed through CDP.
     mode: Literal["managed", "cdp"] = "managed"
     headless: bool = True
-    profile_dir: str = ".webbridge-profile"
+    profile_dir: str = ".mimicgate-profile"
     executable_path: str | None = None
     cdp_endpoint: str | None = None
     restart_retries: int = Field(default=1, ge=0, le=5)
@@ -60,7 +53,7 @@ class DeepSeekConfig(BaseModel):
 class QwenConfig(BaseModel):
     chat_url: str = "https://chat.qwen.ai/"
     auth: str = "manual"
-    profile_dir: str = ".webbridge-profile/qwen"
+    profile_dir: str = ".mimicgate-profile/qwen"
     headless: bool = False
     timeout_ms: int = Field(default=180000, ge=1000)
 
@@ -72,7 +65,7 @@ class ProviderConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     level: str = "INFO"
-    file: str | None = "webbridgefreeride.log"
+    file: str | None = "mimicgate.log"
     max_bytes: int = Field(default=1_000_000, ge=10_000)
     backup_count: int = Field(default=3, ge=0, le=20)
 
@@ -91,7 +84,7 @@ class AppConfig(BaseModel):
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     data: dict[str, Any] = {}
-    p = Path(path or env_value("MIMICGATE_CONFIG", "WEBBRIDGE_CONFIG", "config.yaml"))
+    p = Path(path or os.getenv("MIMICGATE_CONFIG", "config.yaml"))
     if p.exists():
         data = yaml.safe_load(p.read_text()) or {}
     try:

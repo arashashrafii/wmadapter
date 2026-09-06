@@ -6,16 +6,16 @@ import os
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from webbridgefreeride.config import load_config
-from webbridgefreeride.credentials import CredentialStore
-from webbridgefreeride.security import redact
-from webbridgefreeride.providers.router import ProviderRouter
-from webbridgefreeride.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
-from webbridgefreeride.ports import find_free_port
-from webbridgefreeride.manual_auth import AUTH_TARGETS, run_manual_auth
-from webbridgefreeride.providers.base import ChatProvider
-from webbridgefreeride.providers.deepseek.chat import DeepSeekChat
-from webbridgefreeride.browser.manager import BrowserManager
+from mimicgate.config import load_config
+from mimicgate.credentials import CredentialStore
+from mimicgate.security import redact
+from mimicgate.providers.router import ProviderRouter
+from mimicgate.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
+from mimicgate.ports import find_free_port
+from mimicgate.manual_auth import AUTH_TARGETS, run_manual_auth
+from mimicgate.providers.base import ChatProvider
+from mimicgate.providers.deepseek.chat import DeepSeekChat
+from mimicgate.browser.manager import BrowserManager
 
 
 class FakeProvider(ChatProvider):
@@ -60,7 +60,7 @@ class Milestone2Tests(unittest.TestCase):
             "browser": {"mode": "managed", "profile_dir": ".profile", "executable_path": "./chrome"},
             "qwen": {"profile_dir": "./qwen-profile"},
         }
-        with patch("webbridgefreeride.manual_auth.BrowserManager", return_value=manager) as manager_class, patch(
+        with patch("mimicgate.manual_auth.BrowserManager", return_value=manager) as manager_class, patch(
             "builtins.input", return_value=""
         ):
             asyncio.run(run_manual_auth("qwen", config=config))
@@ -169,37 +169,33 @@ class Milestone2Tests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "custom.yaml"
             path.write_text("server:\n  port: 8123\n")
-            old = os.environ.get("WEBBRIDGE_CONFIG")
-            os.environ["WEBBRIDGE_CONFIG"] = str(path)
+            old = os.environ.get("MIMICGATE_CONFIG")
+            os.environ["MIMICGATE_CONFIG"] = str(path)
             try:
                 self.assertEqual(load_config(None)["server"]["port"], 8123)
             finally:
                 if old is None:
-                    os.environ.pop("WEBBRIDGE_CONFIG", None)
+                    os.environ.pop("MIMICGATE_CONFIG", None)
                 else:
-                    os.environ["WEBBRIDGE_CONFIG"] = old
+                    os.environ["MIMICGATE_CONFIG"] = old
 
-    def test_canonical_config_environment_precedes_legacy(self):
+    def test_canonical_config_environment_is_used(self):
         from tempfile import TemporaryDirectory
         from pathlib import Path
         import os
 
         with TemporaryDirectory() as directory:
             canonical = Path(directory) / "canonical.yaml"
-            legacy = Path(directory) / "legacy.yaml"
             canonical.write_text("server:\n  port: 8124\n")
-            legacy.write_text("server:\n  port: 8125\n")
-            old_values = {key: os.environ.get(key) for key in ("MIMICGATE_CONFIG", "WEBBRIDGE_CONFIG")}
+            old_value = os.environ.get("MIMICGATE_CONFIG")
             os.environ["MIMICGATE_CONFIG"] = str(canonical)
-            os.environ["WEBBRIDGE_CONFIG"] = str(legacy)
             try:
                 self.assertEqual(load_config(None)["server"]["port"], 8124)
             finally:
-                for key, value in old_values.items():
-                    if value is None:
-                        os.environ.pop(key, None)
-                    else:
-                        os.environ[key] = value
+                if old_value is None:
+                    os.environ.pop("MIMICGATE_CONFIG", None)
+                else:
+                    os.environ["MIMICGATE_CONFIG"] = old_value
 
     def test_config_allows_explicit_disabled_page_cleanup(self):
         from tempfile import TemporaryDirectory
@@ -358,7 +354,7 @@ class Milestone2Tests(unittest.TestCase):
             "json": '{"ok": true}',
             "c#": "using System;\nConsole.WriteLine(\"Hello\");",
             "sql": "SELECT id FROM users;",
-            "yaml": "name: webbridge\nenabled: true",
+            "yaml": "name: mimicgate\nenabled: true",
             "javascript": "const answer = 42;",
             "bash": "#!/usr/bin/env bash\necho hello",
             "markdown": "# Hello\n\nText",
@@ -453,7 +449,7 @@ class Milestone2Tests(unittest.TestCase):
 
 class PageCapacityTests(unittest.IsolatedAsyncioTestCase):
     def _deepseek(self, max_pages=8, idle_timeout_ms=300000):
-        from webbridgefreeride.service import DeepSeekService
+        from mimicgate.service import DeepSeekService
 
         config = load_config('/nonexistent')
         config["browser"]["max_pages"] = max_pages
@@ -537,8 +533,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         second.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([first, second])
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/webbridge-test-{id(first)}")
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/mimicgate-test-{id(first)}")
             self.assertIs(await manager.start(), first)
             self.assertTrue(manager.is_running)
             context_callback = first.on.call_args.args[1]
@@ -553,8 +549,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.browser = None
         context.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([context])
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/webbridge-concurrent-{id(context)}")
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/mimicgate-concurrent-{id(context)}")
             first, second = await asyncio.gather(manager.start(), manager.start())
             self.assertIs(first, context)
             self.assertIs(second, context)
@@ -571,8 +567,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         second.browser = None
         second.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([first, second])
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/webbridge-restart-{id(first)}")
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/mimicgate-restart-{id(first)}")
             await manager.start()
             result, observed = await asyncio.gather(manager.restart(), manager.start())
             self.assertIs(result, second)
@@ -585,8 +581,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright = Mock(chromium=chromium)
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(side_effect=asyncio.CancelledError()))
-        profile = "/tmp/webbridge-cancel-launch-test"
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        profile = "/tmp/mimicgate-cancel-launch-test"
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile)
             with self.assertRaises(asyncio.CancelledError):
                 await manager.start()
@@ -599,8 +595,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.browser = None
         context.close = AsyncMock(side_effect=asyncio.CancelledError())
         starter, _, playwright = self._managed_playwright([context])
-        profile = f"/tmp/webbridge-cancel-stop-{id(context)}"
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        profile = f"/tmp/mimicgate-cancel-stop-{id(context)}"
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile)
             await manager.start()
             with self.assertRaises(asyncio.CancelledError):
@@ -616,8 +612,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([context])
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/webbridge-test-{id(context)}")
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/mimicgate-test-{id(context)}")
             self.assertIs(await manager.start(), context)
             self.assertIs(await manager.start(), context)
             chromium.launch_persistent_context.assert_awaited_once()
@@ -630,8 +626,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter, chromium, playwright = self._managed_playwright([context])
         chromium.launch_persistent_context.side_effect = [context, RuntimeError("launch failed")]
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/webbridge-test-{id(context)}")
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/mimicgate-test-{id(context)}")
             await manager.start()
             context.on.call_args.args[1]()
             with self.assertRaisesRegex(RuntimeError, "launch failed"):
@@ -660,9 +656,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter = Mock()
         starter.start = AsyncMock(side_effect=[headed_playwright, headless_playwright])
         executable = "/usr/bin/chromium-test"
-        profile = "/tmp/webbridge-handoff-test"
+        profile = "/tmp/mimicgate-handoff-test"
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, executable_path=executable, headless=False)
             await manager.start()
             auth_probe = AsyncMock(return_value=True)
@@ -703,9 +699,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
-        profile = "/tmp/webbridge-handoff-auth-failure-test"
+        profile = "/tmp/mimicgate-handoff-auth-failure-test"
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, headless=False)
             await manager.start()
             with self.assertRaisesRegex(RuntimeError, "headed session was restored"):
@@ -730,9 +726,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
-        profile = "/tmp/webbridge-handoff-launch-failure-test"
+        profile = "/tmp/mimicgate-handoff-launch-failure-test"
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, headless=False)
             await manager.start()
             with self.assertRaisesRegex(RuntimeError, "headed session was restored"):
@@ -742,12 +738,12 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             await manager.stop()
 
     async def test_managed_profile_lock_conflict_blocks_second_manager(self):
-        profile = "/tmp/webbridge-lock-conflict-test"
+        profile = "/tmp/mimicgate-lock-conflict-test"
         first_context = Mock(pages=[])
         first_context.browser = None
         first_context.close = AsyncMock()
         starter, _, _ = self._managed_playwright([first_context])
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             first = BrowserManager(profile_path=profile)
             second = BrowserManager(profile_path=profile)
             await first.start()
@@ -757,15 +753,15 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             await first.stop()
 
     async def test_profile_lock_metadata_is_diagnostic_and_removed_by_owner(self):
-        profile = "/tmp/webbridge-lock-metadata-test"
+        profile = "/tmp/mimicgate-lock-metadata-test"
         context = Mock(pages=[])
         context.browser = None
         context.close = AsyncMock()
         starter, _, _ = self._managed_playwright([context])
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, executable_path="/usr/bin/chromium")
             await manager.start()
-            metadata_path = manager.profile_path / ".webbridge-profile.lock.json"
+            metadata_path = manager.profile_path / ".mimicgate-profile.lock.json"
             metadata = json.loads(metadata_path.read_text())
             self.assertEqual(metadata["owner_pid"], os.getpid())
             self.assertEqual(metadata["profile"], str(manager.profile_path))
@@ -775,10 +771,10 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(metadata_path.exists())
 
     async def test_stale_profile_metadata_is_replaced_without_singleton_deletion(self):
-        profile = "/tmp/webbridge-stale-metadata-test"
+        profile = "/tmp/mimicgate-stale-metadata-test"
         manager = BrowserManager(profile_path=profile)
         manager.profile_path.mkdir(parents=True, exist_ok=True)
-        metadata_path = manager.profile_path / ".webbridge-profile.lock.json"
+        metadata_path = manager.profile_path / ".mimicgate-profile.lock.json"
         metadata_path.write_text(json.dumps({"owner_pid": 1, "profile": "/old/profile"}))
         singleton = manager.profile_path / "SingletonLock"
         singleton.write_text("preserve")
@@ -786,7 +782,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.browser = None
         context.close = AsyncMock()
         starter, _, _ = self._managed_playwright([context])
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             await manager.start()
             self.assertEqual(json.loads(metadata_path.read_text())["profile"], str(manager.profile_path))
             await manager.stop()
@@ -804,9 +800,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
-        profile = "/tmp/webbridge-cancel-handoff-test"
+        profile = "/tmp/mimicgate-cancel-handoff-test"
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, headless=False)
             await manager.start()
             with self.assertRaises(asyncio.CancelledError):
@@ -828,7 +824,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.start(), context)
             chromium.connect_over_cdp.assert_awaited_once_with("http://127.0.0.1:9222")
@@ -854,7 +850,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter = Mock()
         starter.start = AsyncMock(side_effect=[first_playwright, second_playwright])
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.start(), first_context)
             disconnect_callback = first_browser.on.call_args.args[1]
@@ -879,7 +875,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.page_for("deepseek", "d1"), deepseek_page)
             self.assertIs(await manager.page_for("qwen", "q1"), qwen_page)
@@ -901,7 +897,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.page_for("deepseek", "d1"), deepseek_page)
             self.assertIs(await manager.page_for("qwen", "q1"), qwen_replacement)
@@ -926,9 +922,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright = Mock(chromium=chromium)
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
-        profile = f"/tmp/webbridge-managed-page-{id(context)}"
+        profile = f"/tmp/mimicgate-managed-page-{id(context)}"
 
-        with patch("webbridgefreeride.browser.manager.async_playwright", return_value=starter):
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile)
             self.assertIs(await manager.page_for("deepseek", "d1"), owned)
             await manager.stop()

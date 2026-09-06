@@ -18,7 +18,7 @@ class RedactingFormatter(logging.Formatter):
 def configure_logging(config: dict) -> None:
     level_name = str(config.get("level", "INFO")).upper()
     level = getattr(logging, level_name, logging.INFO)
-    log_file = config.get("file", "webbridgefreeride.log")
+    log_file = config.get("file", "mimicgate.log")
     max_bytes = int(config.get("max_bytes", 1_000_000))
     backup_count = int(config.get("backup_count", 3))
 

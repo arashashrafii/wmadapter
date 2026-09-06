@@ -6,7 +6,7 @@ script="$repo_dir/uninstall.sh"
 
 new_case() {
   case_dir="$(mktemp -d)"
-  mkdir -p "$case_dir/bin" "$case_dir/project/.venv" "$case_dir/project/.webbridge-profile"
+  mkdir -p "$case_dir/bin" "$case_dir/project/.venv" "$case_dir/project/.mimicgate-profile"
   cp "$script" "$case_dir/project/uninstall.sh"
   chmod +x "$case_dir/project/uninstall.sh"
   touch "$case_dir/project/config.yaml" "$case_dir/project/keep.me"
@@ -15,55 +15,24 @@ new_case() {
 }
 
 assert_removed() {
-  [[ ! -e "$case_dir/project/.venv" && ! -e "$case_dir/project/.webbridge-profile" ]]
+  [[ ! -e "$case_dir/project/.venv" && ! -e "$case_dir/project/.mimicgate-profile" ]]
   [[ ! -e "$case_dir/project/config.yaml" ]]
   [[ -e "$case_dir/project/keep.me" ]]
 }
 
 new_case
-cat >"$case_dir/bin/openclaw" <<'EOF'
-#!/usr/bin/env bash
-echo "$*" >>"$OPENCLAW_LOG"
-exit 0
-EOF
 cat >"$case_dir/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"$SYSTEMCTL_LOG"
 exit 0
 EOF
-chmod +x "$case_dir/bin/openclaw" "$case_dir/bin/systemctl"
-export OPENCLAW_LOG="$case_dir/openclaw.log" SYSTEMCTL_LOG="$case_dir/systemctl.log"
+chmod +x "$case_dir/bin/systemctl"
+export SYSTEMCTL_LOG="$case_dir/systemctl.log"
 PATH="$case_dir/bin:/usr/bin:/bin" UNINSTALL_TIMEOUT_SEC=1 "$case_dir/project/uninstall.sh" >/dev/null
 assert_removed
 PATH="$case_dir/bin:/usr/bin:/bin" UNINSTALL_TIMEOUT_SEC=1 "$case_dir/project/uninstall.sh" >/dev/null
 assert_removed
-grep -q 'plugins disable webbridgefreeride-openclaw' "$OPENCLAW_LOG"
-grep -q -- '--user disable --now webbridgefreeride.service' "$SYSTEMCTL_LOG"
-
-new_case
-cat >"$case_dir/bin/openclaw" <<'EOF'
-#!/usr/bin/env bash
-(sleep 30) &
-echo "$!" >"$CHILD_PID_FILE"
-wait
-EOF
-chmod +x "$case_dir/bin/openclaw"
-export CHILD_PID_FILE="$case_dir/child.pid"
-output=$(PATH="$case_dir/bin:/usr/bin:/bin" UNINSTALL_TIMEOUT_SEC=1 "$case_dir/project/uninstall.sh" 2>&1)
-grep -q 'OpenClaw plugin disable timed out' <<<"$output"
-assert_removed
-child_pid=$(cat "$CHILD_PID_FILE")
-! kill -0 "$child_pid" 2>/dev/null
-
-new_case
-cat >"$case_dir/bin/openclaw" <<'EOF'
-#!/usr/bin/env bash
-exit 42
-EOF
-chmod +x "$case_dir/bin/openclaw"
-output=$(PATH="$case_dir/bin:/usr/bin:/bin" UNINSTALL_TIMEOUT_SEC=1 "$case_dir/project/uninstall.sh" 2>&1)
-grep -q 'OpenClaw plugin disable failed (exit 42)' <<<"$output"
-assert_removed
+grep -q -- '--user disable --now mimicgate.service' "$SYSTEMCTL_LOG"
 
 new_case
 cat >"$case_dir/bin/systemctl" <<'EOF'
@@ -88,7 +57,6 @@ assert_removed
 
 new_case
 output=$(PATH="/usr/bin:/bin" UNINSTALL_TIMEOUT_SEC=1 "$case_dir/project/uninstall.sh" 2>&1)
-grep -q 'OpenClaw command is missing' <<<"$output"
 assert_removed
 
 echo "uninstall shell tests passed"

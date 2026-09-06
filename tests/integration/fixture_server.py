@@ -1,6 +1,6 @@
-from webbridgefreeride import main
-from webbridgefreeride.providers.base import ChatProvider
-from webbridgefreeride.providers.router import ProviderRouter
+from mimicgate import main
+from mimicgate.providers.base import ChatProvider
+from mimicgate.providers.router import ProviderRouter
 
 class Fixture(ChatProvider):
     name = 'deepseek'

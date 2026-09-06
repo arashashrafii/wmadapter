@@ -2,8 +2,8 @@
 __pycache__/
 *.py[cod]
 config.yaml
-.webbridge-profile/
-webbridgefreeride.log
+.mimicgate-profile/
+mimicgate.log
 .env
 *.egg-info/
 *.log.*

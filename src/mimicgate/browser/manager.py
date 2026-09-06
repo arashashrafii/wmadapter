@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
-from ..config import canonical_path, env_value
+from ..config import canonical_path
 
 
 class LifecycleState:
@@ -30,14 +30,14 @@ class BrowserManager:
 
     def __init__(
         self,
-        profile_path: str = ".webbridge-profile",
+        profile_path: str = ".mimicgate-profile",
         headless: bool = False,
         executable_path: str | None = None,
         cdp_endpoint: str | None = None,
     ):
         self.profile_path = Path(canonical_path(profile_path))
-        login_mode = env_value("MIMICGATE_LOGIN", "WEBBRIDGE_LOGIN") == "1"
-        xvfb = env_value("MIMICGATE_XVFB", "WEBBRIDGE_XVFB") == "1"
+        login_mode = os.getenv("MIMICGATE_LOGIN") == "1"
+        xvfb = os.getenv("MIMICGATE_XVFB") == "1"
         self.headless = False if login_mode or xvfb else headless
         self.executable_path = canonical_path(executable_path) if executable_path else None
         self.cdp_endpoint = cdp_endpoint
@@ -49,7 +49,7 @@ class BrowserManager:
         self._stale_browser: Browser | None = None
         self._stale_playwright: Playwright | None = None
         self._lock_fd: int | None = None
-        self._lock_metadata_path = self.profile_path / ".webbridge-profile.lock.json"
+        self._lock_metadata_path = self.profile_path / ".mimicgate-profile.lock.json"
         self._lock_token: str | None = None
         self._page_owners: dict[int, str] = {}
         self._page_claims: dict[tuple[str, str | None], Page] = {}
@@ -70,7 +70,7 @@ class BrowserManager:
     def _acquire_profile_lock(self) -> None:
         if self.cdp_endpoint or self._lock_fd is not None:
             return
-        lock_path = self.profile_path / ".webbridge-profile.lock"
+        lock_path = self.profile_path / ".mimicgate-profile.lock"
         self.profile_path.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
@@ -95,7 +95,7 @@ class BrowserManager:
             "mode": "headless" if self.headless else "headed",
             "lock_token": self._lock_token,
         }
-        temporary = self.profile_path / f".webbridge-profile.lock.{self._lock_token}.tmp"
+        temporary = self.profile_path / f".mimicgate-profile.lock.{self._lock_token}.tmp"
         try:
             temporary.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
             os.replace(temporary, self._lock_metadata_path)
