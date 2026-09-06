@@ -1,36 +1,36 @@
 # MimicGate — Web-to-API Gateway for AI Agents
 
-MimicGate is a local OpenAI-compatible gateway for free DeepSeek Web and Qwen Web sessions.
+MimicGate is a local OpenAI-compatible gateway for authenticated DeepSeek Web
+and Qwen Web sessions. It drives provider web pages through a user-owned
+browser profile and exposes the verified HTTP boundary to OpenCode, Hermes,
+OpenClaw, and compatible clients. It does not use the paid DeepSeek API.
 The historical WebBridgeFreeRide command, import namespace, configuration paths,
 and environment variables remain supported compatibility aliases.
 
 The provider side is Web-only: DeepSeek and Qwen are accessed through their
-browser chat pages. The local OpenAI-compatible boundary exists for clients
-such as OpenCode, Hermes and OpenClaw; this project does not use the paid DeepSeek API.
+browser chat pages.
 
 ## Gateway V1 / Provider Contract V2
 
-Implemented:
+Verified capabilities:
 
 - FastAPI local server
 - `/health`
 - `/v1/models`
 - `/v1/chat/completions` (ordinary responses and buffered SSE)
-- Structured Provider Contract V2 with legacy complete(prompt) compatibility
-- Standard request errors, model capabilities and tool-result round trips
-- DeepSeek Web browser sessions with per-OpenClaw-session pages
-- Text-to-structured tool-call simulation for OpenClaw
-- Optional Qwen Web browser adapter
+- OpenAI-compatible chat requests, buffered SSE, model capabilities, and
+  preservation of tools and tool results through the provider contract.
+- DeepSeek data-URL image input and DeepSeek/Qwen provider routing.
+- Managed browser sessions with headed login, canonical profile ownership,
+  headed-to-headless handoff, session probing, profile locking, page ownership,
+  configurable page caps, idle cleanup, and protected in-flight pages.
+- CDP attach as a separate ownership path that never closes the user's browser.
+- Loopback defaults, optional bearer authentication, readiness/status output,
+  redacted logs, encrypted local credentials, and YAML configuration.
 
-Milestones 2-5 add local-tool hardening, streaming-compatible responses, provider routing foundations, Docker packaging, and public maintenance/security docs.
-
-## Milestone status
-
-- M1: DeepSeek browser-backed non-streaming chat completion validated.
-- M2: Stable local tool foundation: config validation, encrypted local credentials, redacted logs, readiness, retries.
-- M3: Agent/OpenAI client compatibility base: optional OpenAI fields, SSE streaming shape, conversation IDs.
-- M4: Provider routing foundation and adapter contract.
-- M5: Docker/package metadata plus security and maintenance docs.
+The gateway depends on authenticated sessions and the providers' current web
+interfaces. CAPTCHA interaction is user-driven. Selectors, session validity,
+upstream throttling, and provider availability can change without notice.
 
 ## MimicGate installer
 
