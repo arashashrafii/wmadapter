@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from collections.abc import AsyncIterator
 
@@ -57,6 +58,7 @@ class DeepSeekService(ChatProvider):
         self.auth_state = "STARTING"
         self.reason_code = "starting"
         self.updated_at = time.time()
+        self.login_attempt_id: str | None = None
         self._conversation_pages: dict[str, object] = {}
         self._conversation_bindings: dict[str, str] = {}
         self.max_pages = browser_cfg.get("max_pages", 8)
@@ -66,6 +68,7 @@ class DeepSeekService(ChatProvider):
         self._request_lock = asyncio.Lock()
 
     async def start(self) -> None:
+        self.login_attempt_id = uuid.uuid4().hex
         self._set_auth_state("CHECKING_SESSION", "checking_session")
         await self._authenticate()
 
@@ -87,6 +90,7 @@ class DeepSeekService(ChatProvider):
             "state": self.auth_state,
             "reason_code": self.reason_code,
             "updated_at": self.updated_at,
+            "login_attempt_id": self.login_attempt_id,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:
@@ -316,6 +320,7 @@ class QwenService(ChatProvider):
         self.auth_state = "STARTING"
         self.reason_code = "starting"
         self.updated_at = time.time()
+        self.login_attempt_id = None
         self._conversation_pages: dict[str, object] = {}
         self.max_pages = browser_cfg.get("max_pages", 8)
         self.idle_timeout_ms = browser_cfg.get("idle_timeout_ms", 300000)
@@ -324,6 +329,7 @@ class QwenService(ChatProvider):
         self._request_lock = asyncio.Lock()
 
     async def start(self) -> None:
+        self.login_attempt_id = uuid.uuid4().hex
         await self._authenticate()
 
     async def stop(self) -> None:
@@ -343,6 +349,7 @@ class QwenService(ChatProvider):
             "state": self.auth_state,
             "reason_code": self.reason_code,
             "updated_at": self.updated_at,
+            "login_attempt_id": self.login_attempt_id,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:

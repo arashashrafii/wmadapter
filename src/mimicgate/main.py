@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import asyncio
 import logging
 import time
 import uuid
@@ -85,27 +84,12 @@ def _sse(data: dict[str, Any] | str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    retry_task = None
     try:
         await router.start()
     except Exception as exc:
         providers["deepseek"].last_error = str(exc)
         logger.warning("Startup provider readiness check failed: %s", exc)
-    async def retry_provider_startup():
-        while True:
-            await asyncio.sleep(2)
-            for name in config["providers"].get("enabled", [config["providers"]["default"]]):
-                provider = providers[name]
-                if provider.ready:
-                    continue
-                try:
-                    await provider.start()
-                except Exception as exc:
-                    provider.last_error = str(exc)
-    retry_task = asyncio.create_task(retry_provider_startup())
     yield
-    retry_task.cancel()
-    await asyncio.gather(retry_task, return_exceptions=True)
     await router.stop()
 
 
