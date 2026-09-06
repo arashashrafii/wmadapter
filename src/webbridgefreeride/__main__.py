@@ -33,7 +33,7 @@ def run_server() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="webbridgefreeride")
+    parser = argparse.ArgumentParser(prog="mimicgate", description="MimicGate — Web-to-API Gateway for AI Agents")
     subparsers = parser.add_subparsers(dest="command")
     credentials = subparsers.add_parser("credentials")
     credential_commands = credentials.add_subparsers(dest="credential_command")

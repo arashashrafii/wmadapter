@@ -1,5 +1,5 @@
 services:
-  webbridgefreeride:
+  mimicgate:
     build: .
     env_file:
       - path: .env

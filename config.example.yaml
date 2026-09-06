@@ -5,7 +5,7 @@ server:
   api_key:
 
 browser:
-  # managed uses WebBridge's persistent profile; use cdp to attach to CDP.
+  # managed uses MimicGate's persistent profile; use cdp to attach to CDP.
   mode: managed
   headless: true
   profile_dir: ./.webbridge-profile

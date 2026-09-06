@@ -178,6 +178,28 @@ class Milestone2Tests(unittest.TestCase):
                 else:
                     os.environ["WEBBRIDGE_CONFIG"] = old
 
+    def test_canonical_config_environment_precedes_legacy(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        import os
+
+        with TemporaryDirectory() as directory:
+            canonical = Path(directory) / "canonical.yaml"
+            legacy = Path(directory) / "legacy.yaml"
+            canonical.write_text("server:\n  port: 8124\n")
+            legacy.write_text("server:\n  port: 8125\n")
+            old_values = {key: os.environ.get(key) for key in ("MIMICGATE_CONFIG", "WEBBRIDGE_CONFIG")}
+            os.environ["MIMICGATE_CONFIG"] = str(canonical)
+            os.environ["WEBBRIDGE_CONFIG"] = str(legacy)
+            try:
+                self.assertEqual(load_config(None)["server"]["port"], 8124)
+            finally:
+                for key, value in old_values.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
     def test_config_allows_explicit_disabled_page_cleanup(self):
         from tempfile import TemporaryDirectory
         from pathlib import Path

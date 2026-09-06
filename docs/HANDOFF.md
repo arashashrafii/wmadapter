@@ -1,11 +1,11 @@
-# WebBridge FreeRide Handoff
+# MimicGate Handoff
 
 This document records the current implementation, verified behavior, known
 limitations, and next work for a new maintainer.
 
 ## Project purpose
 
-WebBridge FreeRide is a local, Web-only adapter for free DeepSeek Web and Qwen
+MimicGate is a local, Web-only adapter for free DeepSeek Web and Qwen
 Web access. It exposes a local OpenAI-compatible boundary so OpenClaw can keep
 owning agents, sessions, tools, skills, plugins, channels, and automation.
 It is not the paid DeepSeek API.
@@ -102,7 +102,7 @@ the Store extension or load the unpacked copy. Keep the Gateway running.
 
 ## Prompt for the next agent
 
-Continue WebBridge FreeRide from the latest GitHub commit. Read README.md,
+Continue MimicGate from the latest GitHub commit. Read README.md,
 docs/HANDOFF.md, docs/ARCHITECTURE.md, and the current tests before changing
 code. Preserve the Web-only design: DeepSeek/Qwen must use their browser Web
 chats, while OpenClaw remains responsible for agents, sessions, tools, skills,

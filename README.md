@@ -1,6 +1,8 @@
-# WebBridgeFreeRide
+# MimicGate — Web-to-API Gateway for AI Agents
 
-WebBridgeFreeRide is a local OpenAI-compatible gateway for free DeepSeek Web and Qwen Web sessions.
+MimicGate is a local OpenAI-compatible gateway for free DeepSeek Web and Qwen Web sessions.
+The historical WebBridgeFreeRide command, import namespace, configuration paths,
+and environment variables remain supported compatibility aliases.
 
 The provider side is Web-only: DeepSeek and Qwen are accessed through their
 browser chat pages. The local OpenAI-compatible boundary exists for clients
@@ -30,7 +32,7 @@ Milestones 2-5 add local-tool hardening, streaming-compatible responses, provide
 - M4: Provider routing foundation and adapter contract.
 - M5: Docker/package metadata plus security and maintenance docs.
 
-## FreeRide v3 installer
+## MimicGate installer
 
 Interactive setup:
 
@@ -45,11 +47,11 @@ It does not download Playwright's separate Chromium binary. Playwright is used
 only as the Python library that controls the already-running Chromium session.
 It prints a command that starts local Chromium with an isolated profile and a
 loopback-only debugging endpoint. Complete login in that Chromium window and
-leave it open while WebBridge runs. WebBridge attaches to that session; it does
+leave it open while MimicGate runs. MimicGate attaches to that session; it does
 not launch a second browser or attempt to bypass the site's CAPTCHA.
 
 Browser selection is explicit in config.yaml: browser.mode: managed (the
-default) uses WebBridge's persistent profile, while browser.mode: cdp attaches
+default) uses MimicGate's persistent profile, while browser.mode: cdp attaches
 to a user-launched Chromium configured by browser.cdp_endpoint. Existing
 configurations that set cdp_endpoint without mode are interpreted as cdp for
 backward compatibility. In Stage 1 this is only the configuration and
@@ -59,7 +61,7 @@ Managed authentication uses a sequential handoff on the same canonical
 profile and executable: the headed login context is stopped and its exclusive
 profile lock is released before the headless runtime starts. The headless
 context probes the authenticated session after launch. If launch or the probe
-fails, WebBridge stops the failed context, restores headed mode on the same
+fails, MimicGate stops the failed context, restores headed mode on the same
 profile where possible, and reports the handoff failure. CDP mode remains a
 separate operator-selected attach path and does not use this handoff or close
 the user's browser.
@@ -78,14 +80,17 @@ openclaw plugins install --link "$PWD/openclaw-plugin" --force
 openclaw plugins enable webbridgefreeride-openclaw
 ```
 
+The plugin displays as `MimicGate cleanup`; the historical plugin identifier
+`webbridgefreeride-openclaw` remains an installation compatibility alias.
+
 Each OpenClaw session maps to a separate browser conversation. When the
-OpenClaw cleanup plugin receives a session-deleted event, WebBridge uses the
+OpenClaw cleanup plugin receives a session-deleted event, MimicGate uses the
 DeepSeek Web UI to delete the matching remote conversation before closing its
 local browser page. Deleting all OpenClaw sessions therefore deletes each
 matching DeepSeek conversation; unrelated DeepSeek conversations are never
 selected.
 
-For OpenClaw, configure the model as `webbridge/deepseek-chat`. The bridge
+For OpenClaw, configure the model as `webbridge/deepseek-chat`. MimicGate
 passes OpenClaw's tool definitions to DeepSeek Web in a strict text protocol and
 converts a valid `<tool_call>...</tool_call>` response into an OpenAI-compatible
 `tool_calls` message. OpenClaw executes the tool and sends the result back on
@@ -99,7 +104,7 @@ OpenClaw configuration follows its custom-provider format:
     baseUrl: "http://127.0.0.1:11555/v1",
     apiKey: "local-webbridge",
     api: "openai-completions",
-    models: [{ id: "deepseek-chat", name: "WebBridge DeepSeek Web",
+    models: [{ id: "deepseek-chat", name: "MimicGate DeepSeek Web",
       reasoning: false, input: ["text"] }]
   } } },
   agents: { defaults: { model: { primary: "webbridge/deepseek-chat" } } }
@@ -119,14 +124,14 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -e .
 # Install Chromium with your Linux package manager if it is not already present.
-# Do not run `playwright install chromium`: WebBridge attaches to system Chromium.
+# Do not run `playwright install chromium`: MimicGate attaches to system Chromium.
 cp config.example.yaml config.yaml
 ```
 
 For DeepSeek Web:
 
 ```bash
-./.venv/bin/python -m webbridgefreeride auth deepseek
+./.venv/bin/mimicgate auth deepseek
 ```
 
 Complete login in the opened browser. No DeepSeek API key is required.
@@ -134,7 +139,7 @@ Complete login in the opened browser. No DeepSeek API key is required.
 Then start the bridge:
 
 ```bash
-.venv/bin/python -m webbridgefreeride
+.venv/bin/mimicgate
 ```
 
 The server defaults to `http://127.0.0.1:11555`.
@@ -142,17 +147,24 @@ The server defaults to `http://127.0.0.1:11555`.
 For automatic login recovery without storing secrets in `config.yaml`, save encrypted local credentials outside the repository:
 
 ```bash
-.venv/bin/python -m webbridgefreeride credentials set
+.venv/bin/mimicgate credentials set
 ```
 
 The credential key is stored under `~/.config/webbridgefreeride/` and the encrypted credential file under `~/.local/share/webbridgefreeride/` by default.
+
+Canonical environment variables use the `MIMICGATE_*` prefix, including
+`MIMICGATE_CONFIG`, `MIMICGATE_LOGIN`, `MIMICGATE_XVFB`, `MIMICGATE_KEY_FILE`,
+`MIMICGATE_CREDENTIAL_FILE`, and `MIMICGATE_URL`. The historical
+`WEBBRIDGE_*` names remain fallbacks; when both are set, the MimicGate name
+takes precedence. Existing `webbridgefreeride` profile, credential, log,
+service, and plugin paths remain valid compatibility paths.
 
 ## Qwen authentication
 
 Create a persistent Qwen browser session with manual or Google authentication:
 
 ```bash
-.venv/bin/python -m webbridgefreeride auth qwen --google
+.venv/bin/mimicgate auth qwen --google
 ```
 
 Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.webbridge-profile/qwen`.
@@ -184,7 +196,7 @@ curl http://127.0.0.1:11555/v1/chat/completions \
 
 ## Important limitations
 
-The Web adapters depend on website DOM and authentication behavior. Tool-call
+MimicGate's Web adapters depend on website DOM and authentication behavior. Tool-call
 simulation is deliberately allowlisted and the calling agent executes returned
 tools; unresolved tool markers trigger bounded recovery and then a provider error.
 

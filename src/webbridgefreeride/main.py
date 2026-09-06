@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
     await router.stop()
 
 
-app = FastAPI(title="WebBridgeFreeRide", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="MimicGate", description="MimicGate — Web-to-API Gateway for AI Agents", version="0.5.0", lifespan=lifespan)
 
 
 def _error(message, kind="invalid_request_error", code=None):
@@ -177,7 +177,7 @@ async def conversation_details(conversation_id: str, model: str = "deepseek-chat
 
 @app.post("/v1/conversations/bind")
 async def bind_conversation(payload: dict[str, str], model: str = "deepseek-chat"):
-    """Bind OpenClaw session identifiers before the first WebBridge request."""
+    """Bind OpenClaw session identifiers before the first MimicGate request."""
     session_id = payload.get("session_id", "")
     session_key = payload.get("session_key", "")
     if not session_id or not session_key:

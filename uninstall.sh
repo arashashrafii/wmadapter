@@ -6,7 +6,7 @@ SERVICE_NAME="webbridgefreeride.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
 
-echo "Uninstalling WebBridge FreeRide local service..."
+echo "Uninstalling MimicGate local service..."
 if command -v openclaw >/dev/null 2>&1; then
   openclaw plugins disable webbridgefreeride-openclaw >/dev/null 2>&1 || true
   openclaw plugins uninstall webbridgefreeride-openclaw >/dev/null 2>&1 || true
@@ -23,4 +23,4 @@ rm -f \
   "$PROJECT_DIR/webbridgefreeride.install.log" \
   "$PROJECT_DIR/webbridgefreeride.log"
 
-echo "WebBridge FreeRide was uninstalled. Source files were kept in: $PROJECT_DIR"
+echo "MimicGate was uninstalled. Source files were kept in: $PROJECT_DIR"

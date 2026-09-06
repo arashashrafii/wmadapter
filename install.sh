@@ -150,17 +150,17 @@ write_service() {
   mkdir -p "$SERVICE_DIR"
   cat > "$SERVICE_FILE" <<SERVICE
 [Unit]
-Description=WebBridge FreeRide local service
+Description=MimicGate — Web-to-API Gateway for AI Agents
 After=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=${PROJECT_DIR}
 EnvironmentFile=-${PROJECT_DIR}/.env
-Environment=WEBBRIDGE_LOGIN=${login_mode}
+Environment=MIMICGATE_LOGIN=${login_mode}
 Environment=DISPLAY=${DISPLAY_VALUE}
 Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
-ExecStart=${PROJECT_DIR}/.venv/bin/python -m webbridgefreeride
+ExecStart=${PROJECT_DIR}/.venv/bin/mimicgate
 Restart=on-failure
 RestartSec=5
 
@@ -214,7 +214,7 @@ API_PORT="$(find_free_port "$API_PORT")"
 API_URL="http://${API_HOST}:${API_PORT}/v1"
 export API_PORT
 
-say "WebBridge FreeRide installer"
+say "MimicGate — Web-to-API Gateway for AI Agents installer"
 say "Local installation"
 
 say "Choose free chatbot provider:"
@@ -289,7 +289,7 @@ fi
 
 say "Running complete smoke test..."
 if run_smoke; then
-  say "WebBridge FreeRide: ${REPO_URL}"
+say "MimicGate — Web-to-API Gateway for AI Agents: ${REPO_URL}"
   say "API URL: ${API_URL}"
   say "Health: http://${API_HOST}:${API_PORT}/health"
   say "Models: http://${API_HOST}:${API_PORT}/v1/models"

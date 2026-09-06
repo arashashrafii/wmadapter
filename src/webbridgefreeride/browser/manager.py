@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
-from ..config import canonical_path
+from ..config import canonical_path, env_value
 
 
 class LifecycleState:
@@ -33,8 +33,9 @@ class BrowserManager:
         cdp_endpoint: str | None = None,
     ):
         self.profile_path = Path(canonical_path(profile_path))
-        login_mode = os.getenv("WEBBRIDGE_LOGIN") == "1"
-        self.headless = False if login_mode or os.getenv("WEBBRIDGE_XVFB") == "1" else headless
+        login_mode = env_value("MIMICGATE_LOGIN", "WEBBRIDGE_LOGIN") == "1"
+        xvfb = env_value("MIMICGATE_XVFB", "WEBBRIDGE_XVFB") == "1"
+        self.headless = False if login_mode or xvfb else headless
         self.executable_path = canonical_path(executable_path) if executable_path else None
         self.cdp_endpoint = cdp_endpoint
         self.playwright: Playwright | None = None

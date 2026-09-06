@@ -2,7 +2,7 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-const bridgeUrl = process.env.WEBBRIDGE_URL || "http://127.0.0.1:11556";
+const bridgeUrl = process.env.MIMICGATE_URL || process.env.WEBBRIDGE_URL || "http://127.0.0.1:11556";
 const execFileAsync = promisify(execFile);
 const openclawNode = "/usr/local/bin/node";
 const openclawCli = "/home/arash/.npm-global/lib/node_modules/openclaw/openclaw.mjs";
@@ -68,7 +68,7 @@ async function deleteInConnectedChrome(api, url) {
 
 export default definePluginEntry({
   id: "webbridgefreeride-openclaw",
-  name: "WebBridge FreeRide cleanup",
+  name: "MimicGate cleanup",
   description: "Delete matching DeepSeek Web conversations when OpenClaw sessions are deleted.",
   register(api) {
     api.on("session_start", async (event) => {
@@ -81,14 +81,14 @@ export default definePluginEntry({
           signal: AbortSignal.timeout(5000),
         });
       } catch (error) {
-        api.logger.warn(`WebBridge session binding failed: ${error instanceof Error ? error.message : String(error)}`);
+        api.logger.warn(`MimicGate session binding failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     });
 
     api.on("session_end", async (event, ctx) => {
       if (event.reason !== "deleted") return;
       // OpenClaw sends sessionId to the model adapter; use it first so the
-      // WebBridge page mapping is released even when the logical key differs.
+      // MimicGate page mapping is released even when the logical key differs.
       const conversationId = event.sessionId || ctx.sessionKey;
       if (!conversationId) return;
       const id = encodeURIComponent(conversationId);
@@ -109,10 +109,10 @@ export default definePluginEntry({
           signal: AbortSignal.timeout(15000),
         });
         if (!response.ok) {
-          api.logger.warn(`WebBridge cleanup returned HTTP ${response.status}`);
+          api.logger.warn(`MimicGate cleanup returned HTTP ${response.status}`);
         }
       } catch (error) {
-        api.logger.warn(`WebBridge cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+        api.logger.warn(`MimicGate cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     });
   },

@@ -11,4 +11,4 @@ Current provider:
 
 - `deepseek`
 
-Future provider adapters should implement `ChatProvider` and be registered in `webbridgefreeride.main`.
+Future provider adapters should implement `ChatProvider` and be registered in the MimicGate application.

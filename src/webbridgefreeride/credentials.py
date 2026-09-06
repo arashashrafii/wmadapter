@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 from pathlib import Path
+from .config import env_value
 
 
 class CredentialStoreError(RuntimeError):
@@ -14,11 +15,11 @@ class CredentialStoreError(RuntimeError):
 
 
 def default_key_path() -> Path:
-    return Path(os.getenv("WEBBRIDGE_KEY_FILE", "~/.config/webbridgefreeride/key")).expanduser()
+    return Path(env_value("MIMICGATE_KEY_FILE", "WEBBRIDGE_KEY_FILE", "~/.config/webbridgefreeride/key")).expanduser()
 
 
 def default_store_path() -> Path:
-    return Path(os.getenv("WEBBRIDGE_CREDENTIAL_FILE", "~/.local/share/webbridgefreeride/credentials.json")).expanduser()
+    return Path(env_value("MIMICGATE_CREDENTIAL_FILE", "WEBBRIDGE_CREDENTIAL_FILE", "~/.local/share/webbridgefreeride/credentials.json")).expanduser()
 
 
 def _load_or_create_key(path: Path) -> bytes:

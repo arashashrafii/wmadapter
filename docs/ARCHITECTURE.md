@@ -1,4 +1,4 @@
-# WebBridgeFreeRide Architecture
+# MimicGate — Web-to-API Gateway for AI Agents
 
 ## Goal
 An AI Compatibility Gateway: OpenCode, Hermes and OpenClaw consume standard
@@ -60,7 +60,7 @@ are metadata extensions; unknown token limits/usage remain null. See
 MIGRATION_V2.md for behavior corrections and unsupported sampling controls.
 
 No MCP server is needed for this boundary. A client may itself expose MCP
-functions as model tools; WebBridge simply preserves their schema and results.
+functions as model tools; MimicGate simply preserves their schema and results.
 The OpenClaw plugin is optional session cleanup, not the model transport.
 
 The public gateway always uses the generic policy. It does not inspect message
@@ -68,7 +68,7 @@ text to identify OpenClaw, OpenCode or Hermes. Historical OpenClaw workflow
 guidance remains available only to direct internal helper callers and is not
 part of the agent-facing contract.
 
-WebBridge emulates the API boundary, rather than an agent's workflow. Its
+MimicGate emulates the API boundary, rather than an agent's workflow. Its
 provider adapters may translate structured tools to a WebChat text marker and
 translate that marker back to a standard tool call, but they do not choose,
 execute or verify an agent's tools. OpenClaw-specific session cleanup remains
@@ -80,7 +80,7 @@ behavior remains unchanged.
 
 ### Model response recovery
 OpenClaw owns the research/action/verification loop and executes every tool.
-WebBridge preserves tool calls and results across requests. Both SSE and ordinary
+MimicGate preserves tool calls and results across requests. Both SSE and ordinary
 responses use a shared bounded recovery step: an empty response or unresolved
 tool marker prompts one additional Web-chat completion with the original context.
 Persistent failure returns a provider error, never fabricated success. Normal

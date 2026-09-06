@@ -1,7 +1,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText, streamText, tool, jsonSchema } from 'ai';
 import assert from 'node:assert/strict';
-const baseURL=process.env.WEBBRIDGE_TEST_URL || 'http://127.0.0.1:18761/v1';
+const baseURL=process.env.MIMICGATE_TEST_URL || process.env.WEBBRIDGE_TEST_URL || 'http://127.0.0.1:18761/v1';
 const provider=createOpenAICompatible({name:'webbridge',baseURL,apiKey:'fixture'});
 const model=provider('deepseek-chat');
 const tools={lookup:tool({description:'Lookup',inputSchema:jsonSchema({type:'object',properties:{}})})};

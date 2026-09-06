@@ -5,6 +5,7 @@ import os
 from playwright.async_api import Page
 
 from ...credentials import CredentialStore, CredentialStoreError
+from ...config import env_value
 from .selectors import CHAT_INPUTS, COOKIE_ACCEPT, LOGIN_AGREE, LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
 
 
@@ -43,7 +44,7 @@ class DeepSeekLogin:
         return False
 
     def _credentials(self) -> tuple[str, str] | None:
-        if os.getenv("WEBBRIDGE_LOGIN") == "1":
+        if env_value("MIMICGATE_LOGIN", "WEBBRIDGE_LOGIN") == "1":
             return None
         email = os.getenv("DEEPSEEK_EMAIL")
         password = os.getenv("DEEPSEEK_PASSWORD")
@@ -68,7 +69,7 @@ class DeepSeekLogin:
         credentials = self._credentials()
         if credentials is None:
             raise RuntimeError(
-                "DeepSeek is not logged in. Run `.venv/bin/python -m webbridgefreeride credentials set`, "
+                "DeepSeek is not logged in. Run `.venv/bin/mimicgate credentials set`, "
                 "set DEEPSEEK_EMAIL and DEEPSEEK_PASSWORD, or log in manually in the opened browser."
             )
         email, password = credentials

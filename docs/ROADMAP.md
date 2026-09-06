@@ -1,4 +1,4 @@
-# WebBridgeFreeRide Roadmap
+# MimicGate Roadmap
 
 This roadmap is organized so coding can continue directly from GitHub issues.
 

@@ -1,6 +1,6 @@
 # OpenClaw Capability Test Status
 
-This is the ordered acceptance checklist for WebBridge FreeRide integration
+This is the ordered acceptance checklist for MimicGate integration
 with OpenClaw. Update this file after each capability is tested. Do not mark a
 capability complete from a unit test alone when an OpenClaw end-to-end check is
 required.
@@ -33,7 +33,7 @@ Status meanings:
 ## Execution protocol
 
 1. Test only the next TODO item.
-2. Use the official OpenClaw surface and keep WebBridge Web-only.
+2. Use the official OpenClaw surface and keep MimicGate Web-only.
 3. Record the exact command/prompt, result, failure, and relevant commit.
 4. Update this checklist and add a regression test or fixture when practical.
 5. Stop and report blockers; do not silently skip to a later item.
@@ -42,7 +42,7 @@ Status meanings:
 
 ## Current known environment
 
-- WebBridge service is a user-level systemd service.
+- MimicGate service is a user-level systemd service.
 - Current runtime endpoint is usually http://127.0.0.1:11556; checked-in
   examples default to port 11555.
 - DeepSeek Web is the active provider in the latest verification.

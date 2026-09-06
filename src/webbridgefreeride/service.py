@@ -408,7 +408,7 @@ class QwenService(ChatProvider):
         await page.wait_for_timeout(3000)
         chat = QwenChat(page, timeout_ms=self.timeout_ms)
         if not await chat.is_authenticated():
-            raise RuntimeError("Qwen is not logged in. Run `.venv/bin/python -m webbridgefreeride auth qwen` and log in manually.")
+            raise RuntimeError("Qwen is not logged in. Run `.venv/bin/mimicgate auth qwen` and log in manually.")
         self.ready = True
         self.last_error = None
 

@@ -8,6 +8,13 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
+def env_value(canonical: str, legacy: str | None = None, default: str | None = None) -> str | None:
+    value = os.getenv(canonical)
+    if value is not None:
+        return value
+    return os.getenv(legacy, default) if legacy else default
+
+
 def canonical_path(value: str | Path) -> str:
     return str(Path(value).expanduser().resolve())
 
@@ -19,7 +26,7 @@ class ServerConfig(BaseModel):
 
 
 class BrowserConfig(BaseModel):
-    # managed uses WebBridge's own persistent browser profile; cdp attaches
+    # managed uses MimicGate's existing persistent browser profile; cdp attaches
     # to an already-running Chromium exposed through CDP.
     mode: Literal["managed", "cdp"] = "managed"
     headless: bool = True
@@ -84,7 +91,7 @@ class AppConfig(BaseModel):
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     data: dict[str, Any] = {}
-    p = Path(path or os.getenv("WEBBRIDGE_CONFIG", "config.yaml"))
+    p = Path(path or env_value("MIMICGATE_CONFIG", "WEBBRIDGE_CONFIG", "config.yaml"))
     if p.exists():
         data = yaml.safe_load(p.read_text()) or {}
     try:

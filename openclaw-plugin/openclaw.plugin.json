@@ -1,6 +1,6 @@
 {
   "id": "webbridgefreeride-openclaw",
-  "name": "WebBridge FreeRide cleanup",
+  "name": "MimicGate cleanup",
   "description": "Delete matching DeepSeek Web conversations when OpenClaw sessions are deleted.",
   "activation": { "onStartup": true },
   "configSchema": { "type": "object", "additionalProperties": false }

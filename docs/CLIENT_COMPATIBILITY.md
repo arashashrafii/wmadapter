@@ -42,8 +42,9 @@ Start the isolated fixture server (never use it as a real provider):
 ```
 
 In another terminal, run tests/integration/openai_client.py with a Python
-interpreter that has openai 2.24.0. Optional WEBBRIDGE_TEST_URL changes the
-fixture URL; it defaults to http://127.0.0.1:18761/v1.
+interpreter that has openai 2.24.0. Optional MIMICGATE_TEST_URL changes the
+fixture URL; the historical WEBBRIDGE_TEST_URL remains a fallback. It defaults
+to http://127.0.0.1:18761/v1.
 
 For JavaScript, use a temporary directory under work, install the two pinned
 packages there, and copy tests/integration/clients.mjs into that directory.
@@ -72,7 +73,7 @@ OpenCode custom provider:
   "provider": {
     "webbridge": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "WebBridge",
+      "name": "MimicGate",
       "options": {"baseURL": "http://127.0.0.1:11555/v1", "apiKey": "local-webbridge"},
       "models": {"deepseek-chat": {"name": "DeepSeek Web"}}
     }
@@ -80,7 +81,7 @@ OpenCode custom provider:
 }
 ```
 
-Select webbridge/deepseek-chat. Hermes: run `hermes model`, choose a custom
+Select the historical `webbridge/deepseek-chat` provider key. Hermes: run `hermes model`, choose a custom
 OpenAI-compatible endpoint, enter the base URL, dummy key, model and an
 operator-chosen context budget. OpenClaw: use api `openai-completions`, the
 same base URL and a model entry; retain the optional session headers/cleanup
