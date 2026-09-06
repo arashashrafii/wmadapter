@@ -190,8 +190,8 @@ wait_health() {
 run_smoke() {
   curl -fsS "http://${API_HOST}:${API_PORT}/v1/chat/completions" \
     -H 'Content-Type: application/json' \
-    -d "{\"model\":\"${SMOKE_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply exactly: FREERIDE_OK\"}]}" >/tmp/freeride-smoke.json
-  grep -q 'FREERIDE_OK' /tmp/freeride-smoke.json
+    -d "{\"model\":\"${SMOKE_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply exactly: MIMICGATE_OK\"}]}" >/tmp/mimicgate-smoke.json
+  grep -q 'MIMICGATE_OK' /tmp/mimicgate-smoke.json
 }
 install_openclaw_cleanup_plugin() {
   local openclaw_cmd

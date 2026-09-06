@@ -43,7 +43,7 @@ class OpenClawCompatibilityTests(unittest.TestCase):
     """Contract tests for the OpenClaw-facing model boundary.
 
     OpenClaw owns the tools, skills, plugins, channels, and agent runtime;
-    these tests verify that WebBridge preserves the model protocol they use.
+    these tests verify that MimicGate preserves the model protocol they use.
     """
 
     def test_openclaw_extra_request_fields_are_preserved(self):
