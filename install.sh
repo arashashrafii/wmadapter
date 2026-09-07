@@ -8,7 +8,7 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="mimicgate.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
-DISPLAY_VALUE="${DISPLAY:-:0}"
+DISPLAY_VALUE="${DISPLAY:-}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 say() { printf '\n%s\n' "$*"; }
@@ -161,7 +161,10 @@ WorkingDirectory=${PROJECT_DIR}
 EnvironmentFile=-${PROJECT_DIR}/.env
 Environment=MIMICGATE_LOGIN=${login_mode}
 Environment=DISPLAY=${DISPLAY_VALUE}
+Environment=WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}
+Environment=XAUTHORITY=${XAUTHORITY:-}
 Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
+Environment=DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}
 ExecStart=${PROJECT_DIR}/.venv/bin/mimicgate
 Restart=on-failure
 RestartSec=5
@@ -175,6 +178,13 @@ start_service() {
   write_service "$login_mode"
   systemctl --user daemon-reload
   systemctl --user enable --now "$SERVICE_NAME"
+}
+run_foreground_auth() {
+  if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "interactive_session_unavailable: DISPLAY or WAYLAND_DISPLAY is not set" >&2
+    return 1
+  fi
+  MIMICGATE_LOGIN=1 .venv/bin/mimicgate auth "$PROVIDER"
 }
 stop_service() {
   systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true
@@ -232,6 +242,12 @@ say "Manual browser authentication selected; no chatbot credentials will be stor
 install_current_os
 stop_service
 say "MimicGate will open its dedicated Playwright Chromium profile for login."
+if ! run_foreground_auth; then
+  echo "Interactive authentication failed; service was not started." >&2
+  exit 1
+fi
+HEADLESS="true"
+write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "" "$SERVER_HOST" ""
 start_service 0
 say "Waiting for API health after login..."
 if ! wait_health; then
