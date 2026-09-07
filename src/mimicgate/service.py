@@ -12,7 +12,7 @@ from .providers.base import ChatProvider
 from .providers.contract import ModelCapabilities
 from .providers.deepseek.chat import DeepSeekChat
 from .providers.deepseek.login import DeepSeekLogin
-from .providers.deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, UNKNOWN_UI
+from .providers.deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, UNKNOWN_UI, DeepSeekLogin
 from .providers.qwen.chat import QwenChat
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
@@ -72,24 +72,98 @@ class DeepSeekService(ChatProvider):
         self._page_records: dict[int, _PageRecord] = {}
         self._active_pages: set[int] = set()
         self._request_lock = asyncio.Lock()
+        self._auth_watch_task: asyncio.Task | None = None
+        self._auth_generation = 0
+        self._watcher_running = False
+        self._last_probe_at: float | None = None
+        self._last_probe_result: str | None = None
 
     async def start(self) -> None:
         self.login_attempt_id = uuid.uuid4().hex
         self._set_auth_state("CHECKING_SESSION", "checking_session")
-        await self._authenticate()
+        self._auth_generation += 1
+        try:
+            await self._authenticate()
+        except Exception:
+            if self.auth_state != "LOGIN_CANCELLED":
+                self._start_auth_watcher(self._auth_generation)
+            raise
+
+    def _start_auth_watcher(self, generation: int) -> None:
+        if self._auth_watch_task is None or self._auth_watch_task.done():
+            self._auth_watch_task = asyncio.create_task(self._watch_auth(generation))
+
+    def _cancel_auth_watcher(self) -> None:
+        task = self._auth_watch_task
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
+    async def _watch_auth(self, generation: int) -> None:
+        self._watcher_running = True
+        ready_streak = 0
+        probe = None
+        try:
+            while generation == self._auth_generation and self.auth_state != "LOGIN_CANCELLED":
+                page = self.browser._primary_pages.get(self.name)
+                if page is None:
+                    page = next((candidate for (owner, _), candidate in self.browser._page_claims.items() if owner == self.name), None)
+                if page is None or page.is_closed() or not self.browser.is_running:
+                    return
+                if probe is None or probe.page is not page:
+                    probe = DeepSeekLogin(page, self.chat_url)
+                state = await probe.probe_auth()
+                self._last_probe_at = time.time()
+                self._last_probe_result = state
+                if state == CHAT_READY:
+                    ready_streak += 1
+                    if ready_streak >= 2:
+                        self._set_auth_state("HANDOFF", "chat_ready")
+                        if not self.browser.headless:
+                            async def auth_probe(candidate) -> bool:
+                                return await DeepSeekLogin(candidate, self.chat_url).probe_auth() == CHAT_READY
+
+                            await self.browser.handoff_to_headless(
+                                auth_probe=auth_probe
+                            )
+                        self._set_auth_state("VERIFYING_SESSION", "session_probe")
+                        verify_page = await self.browser.page()
+                        if await DeepSeekLogin(verify_page, self.chat_url).probe_auth() == CHAT_READY:
+                            self.ready = True
+                            self._set_auth_state("READY", "authenticated")
+                            return
+                else:
+                    ready_streak = 0
+                    if state == SIGN_IN_VISIBLE:
+                        self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
+                    elif state == CHALLENGE_VISIBLE:
+                        self._set_auth_state("LOGIN_REQUIRED", "challenge_visible")
+                    elif state == UNKNOWN_UI:
+                        self._set_auth_state("AUTHENTICATING", "unknown_ui")
+                    else:
+                        self._set_auth_state("AUTHENTICATING", "session_pending")
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("DeepSeek auth watcher failed")
+        finally:
+            self._watcher_running = False
 
     def _on_browser_disconnect(self, reason: str) -> None:
         if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
             self._set_auth_state("LOGIN_CANCELLED", reason)
+            self._cancel_auth_watcher()
 
     async def retry_login(self) -> None:
         """Explicitly reset a cancelled login and start exactly one attempt."""
         self.ready = False
         self.last_error = None
+        self._cancel_auth_watcher()
         self._set_auth_state("STARTING", "explicit_retry")
         await self.start()
 
     async def stop(self) -> None:
+        self._cancel_auth_watcher()
         await self.browser.stop()
         self.ready = False
         self._conversation_pages.clear()
@@ -108,6 +182,9 @@ class DeepSeekService(ChatProvider):
             "reason_code": self.reason_code,
             "updated_at": self.updated_at,
             "login_attempt_id": self.login_attempt_id,
+            "watcher_running": self._watcher_running,
+            "last_probe_at": self._last_probe_at,
+            "last_probe_result": self._last_probe_result,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:
@@ -355,23 +432,93 @@ class QwenService(ChatProvider):
         self._page_records: dict[int, _PageRecord] = {}
         self._active_pages: set[int] = set()
         self._request_lock = asyncio.Lock()
+        self._auth_watch_task: asyncio.Task | None = None
+        self._auth_generation = 0
+        self._watcher_running = False
+        self._last_probe_at: float | None = None
+        self._last_probe_result: str | None = None
 
     async def start(self) -> None:
         self.login_attempt_id = uuid.uuid4().hex
         self._set_auth_state("CHECKING_SESSION", "checking_session")
-        await self._authenticate()
+        self._auth_generation += 1
+        try:
+            await self._authenticate()
+        except Exception:
+            if self.auth_state != "LOGIN_CANCELLED":
+                self._start_auth_watcher(self._auth_generation)
+            raise
+
+    def _start_auth_watcher(self, generation: int) -> None:
+        if self._auth_watch_task is None or self._auth_watch_task.done():
+            self._auth_watch_task = asyncio.create_task(self._watch_auth(generation))
+
+    def _cancel_auth_watcher(self) -> None:
+        task = self._auth_watch_task
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
+    async def _watch_auth(self, generation: int) -> None:
+        self._watcher_running = True
+        ready_streak = 0
+        probe = None
+        try:
+            while generation == self._auth_generation and self.auth_state != "LOGIN_CANCELLED":
+                page = self.browser._primary_pages.get(self.name)
+                if page is None:
+                    page = next((candidate for (owner, _), candidate in self.browser._page_claims.items() if owner == self.name), None)
+                if page is None or page.is_closed() or not self.browser.is_running:
+                    return
+                if probe is None or probe.page is not page:
+                    probe = QwenChat(page)
+                state = await probe.probe_auth()
+                self._last_probe_at = time.time()
+                self._last_probe_result = state
+                if state == CHAT_READY:
+                    ready_streak += 1
+                    if ready_streak >= 2:
+                        self._set_auth_state("HANDOFF", "chat_ready")
+                        if not self.browser.headless:
+                            async def auth_probe(candidate) -> bool:
+                                return await QwenChat(candidate).probe_auth() == CHAT_READY
+                            await self.browser.handoff_to_headless(auth_probe=auth_probe)
+                        self._set_auth_state("VERIFYING_SESSION", "session_probe")
+                        if await QwenChat(await self.browser.page()).probe_auth() == CHAT_READY:
+                            self.ready = True
+                            self._set_auth_state("READY", "authenticated")
+                            return
+                else:
+                    ready_streak = 0
+                    if state == SIGN_IN_VISIBLE:
+                        self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
+                    elif state == CHALLENGE_VISIBLE:
+                        self._set_auth_state("LOGIN_REQUIRED", "challenge_visible")
+                    elif state == UNKNOWN_UI:
+                        self._set_auth_state("AUTHENTICATING", "unknown_ui")
+                    else:
+                        self._set_auth_state("AUTHENTICATING", "session_pending")
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Qwen auth watcher failed")
+        finally:
+            self._watcher_running = False
 
     def _on_browser_disconnect(self, reason: str) -> None:
         if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
             self._set_auth_state("LOGIN_CANCELLED", reason)
+            self._cancel_auth_watcher()
 
     async def retry_login(self) -> None:
+        self._cancel_auth_watcher()
         self.ready = False
         self.last_error = None
         self._set_auth_state("STARTING", "explicit_retry")
         await self.start()
 
     async def stop(self) -> None:
+        self._cancel_auth_watcher()
         await self.browser.stop()
         self.ready = False
         self._conversation_pages.clear()
@@ -389,6 +536,9 @@ class QwenService(ChatProvider):
             "reason_code": self.reason_code,
             "updated_at": self.updated_at,
             "login_attempt_id": self.login_attempt_id,
+            "watcher_running": self._watcher_running,
+            "last_probe_at": self._last_probe_at,
+            "last_probe_result": self._last_probe_result,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:
