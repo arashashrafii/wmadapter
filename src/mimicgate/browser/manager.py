@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover - exercised on Windows
     import msvcrt
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
+from datetime import datetime, timezone
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 from ..config import canonical_path
@@ -68,6 +69,52 @@ class BrowserManager:
         self._primary_pages: dict[str, Page] = {}
         self._lifecycle_lock = asyncio.Lock()
         self.lifecycle_state = LifecycleState.STOPPED
+        self.provider: str | None = next(
+            (name for name, hosts in self._PROVIDER_HOSTS.items() if any(host in (launch_url or "") for host in hosts)),
+            None,
+        )
+        self.login_attempt_id: str | None = uuid.uuid4().hex
+        self.auth_state: str | None = None
+        self.browser_generation = 0
+        self.lifecycle_events: list[dict[str, object]] = []
+        self._cleanup_in_progress = False
+        self._disconnect_reported = False
+
+    def set_diagnostics(self, *, provider: str, login_attempt_id: str | None, auth_state: str | None) -> None:
+        self.provider = provider
+        self.login_attempt_id = login_attempt_id
+        self.auth_state = auth_state
+
+    def _emit_lifecycle(self, event_name: str, *, initiator: str, reason: str,
+                        page: Page | None = None, exit_status: object = None) -> dict[str, object]:
+        process = getattr(getattr(getattr(self.browser, "_impl_obj", None), "_process", None), "poll", None)
+        if process is None:
+            process = getattr(getattr(self.context, "_impl_obj", None), "_process", None)
+        status = exit_status
+        if status is None and callable(process):
+            try:
+                status = process()
+            except Exception:
+                status = None
+        try:
+            page_count = len(self.context.pages) if self.context is not None else 0
+        except (TypeError, AttributeError):
+            page_count = 0
+        event = {
+            "event_name": event_name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "provider": self.provider,
+            "login_attempt_id": self.login_attempt_id,
+            "browser_generation": self.browser_generation,
+            "page_count": page_count,
+            "auth_state": self.auth_state,
+            "initiator": initiator,
+            "reason": reason,
+            "pid": self.launch_info.get("pid"),
+            "exit_status": status,
+        }
+        self.lifecycle_events.append(event)
+        return event
 
     async def _await_cleanup(self, awaitable) -> None:
         task = asyncio.ensure_future(awaitable)
@@ -141,9 +188,16 @@ class BrowserManager:
     def is_running(self) -> bool:
         return self.context is not None and self._live
 
-    def _mark_disconnected(self, *_args) -> None:
-        if self.on_disconnect is not None:
-            self.on_disconnect("browser_disconnected")
+    def _mark_disconnected(self, reason: str = "browser_disconnected", *_args) -> None:
+        if self._disconnect_reported:
+            return
+        self._disconnect_reported = True
+        intentional = self._cleanup_in_progress
+        event_name = "auth.cleanup" if intentional else "auth.interrupted"
+        initiator = "mimicgate_cleanup" if intentional else "external"
+        self._emit_lifecycle(event_name, initiator=initiator, reason=reason)
+        if not intentional and self.on_disconnect is not None:
+            self.on_disconnect(reason)
         if self.context is not None:
             self._stale_context = self.context
         if self.browser is not None:
@@ -157,11 +211,34 @@ class BrowserManager:
 
     def _register_liveness(self, context: BrowserContext) -> None:
         self._live = True
-        context.on("page", lambda *_args: setattr(self, "page_event_count", self.page_event_count + 1))
-        context.on("close", self._mark_disconnected)
+        self._disconnect_reported = False
+        self.browser_generation += 1
+        context.on("page", lambda page, *_args: (setattr(self, "page_event_count", self.page_event_count + 1), self._register_page_events(page)))
+        context.on("close", lambda *_args: self._mark_disconnected("context_close"))
         browser = getattr(context, "browser", None)
         if browser is not None:
-            browser.on("disconnected", self._mark_disconnected)
+            browser.on("disconnected", lambda *_args: self._mark_disconnected("playwright_disconnect"))
+        try:
+            pages = list(getattr(context, "pages", ()))
+        except TypeError:
+            pages = []
+        for page in pages:
+            self._register_page_events(page)
+
+    def _register_page_events(self, page: Page) -> None:
+        page.on("close", lambda *_args: self._mark_disconnected("user_close"))
+        try:
+            page.on("crash", lambda *_args: self._page_crashed(page))
+        except Exception:
+            pass
+
+    def _page_crashed(self, page: Page) -> None:
+        if self._disconnect_reported:
+            return
+        self._disconnect_reported = True
+        self._emit_lifecycle("auth.interrupted", initiator="external", reason="page_crash", page=page)
+        if self.on_disconnect is not None and not self._cleanup_in_progress:
+            self.on_disconnect("page_crash")
 
     @classmethod
     def _provider_page_allowed(cls, owner: str, page: Page) -> bool:
@@ -193,6 +270,7 @@ class BrowserManager:
         self._owned_pages[page_id] = page
         self._page_claims[(owner, conversation_id)] = page
         page.on("close", lambda *_args: self._release_page(page))
+        self._register_page_events(page)
         return page
 
     async def page_for(self, owner: str, conversation_id: str | None = None) -> Page:
@@ -299,6 +377,7 @@ class BrowserManager:
                     raise RuntimeError("The Chromium CDP endpoint has no browser context")
                 self.context = self.browser.contexts[0]
                 self._register_liveness(self.context)
+                self._emit_lifecycle("browser.lifecycle", initiator="mimicgate", reason="connected_cdp")
                 return self.context
             launch_kwargs = {
                 "user_data_dir": str(self.profile_path),
@@ -330,7 +409,9 @@ class BrowserManager:
             self.launch_info["pid"] = getattr(process, "pid", None)
             self._register_liveness(self.context)
             self.lifecycle_state = LifecycleState.RUNNING
+            self._emit_lifecycle("browser.lifecycle", initiator="mimicgate", reason="started")
         except Exception:
+            self._emit_lifecycle("auth.interrupted", initiator="external", reason="display_session_failure")
             await self._stop_unlocked()
             raise
         except BaseException:
@@ -395,6 +476,8 @@ class BrowserManager:
 
     async def _stop_unlocked(self) -> None:
         self.lifecycle_state = LifecycleState.STOPPING
+        self._cleanup_in_progress = True
+        self._emit_lifecycle("auth.cleanup", initiator="mimicgate_cleanup", reason="stop")
         context = self.context
         playwright = self.playwright
         self.context = None
@@ -422,5 +505,6 @@ class BrowserManager:
                 failure = failure or exc
         self._release_profile_lock()
         self.lifecycle_state = LifecycleState.STOPPED
+        self._cleanup_in_progress = False
         if failure is not None:
             raise failure

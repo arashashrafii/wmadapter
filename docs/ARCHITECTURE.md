@@ -94,6 +94,20 @@ conservative guard may also stop intentional repeated non-process observations;
 it does not classify every error or guarantee that a changed strategy is correct.
 
 ## Non Goals for MVP
+- Browser authentication lifecycle diagnostics are emitted by `BrowserManager`.
+  Each record contains `event_name`, UTC `timestamp`, `provider`,
+  `login_attempt_id`, `browser_generation`, `page_count`, `auth_state`,
+  `initiator`, `reason`, `pid`, and nullable `exit_status`. Page closure, page
+  crash, context closure, Playwright/browser disconnect, display/session launch
+  failure, and intentional MimicGate cleanup are classified at this boundary.
+  Intentional stop and headed-to-headless handoff use
+  `initiator=mimicgate_cleanup`; external or unknown termination reports
+  `LOGIN_INTERRUPTED` and cancels the watcher.
+
+`LOGIN_INTERRUPTED` is terminal for the current login attempt. No watcher,
+request retry, or browser recovery may relaunch authentication. Only the
+explicit `retry_login()` operation starts a new attempt and login ID.
+
 - Dashboard
 - Usage billing
 - Multi-user support

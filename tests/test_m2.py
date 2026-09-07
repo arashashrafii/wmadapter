@@ -16,7 +16,7 @@ from mimicgate.manual_auth import AUTH_TARGETS, _wait_for_auth, run_manual_auth
 from mimicgate.providers.base import ChatProvider
 from mimicgate.providers.deepseek.chat import DeepSeekChat
 from mimicgate.browser.manager import BrowserManager
-from mimicgate.service import AUTH_STATES, DeepSeekService
+from mimicgate.service import AUTH_STATES, DeepSeekService, QwenService
 
 
 class FakeProvider(ChatProvider):
@@ -39,8 +39,8 @@ class Milestone2Tests(unittest.TestCase):
     def test_login_cancelled_is_stable_and_explicit_retry_is_single_attempt(self):
         service = DeepSeekService(load_config())
         service._on_browser_disconnect("browser_disconnected")
-        self.assertEqual(service.auth_state, "LOGIN_CANCELLED")
-        self.assertIn("LOGIN_CANCELLED", AUTH_STATES)
+        self.assertEqual(service.auth_state, "LOGIN_INTERRUPTED")
+        self.assertIn("LOGIN_INTERRUPTED", AUTH_STATES)
         service.start = AsyncMock()
         asyncio.run(service.retry_login())
         service.start.assert_awaited_once()
@@ -53,6 +53,26 @@ class Milestone2Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "provider_login_required"):
             asyncio.run(service._page_for_conversation(None))
         service.browser.page_for.assert_not_awaited()
+
+    def test_disconnect_status_contains_terminal_diagnostics(self):
+        service = DeepSeekService(load_config())
+        service._on_browser_disconnect("playwright_disconnect")
+        status = asyncio.run(service.status())
+        self.assertEqual(status["state"], "LOGIN_INTERRUPTED")
+        self.assertEqual(status["last_lifecycle_event"]["event_name"], "auth.state")
+        self.assertEqual(status["last_lifecycle_event"]["reason"], "playwright_disconnect")
+        for field in ("timestamp", "provider", "login_attempt_id", "browser_generation", "page_count", "auth_state", "initiator", "pid", "exit_status"):
+            self.assertIn(field, status["last_lifecycle_event"])
+
+    def test_qwen_disconnect_is_terminal_and_retry_is_explicit(self):
+        service = QwenService(load_config())
+        service._on_browser_disconnect("context_close")
+        service.start = AsyncMock()
+        with self.assertRaisesRegex(RuntimeError, "provider_login_required"):
+            asyncio.run(service._page_for_conversation(None))
+        asyncio.run(service.retry_login())
+        service.start.assert_awaited_once()
+        self.assertEqual(service.auth_state, "STARTING")
 
     def test_closed_login_page_stops_auth_watcher(self):
         page = Mock()

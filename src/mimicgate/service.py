@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 AUTH_STATES = (
     "STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING",
-    "HANDOFF", "VERIFYING_SESSION", "READY", "LOGIN_CANCELLED",
+    "HANDOFF", "VERIFYING_SESSION", "READY", "LOGIN_INTERRUPTED", "LOGIN_CANCELLED",
 )
 
 
@@ -77,9 +77,16 @@ class DeepSeekService(ChatProvider):
         self._watcher_running = False
         self._last_probe_at: float | None = None
         self._last_probe_result: str | None = None
+        self._initial_start_available = True
 
     async def start(self) -> None:
+        if self.auth_state == "LOGIN_INTERRUPTED":
+            raise RuntimeError("login_interrupted: use retry_login explicitly")
+        if not self._initial_start_available:
+            raise RuntimeError("login attempt already started; use retry_login explicitly")
+        self._initial_start_available = False
         self.login_attempt_id = uuid.uuid4().hex
+        self.browser.set_diagnostics(provider=self.name, login_attempt_id=self.login_attempt_id, auth_state=self.auth_state)
         self._set_auth_state("CHECKING_SESSION", "checking_session")
         self._auth_generation += 1
         try:
@@ -103,7 +110,7 @@ class DeepSeekService(ChatProvider):
         ready_streak = 0
         probe = None
         try:
-            while generation == self._auth_generation and self.auth_state != "LOGIN_CANCELLED":
+            while generation == self._auth_generation and self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
                 page = self.browser._primary_pages.get(self.name)
                 if page is None:
                     page = next((candidate for (owner, _), candidate in self.browser._page_claims.items() if owner == self.name), None)
@@ -151,7 +158,9 @@ class DeepSeekService(ChatProvider):
 
     def _on_browser_disconnect(self, reason: str) -> None:
         if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
-            self._set_auth_state("LOGIN_CANCELLED", reason)
+            if not self.browser.lifecycle_events or self.browser.lifecycle_events[-1].get("reason") != reason:
+                self.browser._emit_lifecycle("auth.interrupted", initiator="external", reason=reason)
+            self._set_auth_state("LOGIN_INTERRUPTED", reason)
             self._cancel_auth_watcher()
 
     async def retry_login(self) -> None:
@@ -159,6 +168,7 @@ class DeepSeekService(ChatProvider):
         self.ready = False
         self.last_error = None
         self._cancel_auth_watcher()
+        self._initial_start_available = True
         self._set_auth_state("STARTING", "explicit_retry")
         await self.start()
 
@@ -185,12 +195,21 @@ class DeepSeekService(ChatProvider):
             "watcher_running": self._watcher_running,
             "last_probe_at": self._last_probe_at,
             "last_probe_result": self._last_probe_result,
+            "browser_generation": self.browser.browser_generation,
+            "lifecycle_events": list(self.browser.lifecycle_events),
+            "last_lifecycle_event": self.browser.lifecycle_events[-1] if self.browser.lifecycle_events else None,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:
         self.auth_state = state
         self.reason_code = reason_code
         self.updated_at = time.time()
+        self.browser.set_diagnostics(provider=self.name, login_attempt_id=self.login_attempt_id, auth_state=state)
+        self.browser._emit_lifecycle(
+            "auth.ready" if state == "READY" else "auth.state",
+            initiator="mimicgate",
+            reason=reason_code,
+        )
 
     def _track_page(self, page: object) -> None:
         self._page_records.setdefault(id(page), _PageRecord(page, time.monotonic()))
@@ -266,7 +285,7 @@ class DeepSeekService(ChatProvider):
             self._conversation_bindings[session_id] = session_key
 
     async def _page_for_conversation(self, conversation_id: str | None):
-        if self.auth_state == "LOGIN_CANCELLED":
+        if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
             raise RuntimeError("provider_login_required")
         if not conversation_id:
             await self.cleanup_pages()
@@ -312,7 +331,7 @@ class DeepSeekService(ChatProvider):
         try:
             await login.ensure_authenticated()
         except Exception as exc:
-            if self.auth_state != "LOGIN_CANCELLED":
+            if self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
                 message = str(exc)
                 if "challenge_visible" in message:
                     self._set_auth_state("AUTHENTICATING", "challenge_visible")
@@ -350,7 +369,7 @@ class DeepSeekService(ChatProvider):
                     self.ready = False
                     self.last_error = str(exc)
                     logger.warning("DeepSeek request failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    if attempt >= attempts:
+                    if attempt >= attempts or self.auth_state == "LOGIN_INTERRUPTED":
                         raise
                     self._conversation_pages.clear()
                     await self.browser.restart()
@@ -437,9 +456,16 @@ class QwenService(ChatProvider):
         self._watcher_running = False
         self._last_probe_at: float | None = None
         self._last_probe_result: str | None = None
+        self._initial_start_available = True
 
     async def start(self) -> None:
+        if self.auth_state == "LOGIN_INTERRUPTED":
+            raise RuntimeError("login_interrupted: use retry_login explicitly")
+        if not self._initial_start_available:
+            raise RuntimeError("login attempt already started; use retry_login explicitly")
+        self._initial_start_available = False
         self.login_attempt_id = uuid.uuid4().hex
+        self.browser.set_diagnostics(provider=self.name, login_attempt_id=self.login_attempt_id, auth_state=self.auth_state)
         self._set_auth_state("CHECKING_SESSION", "checking_session")
         self._auth_generation += 1
         try:
@@ -463,7 +489,7 @@ class QwenService(ChatProvider):
         ready_streak = 0
         probe = None
         try:
-            while generation == self._auth_generation and self.auth_state != "LOGIN_CANCELLED":
+            while generation == self._auth_generation and self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
                 page = self.browser._primary_pages.get(self.name)
                 if page is None:
                     page = next((candidate for (owner, _), candidate in self.browser._page_claims.items() if owner == self.name), None)
@@ -507,11 +533,14 @@ class QwenService(ChatProvider):
 
     def _on_browser_disconnect(self, reason: str) -> None:
         if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
-            self._set_auth_state("LOGIN_CANCELLED", reason)
+            if not self.browser.lifecycle_events or self.browser.lifecycle_events[-1].get("reason") != reason:
+                self.browser._emit_lifecycle("auth.interrupted", initiator="external", reason=reason)
+            self._set_auth_state("LOGIN_INTERRUPTED", reason)
             self._cancel_auth_watcher()
 
     async def retry_login(self) -> None:
         self._cancel_auth_watcher()
+        self._initial_start_available = True
         self.ready = False
         self.last_error = None
         self._set_auth_state("STARTING", "explicit_retry")
@@ -539,12 +568,21 @@ class QwenService(ChatProvider):
             "watcher_running": self._watcher_running,
             "last_probe_at": self._last_probe_at,
             "last_probe_result": self._last_probe_result,
+            "browser_generation": self.browser.browser_generation,
+            "lifecycle_events": list(self.browser.lifecycle_events),
+            "last_lifecycle_event": self.browser.lifecycle_events[-1] if self.browser.lifecycle_events else None,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:
         self.auth_state = state
         self.reason_code = reason_code
         self.updated_at = time.time()
+        self.browser.set_diagnostics(provider=self.name, login_attempt_id=self.login_attempt_id, auth_state=state)
+        self.browser._emit_lifecycle(
+            "auth.ready" if state == "READY" else "auth.state",
+            initiator="mimicgate",
+            reason=reason_code,
+        )
 
     def _track_page(self, page: object) -> None:
         self._page_records.setdefault(id(page), _PageRecord(page, time.monotonic()))
@@ -597,7 +635,7 @@ class QwenService(ChatProvider):
         return True
 
     async def _page_for_conversation(self, conversation_id: str | None):
-        if self.auth_state == "LOGIN_CANCELLED":
+        if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
             raise RuntimeError("provider_login_required")
         if not conversation_id:
             await self.cleanup_pages()
@@ -649,7 +687,7 @@ class QwenService(ChatProvider):
             CHALLENGE_VISIBLE: "challenge_visible",
             UNKNOWN_UI: "unknown_ui",
         }.get(state, "session_pending")
-        if self.auth_state != "LOGIN_CANCELLED":
+        if self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
             self._set_auth_state("LOGIN_REQUIRED" if state == SIGN_IN_VISIBLE else "AUTHENTICATING", reason)
         raise RuntimeError(f"Qwen authentication is pending ({reason})")
 
@@ -677,7 +715,7 @@ class QwenService(ChatProvider):
                     self.ready = False
                     self.last_error = str(exc)
                     logger.warning("Qwen request failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    if attempt >= attempts:
+                    if attempt >= attempts or self.auth_state == "LOGIN_INTERRUPTED":
                         raise
                     self._conversation_pages.clear()
                     await self.browser.restart()
