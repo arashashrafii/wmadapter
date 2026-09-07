@@ -72,6 +72,24 @@ class DeepSeekLogin:
                 continue
         return False
 
+    async def _chat_input_diagnostics(self, roots: list[Any]) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for root_index, root in enumerate(roots):
+            for selector in CHAT_INPUTS:
+                result: dict[str, Any] = {"root": root_index, "selector": selector}
+                try:
+                    locator = root.locator(selector)
+                    count = await locator.count()
+                    result["count"] = count
+                    if count:
+                        field = locator.last
+                        result["visible"] = await field.is_visible(timeout=300)
+                        result["editable"] = await field.is_editable(timeout=300)
+                except Exception as exc:
+                    result["error"] = type(exc).__name__
+                results.append(result)
+        return results
+
     async def probe_auth(self) -> str:
         """Inspect the current UI only; this method never navigates or submits."""
         roots = [self.page, *getattr(self.page, "frames", [])]
@@ -104,7 +122,13 @@ class DeepSeekLogin:
                 except Exception:
                     continue
         self._ready_probe_streak = 0
-        self.last_probe_diagnostic = {"state": UNKNOWN_UI, "reason": "no_visible_editable_chat_input", "url": self.page.url}
+        self.last_probe_diagnostic = {
+            "state": UNKNOWN_UI,
+            "reason": "no_visible_editable_chat_input",
+            "url": self.page.url,
+            "frame_count": len(roots) - 1,
+            "chat_inputs": await self._chat_input_diagnostics(roots),
+        }
         return UNKNOWN_UI
 
     async def is_authenticated(self) -> bool:

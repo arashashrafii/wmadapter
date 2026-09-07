@@ -47,7 +47,8 @@ Known fragile areas:
 - DeepSeek DOM selectors and marker extraction. The login probe accepts the
   current `Message DeepSeek` textarea and contenteditable/ARIA textbox variants.
   If readiness times out, manual authentication reports the last probe state,
-  matched selector, URL, or the absence of a visible editable chat input.
+  matched selector, URL, frame count, and per-selector count/visibility/editability
+  diagnostics (or the absence of a visible editable chat input).
 - Login challenges, CAPTCHA, and account verification
 - Long-running browser profile state
 

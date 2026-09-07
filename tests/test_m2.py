@@ -73,6 +73,30 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(login.last_probe_diagnostic["reason"], "editable_chat_input")
         self.assertEqual(login.last_probe_diagnostic["selector"], 'textarea[placeholder*="Message"]')
 
+    def test_deepseek_unknown_probe_exposes_input_diagnostics(self):
+        class Locator:
+            last = None
+            async def count(self):
+                return 0
+            async def is_visible(self, timeout=0):
+                return False
+            async def is_editable(self, timeout=0):
+                return False
+
+        class Page:
+            url = "https://chat.deepseek.com/error"
+            frames = []
+            def locator(self, selector):
+                return Locator()
+
+        login = DeepSeekLogin(Page())
+        self.assertEqual(asyncio.run(login.probe_auth()), "UNKNOWN_UI")
+        diagnostic = login.last_probe_diagnostic
+        self.assertEqual(diagnostic["reason"], "no_visible_editable_chat_input")
+        self.assertEqual(diagnostic["url"], "https://chat.deepseek.com/error")
+        self.assertEqual(len(diagnostic["chat_inputs"]), 7)
+        self.assertTrue(all(item["count"] == 0 for item in diagnostic["chat_inputs"]))
+
     def test_login_cancelled_is_stable_and_explicit_retry_is_single_attempt(self):
         service = DeepSeekService(load_config())
         service._on_browser_disconnect("browser_disconnected")
