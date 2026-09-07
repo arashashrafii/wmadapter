@@ -95,6 +95,40 @@ class Milestone2Tests(unittest.TestCase):
         manager._mark_disconnected("playwright_disconnect")
         self.assertEqual(manager.lifecycle_events[-1]["reason"], "playwright_disconnect")
 
+    def test_genuine_user_close_is_terminal_and_not_relaunched(self):
+        disconnected = Mock()
+        manager = BrowserManager(
+            launch_url="https://chat.deepseek.com/",
+            on_disconnect=disconnected,
+        )
+        manager._mark_disconnected("user_close")
+        event = manager.lifecycle_events[-1]
+        self.assertEqual(event["event_name"], "auth.interrupted")
+        self.assertEqual(event["initiator"], "external")
+        self.assertEqual(event["reason"], "user_close")
+        disconnected.assert_called_once_with("user_close")
+
+    def test_cleanup_close_during_handoff_is_not_user_close(self):
+        manager = BrowserManager(launch_url="https://chat.deepseek.com/")
+        manager._cleanup_in_progress = True
+        manager._cleanup_reason = "handoff"
+        manager._mark_disconnected("user_close")
+        event = manager.lifecycle_events[-1]
+        self.assertEqual(event["event_name"], "auth.cleanup")
+        self.assertEqual(event["initiator"], "mimicgate_cleanup")
+        self.assertEqual(event["reason"], "handoff")
+
+    def test_display_launch_failure_remains_the_terminal_diagnostic(self):
+        starter = Mock()
+        starter.start = AsyncMock(side_effect=RuntimeError("no display"))
+        manager = BrowserManager(profile_path=f"/tmp/mimicgate-display-{id(starter)}", headless=False)
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            with self.assertRaisesRegex(RuntimeError, "no display"):
+                asyncio.run(manager.start())
+        event = manager.lifecycle_events[-1]
+        self.assertEqual(event["event_name"], "auth.interrupted")
+        self.assertEqual(event["reason"], "display_session_failure")
+
     def test_manual_auth_wait_reports_login_interrupted(self):
         page = Mock()
         page.is_closed.return_value = False
@@ -745,6 +779,10 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIs(result, headless)
             self.assertTrue(manager.headless)
             auth_probe.assert_awaited_once()
+            handoff_events = [event for event in manager.lifecycle_events if event["reason"] == "handoff"]
+            self.assertTrue(handoff_events)
+            self.assertTrue(all(event["initiator"] == "mimicgate_cleanup" for event in handoff_events))
+            self.assertFalse(any(event["reason"] == "user_close" for event in manager.lifecycle_events))
 
         headed_chromium.launch_persistent_context.assert_awaited_once_with(
             user_data_dir=profile,

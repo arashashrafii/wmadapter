@@ -78,6 +78,7 @@ class BrowserManager:
         self.browser_generation = 0
         self.lifecycle_events: list[dict[str, object]] = []
         self._cleanup_in_progress = False
+        self._cleanup_reason = "stop"
         self._disconnect_reported = False
 
     def set_diagnostics(self, *, provider: str, login_attempt_id: str | None, auth_state: str | None) -> None:
@@ -212,6 +213,8 @@ class BrowserManager:
             reason = "chromium_crash_or_oom"
         event_name = "auth.cleanup" if intentional else "auth.interrupted"
         initiator = "mimicgate_cleanup" if intentional else "external"
+        if intentional:
+            reason = self._cleanup_reason
         self._emit_lifecycle(event_name, initiator=initiator, reason=reason, exit_status=exit_status)
         if not intentional and self.on_disconnect is not None:
             self.on_disconnect(reason)
@@ -428,8 +431,10 @@ class BrowserManager:
             self.lifecycle_state = LifecycleState.RUNNING
             self._emit_lifecycle("browser.lifecycle", initiator="mimicgate", reason="started")
         except Exception:
-            self._emit_lifecycle("auth.interrupted", initiator="external", reason="display_session_failure")
-            await self._stop_unlocked()
+            try:
+                await self._stop_unlocked()
+            finally:
+                self._emit_lifecycle("auth.interrupted", initiator="external", reason="display_session_failure")
             raise
         except BaseException:
             await self._stop_unlocked()
@@ -454,7 +459,7 @@ class BrowserManager:
         if not await self.check_liveness():
             raise RuntimeError("Headed browser is no longer running")
         try:
-            await self.stop()
+            await self._stop_for_cleanup("handoff")
         except BaseException as exc:
             raise RuntimeError("headed browser shutdown failed before handoff") from exc
         self.headless = True
@@ -466,7 +471,7 @@ class BrowserManager:
                     raise RuntimeError("headless authentication probe returned false")
             return context
         except BaseException as exc:
-            await self.stop()
+            await self._stop_for_cleanup("handoff_failed")
             self.headless = False
             try:
                 await self.start()
@@ -491,10 +496,15 @@ class BrowserManager:
         async with self._lifecycle_lock:
             await self._stop_unlocked()
 
-    async def _stop_unlocked(self) -> None:
+    async def _stop_for_cleanup(self, reason: str) -> None:
+        async with self._lifecycle_lock:
+            await self._stop_unlocked(reason)
+
+    async def _stop_unlocked(self, cleanup_reason: str = "stop") -> None:
         self.lifecycle_state = LifecycleState.STOPPING
         self._cleanup_in_progress = True
-        self._emit_lifecycle("auth.cleanup", initiator="mimicgate_cleanup", reason="stop")
+        self._cleanup_reason = cleanup_reason
+        self._emit_lifecycle("auth.cleanup", initiator="mimicgate_cleanup", reason=cleanup_reason)
         context = self.context
         playwright = self.playwright
         self.context = None
@@ -523,5 +533,6 @@ class BrowserManager:
         self._release_profile_lock()
         self.lifecycle_state = LifecycleState.STOPPED
         self._cleanup_in_progress = False
+        self._cleanup_reason = "stop"
         if failure is not None:
             raise failure
