@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 
 from playwright.async_api import Page
 from ...browser.elements import first_visible
 
 from .selectors import CHAT_INPUTS, RESPONSE_BLOCKS
+from ..deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, UNKNOWN_UI
 from ..submit import PreSubmitError, SubmitState, UncertainSubmitError
 
 
@@ -14,16 +16,42 @@ class QwenChat:
         self.page = page
         self.timeout_ms = timeout_ms
         self.submit_state = SubmitState.NOT_SUBMITTED
+        self._ready_probe_streak = 0
 
     async def _first_visible(self, selectors: list[str]):
         return await first_visible(self.page, selectors, "Qwen")
 
-    async def is_authenticated(self) -> bool:
+    async def _locator(self, root, selector: str):
+        locator = root.locator(selector)
+        return await locator if inspect.isawaitable(locator) else locator
+
+    async def probe_auth(self) -> str:
+        """Read current DOM state without navigation or submission."""
+        for selector in ("iframe[src*='captcha']", "[id*='captcha' i]", "[class*='challenge' i]"):
+            try:
+                locator = await self._locator(self.page, selector)
+                if await locator.last.is_visible(timeout=300):
+                    self._ready_probe_streak = 0
+                    return CHALLENGE_VISIBLE
+            except Exception:
+                pass
         try:
-            await self._first_visible(CHAT_INPUTS)
-            return True
+            field = await self._first_visible(CHAT_INPUTS)
+            if await field.is_editable(timeout=300):
+                self._ready_probe_streak += 1
+                if self._ready_probe_streak >= 2:
+                    return CHAT_READY
+                return SESSION_PENDING
         except Exception:
-            return False
+            pass
+        self._ready_probe_streak = 0
+        locator = await self._locator(self.page, "text=/sign in|log in|login/i")
+        count = locator.count()
+        count = await count if inspect.isawaitable(count) else count
+        return SIGN_IN_VISIBLE if count else UNKNOWN_UI
+
+    async def is_authenticated(self) -> bool:
+        return await self.probe_auth() == CHAT_READY
 
     async def _response_counts(self) -> dict[str, int]:
         return {selector: await self.page.locator(selector).count() for selector in RESPONSE_BLOCKS}

@@ -7,7 +7,7 @@ from typing import Any
 
 from .browser.manager import BrowserManager
 from .config import canonical_path, load_config, provider_profile_dir
-from .providers.deepseek.login import DeepSeekLogin
+from .providers.deepseek.login import CHAT_READY, DeepSeekLogin
 from .providers.qwen.chat import QwenChat
 
 
@@ -52,9 +52,13 @@ async def _click_first_visible(page, selectors: tuple[str, ...], timeout: int = 
 
 
 async def _authenticated(provider: str, page, target: AuthTarget) -> bool:
+    return await _probe_auth(provider, page, target) == CHAT_READY
+
+
+async def _probe_auth(provider: str, page, target: AuthTarget) -> str:
     if provider == "deepseek":
-        return await DeepSeekLogin(page, target.url).is_authenticated()
-    return await QwenChat(page).is_authenticated()
+        return await DeepSeekLogin(page, target.url).probe_auth()
+    return await QwenChat(page).probe_auth()
 
 
 async def _wait_for_auth(provider: str, page, target: AuthTarget, timeout_s: int = 300) -> None:
@@ -74,6 +78,7 @@ async def _wait_for_auth(provider: str, page, target: AuthTarget, timeout_s: int
 
 async def _wait_for_auth_once(provider: str, page, target: AuthTarget, timeout_s: int) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_s
+    ready_streak = 0
     while asyncio.get_running_loop().time() < deadline:
         closed = page.is_closed()
         if inspect.isawaitable(closed):
@@ -81,8 +86,13 @@ async def _wait_for_auth_once(provider: str, page, target: AuthTarget, timeout_s
         if closed:
             raise RuntimeError(f"{provider} login cancelled: browser page was closed")
         try:
-            if await _authenticated(provider, page, target):
-                return
+            state = await _probe_auth(provider, page, target)
+            if state == CHAT_READY:
+                ready_streak += 1
+                if ready_streak >= 2:
+                    return
+            else:
+                ready_streak = 0
         except Exception:
             pass
         await asyncio.sleep(2)
@@ -132,9 +142,8 @@ async def run_manual_auth(
         print(f"Complete {provider} authentication in the opened browser; MimicGate will continue automatically.")
         await _wait_for_auth(provider, page, target)
         async def auth_probe(page) -> bool:
-            if provider == "deepseek":
-                return await DeepSeekLogin(page, target.url).is_authenticated()
-            return await QwenChat(page).is_authenticated()
+            states = [await _probe_auth(provider, page, target) for _ in range(2)]
+            return all(state == CHAT_READY for state in states)
 
         await browser.handoff_to_headless(auth_probe=auth_probe)
         await browser.stop()

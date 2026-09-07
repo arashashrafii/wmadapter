@@ -89,7 +89,7 @@ class Milestone2Tests(unittest.TestCase):
             "qwen": {"profile_dir": "./qwen-profile"},
         }
         with patch("mimicgate.manual_auth.BrowserManager", return_value=manager) as manager_class, patch(
-            "mimicgate.manual_auth._authenticated", new=AsyncMock(return_value=True)
+            "mimicgate.manual_auth._probe_auth", new=AsyncMock(return_value="CHAT_READY")
         ):
             asyncio.run(run_manual_auth("qwen", config=config))
         kwargs = manager_class.call_args.kwargs

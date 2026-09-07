@@ -12,6 +12,7 @@ from .providers.base import ChatProvider
 from .providers.contract import ModelCapabilities
 from .providers.deepseek.chat import DeepSeekChat
 from .providers.deepseek.login import DeepSeekLogin
+from .providers.deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, UNKNOWN_UI
 from .providers.qwen.chat import QwenChat
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
@@ -235,7 +236,13 @@ class DeepSeekService(ChatProvider):
             await login.ensure_authenticated()
         except Exception as exc:
             if self.auth_state != "LOGIN_CANCELLED":
-                self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
+                message = str(exc)
+                if "challenge_visible" in message:
+                    self._set_auth_state("AUTHENTICATING", "challenge_visible")
+                elif "unknown_ui" in message or "session_pending" in message:
+                    self._set_auth_state("AUTHENTICATING", message.rsplit("(", 1)[-1].rstrip(")"))
+                else:
+                    self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
             raise exc
         self.ready = True
         self._set_auth_state("READY", "authenticated")
@@ -474,20 +481,27 @@ class QwenService(ChatProvider):
         self._set_auth_state("AUTHENTICATING", "provider_session_check")
         page = await self._page_for_conversation(conversation_id)
         chat = QwenChat(page, timeout_ms=self.timeout_ms)
+        # Keep the provider API compatibility hook; QwenChat implements it via
+        # the structured probe and it performs no navigation.
         if await chat.is_authenticated():
             self.ready = True
+            self._set_auth_state("READY", "authenticated")
             self.last_error = None
             return
-        await page.goto(self.chat_url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(3000)
-        chat = QwenChat(page, timeout_ms=self.timeout_ms)
-        if not await chat.is_authenticated():
-            if self.auth_state != "LOGIN_CANCELLED":
-                self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
-            raise RuntimeError("Qwen is not logged in. Run `.venv/bin/mimicgate auth qwen` and log in manually.")
-        self.ready = True
-        self._set_auth_state("READY", "authenticated")
-        self.last_error = None
+        state = await chat.probe_auth()
+        if state == CHAT_READY and await chat.probe_auth() == CHAT_READY:
+            self.ready = True
+            self._set_auth_state("READY", "authenticated")
+            self.last_error = None
+            return
+        reason = {
+            SIGN_IN_VISIBLE: "provider_login_required",
+            CHALLENGE_VISIBLE: "challenge_visible",
+            UNKNOWN_UI: "unknown_ui",
+        }.get(state, "session_pending")
+        if self.auth_state != "LOGIN_CANCELLED":
+            self._set_auth_state("LOGIN_REQUIRED" if state == SIGN_IN_VISIBLE else "AUTHENTICATING", reason)
+        raise RuntimeError(f"Qwen authentication is pending ({reason})")
 
     async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
         async with self._request_lock:
