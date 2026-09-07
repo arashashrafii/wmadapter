@@ -38,6 +38,29 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_deepseek_auth_uses_primary_page_and_bootstraps_blank_page(self):
+        service = DeepSeekService(load_config())
+        page = Mock(url="about:blank")
+        page.goto = AsyncMock()
+        service.browser.primary_page = AsyncMock(return_value=page)
+        service.browser.page_for = AsyncMock()
+        with patch("mimicgate.service.DeepSeekLogin") as login_class:
+            login_class.return_value.ensure_authenticated = AsyncMock()
+            asyncio.run(service._authenticate())
+        service.browser.primary_page.assert_awaited_once_with("deepseek")
+        service.browser.page_for.assert_not_awaited()
+        page.goto.assert_awaited_once_with("https://chat.deepseek.com/", wait_until="domcontentloaded")
+
+    def test_deepseek_auth_reuses_loaded_primary_page_without_navigation(self):
+        service = DeepSeekService(load_config())
+        page = Mock(url="https://chat.deepseek.com/a/chat/s/existing")
+        page.goto = AsyncMock()
+        service.browser.primary_page = AsyncMock(return_value=page)
+        with patch("mimicgate.service.DeepSeekLogin") as login_class:
+            login_class.return_value.ensure_authenticated = AsyncMock()
+            asyncio.run(service._authenticate())
+        page.goto.assert_not_awaited()
+
     def test_headless_handoff_auth_probe_allows_new_page_warmup(self):
         page = Mock()
         target = AUTH_TARGETS["deepseek"]

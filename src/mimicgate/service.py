@@ -329,7 +329,14 @@ class DeepSeekService(ChatProvider):
 
     async def _authenticate(self, conversation_id: str | None = None) -> None:
         self._set_auth_state("AUTHENTICATING", "provider_session_check")
-        page = await self._page_for_conversation(conversation_id)
+        # Authentication belongs to the provider's single primary page. Using
+        # page_for here can claim a stale secondary page and report UNKNOWN_UI
+        # even while the primary page has the live session.
+        page = await self.browser.primary_page(self.name)
+        if getattr(page, "url", "") in {"", "about:blank"}:
+            # This is only the initial blank-page bootstrap. Never navigate an
+            # already loaded provider page, including one showing CAPTCHA.
+            await page.goto(self.chat_url, wait_until="domcontentloaded")
         login = DeepSeekLogin(page, self.chat_url, timeout_ms=self.login_timeout_ms)
         try:
             await login.ensure_authenticated()
