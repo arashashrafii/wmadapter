@@ -180,13 +180,17 @@ stop_service() {
   systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true
 }
 wait_health() {
-  local i
+  local i ready_response
   for i in $(seq 1 60); do
-    if curl -fsS "http://${API_HOST}:${API_PORT}/ready" >/dev/null 2>&1; then
+    ready_response="$(curl -sS "http://${API_HOST}:${API_PORT}/ready" 2>/dev/null || true)"
+    if printf '%s' "$ready_response" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"'; then
       return 0
     fi
     sleep 2
   done
+  if [ -n "$ready_response" ]; then
+    say "Provider is not ready: $ready_response"
+  fi
   return 1
 }
 run_smoke() {
