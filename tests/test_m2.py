@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from mimicgate.config import load_config
@@ -79,6 +80,35 @@ class Milestone2Tests(unittest.TestCase):
         page.is_closed.return_value = True
         with self.assertRaisesRegex(RuntimeError, "login cancelled"):
             asyncio.run(_wait_for_auth("deepseek", page, AUTH_TARGETS["deepseek"], timeout_s=120))
+
+    def test_transport_disconnect_uses_crash_reason_only_with_process_exit(self):
+        process = SimpleNamespace(pid=4321, returncode=137)
+        manager = BrowserManager(launch_url="https://chat.deepseek.com/")
+        manager.browser = SimpleNamespace(_impl_obj=SimpleNamespace(_process=process))
+        manager.launch_info["pid"] = process.pid
+        manager._mark_disconnected("playwright_disconnect")
+        self.assertEqual(manager.lifecycle_events[-1]["reason"], "chromium_crash_or_oom")
+        self.assertEqual(manager.lifecycle_events[-1]["exit_status"], 137)
+
+        manager = BrowserManager(launch_url="https://chat.deepseek.com/")
+        manager.browser = SimpleNamespace(_impl_obj=SimpleNamespace(_process=SimpleNamespace(pid=4322, returncode=None)))
+        manager._mark_disconnected("playwright_disconnect")
+        self.assertEqual(manager.lifecycle_events[-1]["reason"], "playwright_disconnect")
+
+    def test_manual_auth_wait_reports_login_interrupted(self):
+        page = Mock()
+        page.is_closed.return_value = False
+        interruption = {"state": "LOGIN_INTERRUPTED", "reason": "user_close"}
+        with self.assertRaisesRegex(RuntimeError, "LOGIN_INTERRUPTED"):
+            asyncio.run(_wait_for_auth("deepseek", page, AUTH_TARGETS["deepseek"], interruption=interruption))
+
+    def test_interrupted_service_never_starts_auth_watcher(self):
+        service = DeepSeekService(load_config())
+        service._set_auth_state("LOGIN_INTERRUPTED", "page_crash")
+        service._start_auth_watcher(1)
+        self.assertIsNone(service._auth_watch_task)
+        with self.assertRaisesRegex(RuntimeError, "retry_login"):
+            asyncio.run(service.start())
 
     def test_manual_auth_rejects_cdp_mode(self):
         config = {"browser": {"mode": "cdp"}}

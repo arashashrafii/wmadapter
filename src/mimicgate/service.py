@@ -92,11 +92,13 @@ class DeepSeekService(ChatProvider):
         try:
             await self._authenticate()
         except Exception:
-            if self.auth_state != "LOGIN_CANCELLED":
+            if self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
                 self._start_auth_watcher(self._auth_generation)
             raise
 
     def _start_auth_watcher(self, generation: int) -> None:
+        if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
+            return
         if self._auth_watch_task is None or self._auth_watch_task.done():
             self._auth_watch_task = asyncio.create_task(self._watch_auth(generation))
 
@@ -104,6 +106,7 @@ class DeepSeekService(ChatProvider):
         task = self._auth_watch_task
         if task is not None and not task.done() and task is not asyncio.current_task():
             task.cancel()
+        self._watcher_running = False
 
     async def _watch_auth(self, generation: int) -> None:
         self._watcher_running = True
@@ -471,11 +474,13 @@ class QwenService(ChatProvider):
         try:
             await self._authenticate()
         except Exception:
-            if self.auth_state != "LOGIN_CANCELLED":
+            if self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
                 self._start_auth_watcher(self._auth_generation)
             raise
 
     def _start_auth_watcher(self, generation: int) -> None:
+        if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
+            return
         if self._auth_watch_task is None or self._auth_watch_task.done():
             self._auth_watch_task = asyncio.create_task(self._watch_auth(generation))
 
@@ -483,6 +488,7 @@ class QwenService(ChatProvider):
         task = self._auth_watch_task
         if task is not None and not task.done() and task is not asyncio.current_task():
             task.cancel()
+        self._watcher_running = False
 
     async def _watch_auth(self, generation: int) -> None:
         self._watcher_running = True

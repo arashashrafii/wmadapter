@@ -9,6 +9,9 @@ The final event identifies the boundary through `reason`: `user_close`,
 ID, browser generation, page count, authentication state, Chromium PID, and an
 exit status when Playwright exposes the process.
 
+`playwright_disconnect` means transport evidence alone. A non-zero managed
+Chromium exit status is classified as `chromium_crash_or_oom` instead.
+
 `LOGIN_INTERRUPTED` deliberately does not relaunch Chromium. Use the explicit
 login retry command to create a new attempt. The `mimicgate_cleanup` initiator
 marks expected stop/handoff callbacks and is not treated as an interruption.

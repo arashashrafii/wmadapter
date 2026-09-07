@@ -100,6 +100,9 @@ it does not classify every error or guarantee that a changed strategy is correct
   `initiator`, `reason`, `pid`, and nullable `exit_status`. Page closure, page
   crash, context closure, Playwright/browser disconnect, display/session launch
   failure, and intentional MimicGate cleanup are classified at this boundary.
+  A Playwright transport disconnect is labeled `playwright_disconnect` unless
+  the managed Chromium process has a non-zero exit status, in which case it is
+  labeled `chromium_crash_or_oom` and retains the PID/status evidence.
   Intentional stop and headed-to-headless handoff use
   `initiator=mimicgate_cleanup`; external or unknown termination reports
   `LOGIN_INTERRUPTED` and cancels the watcher.

@@ -61,13 +61,19 @@ async def _probe_auth(provider: str, page, target: AuthTarget) -> str:
     return await QwenChat(page).probe_auth()
 
 
-async def _wait_for_auth(provider: str, page, target: AuthTarget, timeout_s: int = 300) -> None:
+async def _wait_for_auth(
+    provider: str,
+    page,
+    target: AuthTarget,
+    timeout_s: int = 300,
+    interruption: dict[str, str | None] | None = None,
+) -> None:
     key = id(page)
     existing = _AUTH_TASKS.get(key)
     if existing is not None:
         await asyncio.shield(existing)
         return
-    task = asyncio.create_task(_wait_for_auth_once(provider, page, target, timeout_s))
+    task = asyncio.create_task(_wait_for_auth_once(provider, page, target, timeout_s, interruption))
     _AUTH_TASKS[key] = task
     try:
         await asyncio.shield(task)
@@ -76,15 +82,24 @@ async def _wait_for_auth(provider: str, page, target: AuthTarget, timeout_s: int
             _AUTH_TASKS.pop(key, None)
 
 
-async def _wait_for_auth_once(provider: str, page, target: AuthTarget, timeout_s: int) -> None:
+async def _wait_for_auth_once(
+    provider: str,
+    page,
+    target: AuthTarget,
+    timeout_s: int,
+    interruption: dict[str, str | None] | None = None,
+) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_s
     ready_streak = 0
     while asyncio.get_running_loop().time() < deadline:
+        if interruption and interruption.get("state") == "LOGIN_INTERRUPTED":
+            reason = interruption.get("reason") or "browser_disconnected"
+            raise RuntimeError(f"LOGIN_INTERRUPTED (login cancelled): {provider} {reason}")
         closed = page.is_closed()
         if inspect.isawaitable(closed):
             closed = await closed
         if closed:
-            raise RuntimeError(f"{provider} login cancelled: browser page was closed")
+            raise RuntimeError(f"LOGIN_INTERRUPTED (login cancelled): {provider} browser page was closed")
         try:
             state = await _probe_auth(provider, page, target)
             if state == CHAT_READY:
@@ -124,11 +139,13 @@ async def run_manual_auth(
         raise RuntimeError(
             "--executable-path does not match browser.executable_path; configure the Gateway executable first"
         )
+    interruption: dict[str, str | None] = {"state": None, "reason": None}
     browser = BrowserManager(
         profile_path=canonical_path(profile_value),
         headless=False,
         executable_path=configured_executable,
         launch_url=target.url,
+        on_disconnect=lambda reason: interruption.update(state="LOGIN_INTERRUPTED", reason=reason),
     )
     try:
         page = await browser.primary_page(provider)
@@ -140,7 +157,7 @@ async def run_manual_auth(
             if not clicked:
                 print("Google sign-in button was not detected automatically. Click it manually in the browser.")
         print(f"Complete {provider} authentication in the opened browser; MimicGate will continue automatically.")
-        await _wait_for_auth(provider, page, target)
+        await _wait_for_auth(provider, page, target, interruption=interruption)
         async def auth_probe(page) -> bool:
             states = [await _probe_auth(provider, page, target) for _ in range(2)]
             return all(state == CHAT_READY for state in states)

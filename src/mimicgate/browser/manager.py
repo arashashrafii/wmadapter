@@ -85,17 +85,31 @@ class BrowserManager:
         self.login_attempt_id = login_attempt_id
         self.auth_state = auth_state
 
+    def _process_evidence(self) -> tuple[object, object]:
+        candidates = (
+            getattr(getattr(self.browser, "_impl_obj", None), "_process", None),
+            getattr(getattr(self.browser, "_impl_obj", None), "process", None),
+            getattr(getattr(self.context, "_impl_obj", None), "_process", None),
+        )
+        process = next((candidate for candidate in candidates if candidate is not None), None)
+        pid = getattr(process, "pid", None) or self.launch_info.get("pid")
+        status = None
+        poll = getattr(process, "poll", None)
+        if callable(poll):
+            try:
+                status = poll()
+            except Exception:
+                pass
+        if status is None:
+            status = getattr(process, "returncode", None)
+        return pid, status
+
     def _emit_lifecycle(self, event_name: str, *, initiator: str, reason: str,
                         page: Page | None = None, exit_status: object = None) -> dict[str, object]:
-        process = getattr(getattr(getattr(self.browser, "_impl_obj", None), "_process", None), "poll", None)
-        if process is None:
-            process = getattr(getattr(self.context, "_impl_obj", None), "_process", None)
+        pid, process_status = self._process_evidence()
         status = exit_status
-        if status is None and callable(process):
-            try:
-                status = process()
-            except Exception:
-                status = None
+        if status is None:
+            status = process_status
         try:
             page_count = len(self.context.pages) if self.context is not None else 0
         except (TypeError, AttributeError):
@@ -110,7 +124,7 @@ class BrowserManager:
             "auth_state": self.auth_state,
             "initiator": initiator,
             "reason": reason,
-            "pid": self.launch_info.get("pid"),
+            "pid": pid,
             "exit_status": status,
         }
         self.lifecycle_events.append(event)
@@ -193,9 +207,12 @@ class BrowserManager:
             return
         self._disconnect_reported = True
         intentional = self._cleanup_in_progress
+        pid, exit_status = self._process_evidence()
+        if reason == "playwright_disconnect" and exit_status not in (None, 0):
+            reason = "chromium_crash_or_oom"
         event_name = "auth.cleanup" if intentional else "auth.interrupted"
         initiator = "mimicgate_cleanup" if intentional else "external"
-        self._emit_lifecycle(event_name, initiator=initiator, reason=reason)
+        self._emit_lifecycle(event_name, initiator=initiator, reason=reason, exit_status=exit_status)
         if not intentional and self.on_disconnect is not None:
             self.on_disconnect(reason)
         if self.context is not None:
