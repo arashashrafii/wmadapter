@@ -56,6 +56,12 @@ async def _authenticated(provider: str, page, target: AuthTarget) -> bool:
     return await _probe_auth(provider, page, target) == CHAT_READY
 
 
+async def _stable_auth_probe(provider: str, page, target: AuthTarget) -> bool:
+    """Require two ready observations after a fresh page's warm-up probe."""
+    states = [await _probe_auth(provider, page, target) for _ in range(3)]
+    return all(state == CHAT_READY for state in states[-2:])
+
+
 async def _probe_auth(provider: str, page, target: AuthTarget) -> str:
     if provider == "deepseek":
         probe = _DEEPSEEK_PROBES.get(id(page))
@@ -168,8 +174,7 @@ async def run_manual_auth(
         print(f"Complete {provider} authentication in the opened browser; MimicGate will continue automatically.")
         await _wait_for_auth(provider, page, target, interruption=interruption)
         async def auth_probe(page) -> bool:
-            states = [await _probe_auth(provider, page, target) for _ in range(2)]
-            return all(state == CHAT_READY for state in states)
+            return await _stable_auth_probe(provider, page, target)
 
         await browser.handoff_to_headless(auth_probe=auth_probe)
         await browser.stop()

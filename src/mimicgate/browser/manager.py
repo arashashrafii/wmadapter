@@ -467,6 +467,12 @@ class BrowserManager:
             context = await self.start()
             if auth_probe is not None:
                 page = await self.page()
+                # Persistent contexts do not restore the previously headed page
+                # on every platform. The headed probe has already confirmed
+                # authentication, so opening the configured provider URL here
+                # is a safe handoff step; it is never used during pending login.
+                if self.launch_url and getattr(page, "url", "") in {"", "about:blank"}:
+                    await page.goto(self.launch_url, wait_until="domcontentloaded")
                 if not await auth_probe(page):
                     raise RuntimeError("headless authentication probe returned false")
             return context

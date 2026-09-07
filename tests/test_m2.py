@@ -13,7 +13,7 @@ from mimicgate.security import redact
 from mimicgate.providers.router import ProviderRouter
 from mimicgate.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
 from mimicgate.ports import find_free_port
-from mimicgate.manual_auth import AUTH_TARGETS, _wait_for_auth, run_manual_auth
+from mimicgate.manual_auth import AUTH_TARGETS, _stable_auth_probe, _wait_for_auth, run_manual_auth
 from mimicgate.providers.base import ChatProvider
 from mimicgate.providers.deepseek.chat import DeepSeekChat
 from mimicgate.providers.deepseek.login import CHAT_READY, DeepSeekLogin
@@ -38,6 +38,16 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_headless_handoff_auth_probe_allows_new_page_warmup(self):
+        page = Mock()
+        target = AUTH_TARGETS["deepseek"]
+        with patch(
+            "mimicgate.manual_auth._probe_auth",
+            new=AsyncMock(side_effect=["SESSION_PENDING", CHAT_READY, CHAT_READY]),
+        ) as probe:
+            self.assertTrue(asyncio.run(_stable_auth_probe("deepseek", page, target)))
+        self.assertEqual(probe.await_count, 3)
+
     def test_deepseek_login_accepts_current_message_textarea(self):
         class Locator:
             def __init__(self, matches=False):
@@ -832,6 +842,35 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         headed.close.assert_awaited_once()
         headed_playwright.stop.assert_awaited_once()
         await manager.stop()
+
+    async def test_handoff_opens_provider_url_when_headless_context_starts_blank(self):
+        headed = Mock(pages=[])
+        headed.browser = None
+        headed.close = AsyncMock()
+        headless_page = Mock(url="about:blank", is_closed=Mock(return_value=False))
+        headless_page.goto = AsyncMock()
+        headless = Mock(pages=[headless_page])
+        headless.browser = None
+        headless.close = AsyncMock()
+        starter = Mock()
+        headed_pw = Mock(chromium=Mock(launch_persistent_context=AsyncMock(return_value=headed)))
+        headless_pw = Mock(chromium=Mock(launch_persistent_context=AsyncMock(return_value=headless)))
+        headed_pw.stop = AsyncMock()
+        headless_pw.stop = AsyncMock()
+        starter.start = AsyncMock(side_effect=[headed_pw, headless_pw])
+
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(
+                profile_path=f"/tmp/mimicgate-handoff-blank-{id(headed)}",
+                launch_url="https://chat.deepseek.com/",
+                headless=False,
+            )
+            await manager.start()
+            await manager.handoff_to_headless(auth_probe=AsyncMock(return_value=True))
+            headless_page.goto.assert_awaited_once_with(
+                "https://chat.deepseek.com/", wait_until="domcontentloaded"
+            )
+            await manager.stop()
 
     async def test_headed_login_uses_one_app_page_and_headless_has_no_app_args(self):
         page = Mock(url="about:blank")
