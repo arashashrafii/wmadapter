@@ -3,7 +3,11 @@
 CHAT_INPUTS = [
     "textarea#chat-input",
     'textarea[placeholder*="DeepSeek"]',
+    'textarea[placeholder*="Message"]',
     "textarea.d96f2d2a",
+    '[contenteditable="true"][role="textbox"]',
+    '[contenteditable="true"]',
+    '[role="textbox"]',
 ]
 
 FILE_INPUTS = [

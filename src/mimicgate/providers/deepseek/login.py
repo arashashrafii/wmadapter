@@ -34,6 +34,11 @@ class DeepSeekLogin:
         self.chat_url = chat_url
         self.timeout_ms = timeout_ms
         self._ready_probe_streak = 0
+        self.last_probe_diagnostic: dict[str, Any] = {
+            "state": UNKNOWN_UI,
+            "reason": "probe_not_run",
+            "url": getattr(page, "url", None),
+        }
 
     async def open(self) -> None:
         response = await self.page.goto(self.chat_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
@@ -73,10 +78,12 @@ class DeepSeekLogin:
         challenge = any([await self._visible(root, CHALLENGE_SELECTORS) for root in roots])
         if challenge:
             self._ready_probe_streak = 0
+            self.last_probe_diagnostic = {"state": CHALLENGE_VISIBLE, "reason": "challenge_visible", "url": self.page.url}
             return CHALLENGE_VISIBLE
         sign_in = any([await self._visible(root, SIGN_IN_SELECTORS) for root in roots])
         if sign_in:
             self._ready_probe_streak = 0
+            self.last_probe_diagnostic = {"state": SIGN_IN_VISIBLE, "reason": "sign_in_visible", "url": self.page.url}
             return SIGN_IN_VISIBLE
         for root in roots:
             for selector in CHAT_INPUTS:
@@ -84,12 +91,20 @@ class DeepSeekLogin:
                     field = root.locator(selector).last
                     if await field.is_visible(timeout=300) and await field.is_editable(timeout=300):
                         self._ready_probe_streak += 1
+                        state = CHAT_READY if self._ready_probe_streak >= 2 else SESSION_PENDING
+                        self.last_probe_diagnostic = {
+                            "state": state,
+                            "reason": "editable_chat_input",
+                            "selector": selector,
+                            "url": self.page.url,
+                        }
                         if self._ready_probe_streak >= 2:
                             return CHAT_READY
                         return SESSION_PENDING
                 except Exception:
                     continue
         self._ready_probe_streak = 0
+        self.last_probe_diagnostic = {"state": UNKNOWN_UI, "reason": "no_visible_editable_chat_input", "url": self.page.url}
         return UNKNOWN_UI
 
     async def is_authenticated(self) -> bool:

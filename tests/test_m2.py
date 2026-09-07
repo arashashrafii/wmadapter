@@ -16,6 +16,7 @@ from mimicgate.ports import find_free_port
 from mimicgate.manual_auth import AUTH_TARGETS, _wait_for_auth, run_manual_auth
 from mimicgate.providers.base import ChatProvider
 from mimicgate.providers.deepseek.chat import DeepSeekChat
+from mimicgate.providers.deepseek.login import CHAT_READY, DeepSeekLogin
 from mimicgate.browser.manager import BrowserManager
 from mimicgate.service import AUTH_STATES, DeepSeekService, QwenService
 
@@ -37,6 +38,31 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_deepseek_login_accepts_current_message_textarea(self):
+        class Locator:
+            def __init__(self, matches=False):
+                self.matches = matches
+                self.last = self
+
+            async def is_visible(self, timeout=0):
+                return self.matches
+
+            async def is_editable(self, timeout=0):
+                return self.matches
+
+        class Page:
+            url = "https://chat.deepseek.com/"
+            frames = []
+
+            def locator(self, selector):
+                return Locator('textarea[placeholder*="Message"]' == selector)
+
+        login = DeepSeekLogin(Page())
+        self.assertEqual(asyncio.run(login.probe_auth()), "SESSION_PENDING")
+        self.assertEqual(asyncio.run(login.probe_auth()), CHAT_READY)
+        self.assertEqual(login.last_probe_diagnostic["reason"], "editable_chat_input")
+        self.assertEqual(login.last_probe_diagnostic["selector"], 'textarea[placeholder*="Message"]')
+
     def test_login_cancelled_is_stable_and_explicit_retry_is_single_attempt(self):
         service = DeepSeekService(load_config())
         service._on_browser_disconnect("browser_disconnected")

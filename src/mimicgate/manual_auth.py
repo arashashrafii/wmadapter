@@ -37,6 +37,7 @@ AUTH_TARGETS = {
     ),
 }
 _AUTH_TASKS: dict[int, asyncio.Task] = {}
+_DEEPSEEK_PROBES: dict[int, DeepSeekLogin] = {}
 
 
 async def _click_first_visible(page, selectors: tuple[str, ...], timeout: int = 1500) -> bool:
@@ -57,7 +58,11 @@ async def _authenticated(provider: str, page, target: AuthTarget) -> bool:
 
 async def _probe_auth(provider: str, page, target: AuthTarget) -> str:
     if provider == "deepseek":
-        return await DeepSeekLogin(page, target.url).probe_auth()
+        probe = _DEEPSEEK_PROBES.get(id(page))
+        if probe is None:
+            probe = DeepSeekLogin(page, target.url)
+            _DEEPSEEK_PROBES[id(page)] = probe
+        return await probe.probe_auth()
     return await QwenChat(page).probe_auth()
 
 
@@ -80,6 +85,7 @@ async def _wait_for_auth(
     finally:
         if _AUTH_TASKS.get(key) is task:
             _AUTH_TASKS.pop(key, None)
+        _DEEPSEEK_PROBES.pop(key, None)
 
 
 async def _wait_for_auth_once(
@@ -111,7 +117,10 @@ async def _wait_for_auth_once(
         except Exception:
             pass
         await asyncio.sleep(2)
-    raise RuntimeError(f"Timed out waiting for {provider} authentication; login remains user-driven")
+    probe = _DEEPSEEK_PROBES.get(id(page))
+    diagnostic = getattr(probe, "last_probe_diagnostic", None)
+    detail = f"; last_probe={diagnostic}" if diagnostic else ""
+    raise RuntimeError(f"Timed out waiting for {provider} authentication; login remains user-driven{detail}")
 
 
 async def run_manual_auth(
