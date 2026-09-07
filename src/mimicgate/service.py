@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 AUTH_STATES = (
     "STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING",
-    "HANDOFF", "VERIFYING_SESSION", "READY", "LOGIN_CANCELLED",
+    "HANDOFF", "VERIFYING_SESSION", "READY", "LOGIN_CANCELLED", "LOGIN_INTERRUPTED",
 )
 
 
@@ -77,6 +77,7 @@ class DeepSeekService(ChatProvider):
         self._watcher_running = False
         self._last_probe_at: float | None = None
         self._last_probe_result: str | None = None
+        self._last_browser_event: dict[str, object] | None = None
 
     async def start(self) -> None:
         self.login_attempt_id = uuid.uuid4().hex
@@ -103,7 +104,7 @@ class DeepSeekService(ChatProvider):
         ready_streak = 0
         probe = None
         try:
-            while generation == self._auth_generation and self.auth_state != "LOGIN_CANCELLED":
+            while generation == self._auth_generation and self.auth_state not in {"LOGIN_CANCELLED", "LOGIN_INTERRUPTED"}:
                 page = self.browser._primary_pages.get(self.name)
                 if page is None:
                     page = next((candidate for (owner, _), candidate in self.browser._page_claims.items() if owner == self.name), None)
@@ -151,7 +152,9 @@ class DeepSeekService(ChatProvider):
 
     def _on_browser_disconnect(self, reason: str) -> None:
         if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
-            self._set_auth_state("LOGIN_CANCELLED", reason)
+            self._last_browser_event = self.browser.last_browser_event
+            state = "LOGIN_INTERRUPTED" if reason == "browser_disconnected_unknown" else "LOGIN_CANCELLED"
+            self._set_auth_state(state, reason)
             self._cancel_auth_watcher()
 
     async def retry_login(self) -> None:
@@ -185,6 +188,7 @@ class DeepSeekService(ChatProvider):
             "watcher_running": self._watcher_running,
             "last_probe_at": self._last_probe_at,
             "last_probe_result": self._last_probe_result,
+            "last_browser_event": self._last_browser_event,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:
@@ -463,7 +467,7 @@ class QwenService(ChatProvider):
         ready_streak = 0
         probe = None
         try:
-            while generation == self._auth_generation and self.auth_state != "LOGIN_CANCELLED":
+            while generation == self._auth_generation and self.auth_state not in {"LOGIN_CANCELLED", "LOGIN_INTERRUPTED"}:
                 page = self.browser._primary_pages.get(self.name)
                 if page is None:
                     page = next((candidate for (owner, _), candidate in self.browser._page_claims.items() if owner == self.name), None)
@@ -507,7 +511,9 @@ class QwenService(ChatProvider):
 
     def _on_browser_disconnect(self, reason: str) -> None:
         if self.auth_state in {"STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}:
-            self._set_auth_state("LOGIN_CANCELLED", reason)
+            self._last_browser_event = self.browser.last_browser_event
+            state = "LOGIN_INTERRUPTED" if reason == "browser_disconnected_unknown" else "LOGIN_CANCELLED"
+            self._set_auth_state(state, reason)
             self._cancel_auth_watcher()
 
     async def retry_login(self) -> None:
@@ -539,6 +545,7 @@ class QwenService(ChatProvider):
             "watcher_running": self._watcher_running,
             "last_probe_at": self._last_probe_at,
             "last_probe_result": self._last_probe_result,
+            "last_browser_event": self._last_browser_event,
         }
 
     def _set_auth_state(self, state: str, reason_code: str) -> None:

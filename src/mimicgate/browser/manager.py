@@ -52,6 +52,8 @@ class BrowserManager:
         self.launch_info: dict[str, object] = {}
         self.page_event_count = 0
         self._launch_page_ids: set[int] = set()
+        self.last_browser_event: dict[str, object] | None = None
+        self._planned_disconnect = 0
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -141,7 +143,20 @@ class BrowserManager:
     def is_running(self) -> bool:
         return self.context is not None and self._live
 
-    def _mark_disconnected(self, *_args) -> None:
+    def _record_browser_event(self, event: str, reason: str | None = None, notify: bool = True) -> None:
+        reason = reason or event
+        self.last_browser_event = {
+            "event": event,
+            "reason": reason,
+            "at": time.time(),
+            "generation": self._lock_token,
+            "pages": len(self.context.pages) if self.context is not None else 0,
+        }
+        if notify and self.on_disconnect is not None and self._planned_disconnect == 0:
+            self.on_disconnect(reason)
+
+    def _mark_disconnected(self, event: str = "context_closed", reason: str = "context_closed", *_args) -> None:
+        self._record_browser_event(event, reason)
         if self.on_disconnect is not None:
             self.on_disconnect("browser_disconnected")
         if self.context is not None:
@@ -155,13 +170,25 @@ class BrowserManager:
         self.playwright = self._stale_playwright
         self._live = False
 
+    def _on_page_closed(self, page: Page) -> None:
+        self._record_browser_event("page_closed", "page_closed", notify=page in self._primary_pages.values())
+        self._release_page(page)
+
+    def _on_page_crashed(self, page: Page) -> None:
+        self._record_browser_event("page_crashed", "page_crashed", notify=page in self._primary_pages.values())
+
+    def _attach_page_events(self, page: Page) -> None:
+        page.on("framedetached", lambda *_args: self._record_browser_event("frame_detached", "frame_detached", notify=False))
+        page.on("crash", lambda *_args: self._on_page_crashed(page))
+        page.on("close", lambda *_args: self._on_page_closed(page))
+
     def _register_liveness(self, context: BrowserContext) -> None:
         self._live = True
         context.on("page", lambda *_args: setattr(self, "page_event_count", self.page_event_count + 1))
         context.on("close", self._mark_disconnected)
         browser = getattr(context, "browser", None)
         if browser is not None:
-            browser.on("disconnected", self._mark_disconnected)
+            browser.on("disconnected", lambda *_args: self._mark_disconnected("browser_disconnected", "browser_disconnected_unknown"))
 
     @classmethod
     def _provider_page_allowed(cls, owner: str, page: Page) -> bool:
@@ -192,7 +219,7 @@ class BrowserManager:
         self._page_owners[page_id] = owner
         self._owned_pages[page_id] = page
         self._page_claims[(owner, conversation_id)] = page
-        page.on("close", lambda *_args: self._release_page(page))
+        self._attach_page_events(page)
         return page
 
     async def page_for(self, owner: str, conversation_id: str | None = None) -> Page:
@@ -236,6 +263,7 @@ class BrowserManager:
                 raise RuntimeError("managed login requires the browser launch page")
             primary = existing[0]
         self._primary_pages[owner] = primary
+        self._attach_page_events(primary)
         for extra in candidates[1:]:
             await extra.close()
         for extra in list(self.context.pages):
@@ -356,9 +384,12 @@ class BrowserManager:
         if not await self.check_liveness():
             raise RuntimeError("Headed browser is no longer running")
         try:
+            self._planned_disconnect += 1
             await self.stop()
         except BaseException as exc:
             raise RuntimeError("headed browser shutdown failed before handoff") from exc
+        finally:
+            self._planned_disconnect = max(0, self._planned_disconnect - 1)
         self.headless = True
         try:
             context = await self.start()

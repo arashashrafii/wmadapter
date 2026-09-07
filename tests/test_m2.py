@@ -1002,6 +1002,25 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIs(await manager.page_for("deepseek", "d1"), owned)
             await manager.stop()
 
+    async def test_browser_events_are_distinct_and_frame_detach_is_probe_only(self):
+        on_disconnect = Mock()
+        manager = BrowserManager(on_disconnect=on_disconnect)
+        page = Mock()
+        page.is_closed.return_value = True
+        manager._primary_pages["deepseek"] = page
+
+        manager._record_browser_event("frame_detached", "frame_detached", notify=False)
+        self.assertEqual(manager.last_browser_event["event"], "frame_detached")
+        on_disconnect.assert_not_called()
+        page.is_closed.return_value = False
+        manager._on_page_crashed(page)
+        self.assertEqual(manager.last_browser_event["reason"], "page_crashed")
+        on_disconnect.assert_called_once_with("page_crashed")
+        manager._on_page_closed(page)
+        self.assertEqual(manager.last_browser_event["reason"], "page_closed")
+        manager._mark_disconnected("browser_disconnected", "browser_disconnected_unknown")
+        self.assertEqual(manager.last_browser_event["reason"], "browser_disconnected_unknown")
+
 
 
 if __name__ == "__main__":
