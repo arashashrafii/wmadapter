@@ -133,9 +133,8 @@ class DeepSeekService(ChatProvider):
                             async def auth_probe(candidate) -> bool:
                                 return await DeepSeekLogin(candidate, self.chat_url).probe_auth() == CHAT_READY
 
-                            await self.browser.handoff_to_headless(
-                                auth_probe=auth_probe
-                            )
+                            await self.browser.handoff_to_headless(auth_probe=auth_probe)
+                            self._clear_conversation_pages()
                         self._set_auth_state("VERIFYING_SESSION", "session_probe")
                         verify_page = await self.browser.page()
                         if await DeepSeekLogin(verify_page, self.chat_url).probe_auth() == CHAT_READY:
@@ -330,12 +329,24 @@ class DeepSeekService(ChatProvider):
             self._conversation_bindings.pop(session_id, None)
         return page
 
-    async def _authenticate(self, conversation_id: str | None = None) -> None:
+    def _clear_conversation_pages(self) -> None:
+        """Drop page references invalidated by a browser lifecycle transition."""
+        self._conversation_pages.clear()
+        self._page_records.clear()
+        self._active_pages.clear()
+
+    @staticmethod
+    def _is_auth_failure(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return any(marker in message for marker in (
+            "challenge_visible", "sign_in_visible", "unknown_ui", "session_pending",
+            "provider_login_required", "no_visible_editable_chat_input",
+        ))
+
+    async def _authenticate(self, page=None) -> None:
         self._set_auth_state("AUTHENTICATING", "provider_session_check")
-        # Authentication belongs to the provider's single primary page. Using
-        # page_for here can claim a stale secondary page and report UNKNOWN_UI
-        # even while the primary page has the live session.
-        page = await self.browser.primary_page(self.name)
+        if page is None:
+            page = await self.browser.primary_page(self.name)
         if getattr(page, "url", "") in {"", "about:blank"}:
             # This is only the initial blank-page bootstrap. Never navigate an
             # already loaded provider page, including one showing CAPTCHA.
@@ -365,8 +376,7 @@ class DeepSeekService(ChatProvider):
                     page = await self._page_for_conversation(conversation_id)
                     self._mark_page_active(page)
                     try:
-                        await self._authenticate(conversation_id)
-                        page = await self._page_for_conversation(conversation_id)
+                        await self._authenticate(page)
                         chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
                         answer = await chat.send_message(prompt)
                     finally:
@@ -382,9 +392,9 @@ class DeepSeekService(ChatProvider):
                     self.ready = False
                     self.last_error = str(exc)
                     logger.warning("DeepSeek request failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    if attempt >= attempts or self.auth_state == "LOGIN_INTERRUPTED":
+                    if attempt >= attempts or self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc):
                         raise
-                    self._conversation_pages.clear()
+                    self._clear_conversation_pages()
                     await self.browser.restart()
             raise RuntimeError("DeepSeek request failed")
 
@@ -398,8 +408,7 @@ class DeepSeekService(ChatProvider):
                     page = await self._page_for_conversation(conversation_id)
                     self._mark_page_active(page)
                     try:
-                        await self._authenticate(conversation_id)
-                        page = await self._page_for_conversation(conversation_id)
+                        await self._authenticate(page)
                         chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
                         answer = await chat.send_message(prompt, attachments=attachments or [])
                     finally:
@@ -415,9 +424,9 @@ class DeepSeekService(ChatProvider):
                     self.ready = False
                     self.last_error = str(exc)
                     logger.warning("DeepSeek request with attachments failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    if attempt >= attempts:
+                    if attempt >= attempts or self._is_auth_failure(exc):
                         raise
-                    self._conversation_pages.clear()
+                    self._clear_conversation_pages()
                     await self.browser.restart()
             raise RuntimeError("DeepSeek request with attachments failed")
 

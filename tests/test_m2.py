@@ -782,6 +782,42 @@ class PageCapacityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(id(page), service._page_records)
 
 
+class ExactPageReadinessTests(unittest.IsolatedAsyncioTestCase):
+    def _service(self):
+        service = DeepSeekService(load_config('/nonexistent'))
+        service.browser = Mock()
+        service.browser.page_for = AsyncMock()
+        service.browser.restart = AsyncMock()
+        return service
+
+    async def test_complete_probes_the_resolved_conversation_page(self):
+        service = self._service()
+        page = Mock()
+        page.is_closed.return_value = False
+        service.browser.page_for.return_value = page
+        service._authenticate = AsyncMock()
+        chat = Mock()
+        chat.send_message = AsyncMock(return_value='ok')
+        with patch('mimicgate.service.DeepSeekChat', return_value=chat):
+            result = await service.complete('hello', conversation_id='openclaw-session')
+        self.assertEqual(result, 'ok')
+        service._authenticate.assert_awaited_once_with(page)
+        service.browser.restart.assert_not_awaited()
+
+    async def test_challenge_on_resolved_page_does_not_restart_or_trust_cached_ready(self):
+        service = self._service()
+        service.ready = True
+        page = Mock()
+        page.is_closed.return_value = False
+        service.browser.page_for.return_value = page
+        service._authenticate = AsyncMock(side_effect=RuntimeError('DeepSeek authentication is pending (challenge_visible)'))
+        with self.assertRaisesRegex(RuntimeError, 'challenge_visible'):
+            await service.complete('hello', conversation_id='openclaw-session')
+        service._authenticate.assert_awaited_once_with(page)
+        service.browser.restart.assert_not_awaited()
+        self.assertFalse(service.ready)
+
+
 class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
     def _managed_playwright(self, contexts):
         chromium = Mock()
