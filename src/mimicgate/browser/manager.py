@@ -67,6 +67,7 @@ class BrowserManager:
         self._page_claims: dict[tuple[str, str | None], Page] = {}
         self._owned_pages: dict[int, Page] = {}
         self._primary_pages: dict[str, Page] = {}
+        self._registered_page_ids: set[int] = set()
         self._lifecycle_lock = asyncio.Lock()
         self.lifecycle_state = LifecycleState.STOPPED
         self.provider: str | None = next(
@@ -246,13 +247,29 @@ class BrowserManager:
             self._register_page_events(page)
 
     def _register_page_events(self, page: Page) -> None:
-        page.on("close", lambda *_args: self._mark_disconnected("user_close"))
+        if id(page) in self._registered_page_ids:
+            return
+        self._registered_page_ids.add(id(page))
+        page.on("close", lambda *_args: self._page_closed(page))
         try:
             page.on("crash", lambda *_args: self._page_crashed(page))
         except Exception:
             pass
 
+    def _page_closed(self, page: Page) -> None:
+        """Release a closed page without treating a secondary page as a browser loss."""
+        was_primary = any(primary is page for primary in self._primary_pages.values())
+        was_owned = id(page) in self._owned_pages
+        self._registered_page_ids.discard(id(page))
+        self._release_page(page)
+        if was_primary or not was_owned:
+            self._mark_disconnected("user_close")
+
     def _page_crashed(self, page: Page) -> None:
+        if id(page) in self._owned_pages and not any(primary is page for primary in self._primary_pages.values()):
+            self._registered_page_ids.discard(id(page))
+            self._release_page(page)
+            return
         if self._disconnect_reported:
             return
         self._disconnect_reported = True
@@ -289,7 +306,6 @@ class BrowserManager:
         self._page_owners[page_id] = owner
         self._owned_pages[page_id] = page
         self._page_claims[(owner, conversation_id)] = page
-        page.on("close", lambda *_args: self._release_page(page))
         self._register_page_events(page)
         return page
 

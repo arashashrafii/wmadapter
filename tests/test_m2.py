@@ -191,6 +191,46 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(event["reason"], "user_close")
         disconnected.assert_called_once_with("user_close")
 
+    def test_secondary_owned_page_close_releases_only_that_page(self):
+        disconnected = Mock()
+        page = Mock(url="https://chat.deepseek.com/a/chat/s/secondary")
+        manager = BrowserManager(
+            launch_url="https://chat.deepseek.com/",
+            on_disconnect=disconnected,
+        )
+        manager._live = True
+        manager.context = SimpleNamespace(pages=[page])
+        manager._register_page_events(page)
+        manager._claim_page("deepseek", page, "secondary")
+        close_handlers = [call.args[1] for call in page.on.call_args_list if call.args[0] == "close"]
+        self.assertEqual(len(close_handlers), 1)
+        close_handler = close_handlers[0]
+
+        close_handler()
+
+        self.assertTrue(manager.is_running)
+        self.assertNotIn(id(page), manager._owned_pages)
+        self.assertNotIn(("deepseek", "secondary"), manager._page_claims)
+        disconnected.assert_not_called()
+
+    def test_secondary_owned_page_crash_releases_only_that_page(self):
+        disconnected = Mock()
+        page = Mock(url="https://chat.qwen.ai/chat/secondary")
+        manager = BrowserManager(
+            launch_url="https://chat.qwen.ai/",
+            on_disconnect=disconnected,
+        )
+        manager._live = True
+        manager.context = SimpleNamespace(pages=[page])
+        manager._register_page_events(page)
+        manager._claim_page("qwen", page, "secondary")
+
+        manager._page_crashed(page)
+
+        self.assertTrue(manager.is_running)
+        self.assertNotIn(id(page), manager._owned_pages)
+        disconnected.assert_not_called()
+
     def test_cleanup_close_during_handoff_is_not_user_close(self):
         manager = BrowserManager(launch_url="https://chat.deepseek.com/")
         manager._cleanup_in_progress = True
