@@ -25,7 +25,6 @@ CHALLENGE_SELECTORS = [
 ]
 SIGN_IN_SELECTORS = [
     LOGIN_EMAIL, LOGIN_PASSWORD, *LOGIN_SUBMIT,
-    "text=/sign in|log in|login/i",
 ]
 
 
