@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "source": "deterministic local fixture",
+  "cases": {
+    "text": {
+      "request": {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": "hello"}]
+      },
+      "response": {
+        "finish_reason": "stop",
+        "content": "hello"
+      }
+    },
+    "tool_call": {
+      "request": {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": "look this up"}],
+        "tools": [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}],
+        "tool_choice": "auto"
+      },
+      "response": {
+        "finish_reason": "tool_calls",
+        "tool_name": "lookup"
+      }
+    },
+    "tool_result": {
+      "request": {
+        "model": "deepseek-chat",
+        "messages": [
+          {"role": "user", "content": "look this up"},
+          {"role": "assistant", "tool_calls": [{"id": "call_fixture", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]},
+          {"role": "tool", "tool_call_id": "call_fixture", "content": "42"}
+        ]
+      },
+      "response": {
+        "finish_reason": "stop",
+        "content": "42"
+      }
+    },
+    "sse": {
+      "response": {
+        "content_type": "text/event-stream",
+        "terminal_frame": "[DONE]",
+        "finish_reason": "stop"
+      }
+    }
+  }
+}
