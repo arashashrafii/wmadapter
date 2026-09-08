@@ -192,7 +192,11 @@ async def chat_completion(payload: ChatRequest, request: Request):
     provider = _model_provider(payload.model)
     validate_chat(payload, provider)
     await _require_provider_ready(provider)
-    conversation_id = payload.conversation_id or payload.user or _fallback_conversation_id(payload.messages)
+    conversation_id = payload.conversation_id or payload.user
+    if conversation_id is None:
+        # OpenClaw may omit both fields. Keep one local provider conversation
+        # across stateless turns; explicit identifiers remain isolated.
+        conversation_id = "auto:openclaw" if provider.name == "deepseek" else _fallback_conversation_id(payload.messages)
     inference = ProviderRequest(
         chat=payload, canonical=canonicalize(payload), conversation_id=conversation_id,
         system_prompt="" if provider.name == "qwen" else default_system_prompt,

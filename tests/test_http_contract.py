@@ -78,6 +78,17 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(response.json()['choices'][0]['message']['content'], 'hello')
         self.provider.complete.assert_awaited_once()
 
+    def test_three_stateless_openclaw_requests_reuse_fallback_identity(self):
+        self.provider.ready = True
+        for text in ('first turn', 'second turn', 'third turn'):
+            response = self.client.post('/v1/chat/completions', json={
+                'model': 'mimicgate/deepseek-chat',
+                'messages': [{'role': 'user', 'content': text}],
+            })
+            self.assertEqual(response.status_code, 200)
+        identities = [call.kwargs['conversation_id'] for call in self.provider.complete.await_args_list]
+        self.assertEqual(identities, ['auto:openclaw'] * 3)
+
     def test_page_capacity_is_separate_and_actionable(self):
         self.provider.ready = True
         self.provider.infer = AsyncMock(side_effect=PageCapacityError('internal page count'))
