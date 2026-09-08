@@ -8,6 +8,7 @@ from mimicgate import main
 from mimicgate.api.server import app as alternate_app
 from mimicgate.providers.base import ChatProvider
 from mimicgate.providers.router import ProviderRouter
+from mimicgate.service import PageCapacityError
 from test_contract_v2 import TOOLS
 
 
@@ -58,6 +59,42 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(body['choices'][0]['message']['content'], 'hello')
         self.assertEqual(body['choices'][0]['finish_reason'], 'stop')
         self.assertIsNone(body['usage'])
+
+    def test_not_ready_is_a_stable_safe_provider_error(self):
+        self.provider.ready = False
+        response = self.post()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['error']['code'], 'provider_not_ready')
+        self.assertNotIn('secret', response.text)
+        self.provider.complete.assert_not_called()
+
+    def test_openclaw_shaped_healthy_request_reaches_inference(self):
+        self.provider.ready = True
+        response = self.client.post('/v1/chat/completions', json={
+            'model': 'mimicgate/deepseek-chat',
+            'messages': [{'role': 'user', 'content': 'hello from OpenClaw'}],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['choices'][0]['message']['content'], 'hello')
+        self.provider.complete.assert_awaited_once()
+
+    def test_page_capacity_is_separate_and_actionable(self):
+        self.provider.ready = True
+        self.provider.infer = AsyncMock(side_effect=PageCapacityError('internal page count'))
+        response = self.post()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['error']['code'], 'provider_capacity')
+        self.assertIn('idle conversation', response.json()['error']['message'])
+        self.assertNotIn('internal page count', response.text)
+
+    def test_streaming_page_capacity_uses_safe_error_code(self):
+        self.provider.ready = True
+        self.provider.infer = AsyncMock(side_effect=PageCapacityError('internal page count'))
+        response = self.post(stream=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"code":"provider_capacity"', response.text)
+        self.assertNotIn('internal page count', response.text)
+        self.assertTrue(response.text.endswith('data: [DONE]\n\n'))
 
     def test_client_shaped_tool_roundtrips(self):
         # Common wire subset, not execution of the three real clients.

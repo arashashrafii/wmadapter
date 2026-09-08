@@ -17,7 +17,7 @@ from .config import load_config
 from .logging import configure_logging
 from .providers.router import ProviderRouter
 from .security import redact
-from .service import DeepSeekService, QwenService
+from .service import DeepSeekService, PageCapacityError, QwenService
 
 from .providers.contract import Message, ChatRequest, ProviderRequest, ProviderResult, canonicalize
 from .providers.protocol import (
@@ -100,10 +100,22 @@ def _error(message, kind="invalid_request_error", code=None):
     return {"error": {"message": message, "type": kind, "param": None, "code": code}}
 
 
+def _provider_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, PageCapacityError):
+        return HTTPException(503, "provider_capacity")
+    return HTTPException(502, "Web provider failed to produce a valid completion")
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request, exc):
-    if exc.status_code == 503 and str(exc.detail) == "provider_login_required":
-        return JSONResponse(_error("Provider login is required", "provider_error", "provider_login_required"), status_code=503)
+    if exc.status_code == 503:
+        messages = {
+            "provider_login_required": ("Provider login is required", "provider_login_required"),
+            "provider_not_ready": ("Provider is not ready; complete login or challenge verification and retry", "provider_not_ready"),
+            "provider_capacity": ("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_capacity"),
+        }
+        message, code = messages.get(str(exc.detail), (str(exc.detail), "provider_error"))
+        return JSONResponse(_error(message, "provider_error", code), status_code=503)
     kind = "provider_error" if exc.status_code >= 500 else "invalid_request_error"
     code = "model_not_found" if exc.status_code == 404 and "model" in str(exc.detail).lower() else kind
     return JSONResponse(_error(str(exc.detail), kind, code), status_code=exc.status_code)
@@ -137,18 +149,27 @@ def _model_catalog():
 
 
 def _model_provider(model):
+    # OpenClaw commonly prefixes the public model with the local gateway name.
+    normalized_model = model.split("/", 1)[-1]
     try:
-        return router.resolve_model(model)
+        return router.resolve_model(normalized_model)
     except RuntimeError as exc:
         raise HTTPException(404, "Unknown model") from exc
-    if not provider.ready:
-        raise HTTPException(503, "provider_login_required")
-    return provider
+
+
+async def _require_provider_ready(provider) -> None:
+    ready = getattr(provider, "ready", None)
+    if ready is None:
+        status = await provider.status()
+        ready = bool(status.get("ready")) if isinstance(status, dict) else False
+    if not ready:
+        raise HTTPException(503, "provider_not_ready")
 
 
 @app.get("/props")
 async def props(model: str, autoload: bool = False):
     provider = _model_provider(model)
+    await _require_provider_ready(provider)
     return {"model": model, "context_length": provider.capabilities.context_window,
             "supports_chat": True, "capabilities": provider.capabilities.model_dump()}
 
@@ -169,6 +190,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
     validate_chat(payload, provider)
+    await _require_provider_ready(provider)
     conversation_id = payload.conversation_id or payload.user or _fallback_conversation_id(payload.messages)
     inference = ProviderRequest(
         chat=payload, canonical=canonicalize(payload), conversation_id=conversation_id,
@@ -201,6 +223,8 @@ async def chat_completion(payload: ChatRequest, request: Request):
                     yield _sse({"id": request_id, "object": "chat.completion.chunk",
                                 "created": created, "model": payload.model,
                                 "choices": [], "usage": result.usage})
+            except PageCapacityError:
+                yield _sse(_error("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_error", "provider_capacity"))
             except Exception:
                 logger.exception("Streaming chat completion failed")
                 yield _sse(_error("Web provider failed to produce a valid completion", "provider_error", "provider_error"))
@@ -209,9 +233,12 @@ async def chat_completion(payload: ChatRequest, request: Request):
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     try:
         result = await infer()
+    except PageCapacityError as exc:
+        logger.warning("Chat completion blocked by provider page capacity: %s", exc)
+        raise _provider_http_error(exc) from exc
     except Exception as exc:
         logger.exception("Chat completion failed")
-        raise HTTPException(502, "Web provider failed to produce a valid completion") from exc
+        raise _provider_http_error(exc) from exc
     response = _completion_response(request_id, payload.model, result.content or "", result.tool_calls)
     response["choices"][0]["finish_reason"] = result.finish_reason
     response["usage"] = result.usage
