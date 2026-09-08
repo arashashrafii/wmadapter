@@ -39,6 +39,7 @@ class BrowserManager:
         headless: bool = False,
         executable_path: str | None = None,
         cdp_endpoint: str | None = None,
+        mode: str | None = None,
         on_disconnect: Callable[[str], None] | None = None,
         launch_url: str | None = None,
     ):
@@ -47,7 +48,13 @@ class BrowserManager:
         xvfb = os.getenv("MIMICGATE_XVFB") == "1"
         self.headless = False if login_mode or xvfb else headless
         self.executable_path = canonical_path(executable_path) if executable_path else None
-        self.cdp_endpoint = cdp_endpoint
+        resolved_mode = mode if mode is not None else ("cdp" if cdp_endpoint else "managed")
+        if resolved_mode not in {"managed", "cdp"}:
+            raise ValueError(f"Unknown browser mode: {resolved_mode!r}")
+        if resolved_mode == "cdp" and not cdp_endpoint:
+            raise ValueError("CDP mode requires browser.cdp_endpoint")
+        self.mode = resolved_mode
+        self.cdp_endpoint = cdp_endpoint if self.mode == "cdp" else None
         self.on_disconnect = on_disconnect
         self.launch_url = launch_url
         self.launch_info: dict[str, object] = {}
@@ -143,7 +150,7 @@ class BrowserManager:
                 raise
 
     def _acquire_profile_lock(self) -> None:
-        if self.cdp_endpoint or self._lock_fd is not None:
+        if self.mode == "cdp" or self._lock_fd is not None:
             return
         lock_path = self.profile_path / ".mimicgate-profile.lock"
         self.profile_path.mkdir(parents=True, exist_ok=True)
@@ -372,7 +379,7 @@ class BrowserManager:
         self.browser = None
         self.playwright = None
         self._live = False
-        if context is not None and not self.cdp_endpoint:
+        if context is not None and self.mode != "cdp":
             try:
                 await context.close()
             except Exception:
@@ -407,7 +414,7 @@ class BrowserManager:
         self._acquire_profile_lock()
         try:
             self.playwright = await async_playwright().start()
-            if self.cdp_endpoint:
+            if self.mode == "cdp":
                 self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_endpoint)
                 if not self.browser.contexts:
                     raise RuntimeError("The Chromium CDP endpoint has no browser context")
@@ -468,7 +475,7 @@ class BrowserManager:
         auth_probe: Callable[[Page], Awaitable[bool]] | None = None,
     ) -> BrowserContext:
         """Close headed managed login and reopen the same profile headlessly."""
-        if self.cdp_endpoint:
+        if self.mode == "cdp":
             raise RuntimeError("CDP mode does not support managed browser handoff")
         if self.headless:
             raise RuntimeError("Browser handoff requires a headed managed context")
@@ -543,7 +550,7 @@ class BrowserManager:
         failure = None
         if context is not None:
             try:
-                if not self.cdp_endpoint:
+                if self.mode != "cdp":
                     await self._await_cleanup(context.close())
             except BaseException as exc:
                 failure = exc

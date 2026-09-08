@@ -24,11 +24,12 @@ The client agent owns tool execution and sends the result on its next request.
   contains the common visible-element lookup and BrowserManager owns profiles.
 - Browser configuration declares browser.mode as managed (default) or cdp. A
   legacy config with browser.cdp_endpoint and no mode migrates to cdp; an
-  explicit mode always takes precedence. Stage 1 defines this configuration
-  contract only; lifecycle, page ownership and retry behavior remain unchanged
-  until their dedicated migration stages. See [GitHub Issue #22](https://github.com/arashashrafii/mimicgate/issues/22)
+  explicit mode always takes precedence at runtime. Managed mode always launches
+  and owns its persistent context, while CDP mode only attaches and never
+  acquires the profile lock or closes the user's context. Provider status reports
+  the resolved mode and ownership. See [GitHub Issue #22](https://github.com/arashashrafii/mimicgate/issues/22)
   and [ADR/Issue #15](https://github.com/arashashrafii/mimicgate/issues/15)
-  for the migration decisions and follow-up runtime work.
+  for the migration decisions.
 - Managed authentication uses one canonical absolute profile and executable
   across a sequential headed-to-headless handoff. The managed BrowserManager
   holds an exclusive profile lock, releases it only after the headed context

@@ -53,6 +53,7 @@ class DeepSeekService(ChatProvider):
             headless=browser_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
+            mode=browser_cfg.get("mode"),
             on_disconnect=self._on_browser_disconnect,
             launch_url=self.chat_url,
         )
@@ -187,6 +188,8 @@ class DeepSeekService(ChatProvider):
     async def status(self) -> dict:
         return {
             "browser_running": self.browser.is_running,
+            "browser_mode": self.browser.mode,
+            "browser_ownership": "user" if self.browser.mode == "cdp" else "managed",
             "provider": self.name,
             "ready": self.ready,
             "last_error": self.last_error,
@@ -444,6 +447,7 @@ class QwenService(ChatProvider):
             headless=qwen_cfg.get("headless", False),
             executable_path=browser_cfg.get("executable_path"),
             cdp_endpoint=browser_cfg.get("cdp_endpoint"),
+            mode=browser_cfg.get("mode"),
             on_disconnect=self._on_browser_disconnect,
             launch_url=self.chat_url,
         )
@@ -570,6 +574,8 @@ class QwenService(ChatProvider):
     async def status(self) -> dict:
         return {
             "browser_running": self.browser.is_running,
+            "browser_mode": self.browser.mode,
+            "browser_ownership": "user" if self.browser.mode == "cdp" else "managed",
             "provider": self.name,
             "ready": self.ready,
             "last_error": self.last_error,

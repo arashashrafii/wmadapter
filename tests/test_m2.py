@@ -379,6 +379,16 @@ class Milestone2Tests(unittest.TestCase):
             cfg = load_config(path)
         self.assertEqual(cfg["browser"]["mode"], "managed")
 
+    def test_managed_service_ignores_legacy_cdp_endpoint_at_runtime(self):
+        config = load_config('/nonexistent')
+        config["browser"].update({"mode": "managed", "cdp_endpoint": "http://127.0.0.1:9222"})
+        service = DeepSeekService(config)
+        self.assertEqual(service.browser.mode, "managed")
+        self.assertIsNone(service.browser.cdp_endpoint)
+        status = asyncio.run(service.status())
+        self.assertEqual(status["browser_mode"], "managed")
+        self.assertEqual(status["browser_ownership"], "managed")
+
     def test_config_accepts_explicit_cdp_mode(self):
         from tempfile import TemporaryDirectory
         from pathlib import Path
@@ -1140,11 +1150,35 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.start(), context)
+            self.assertEqual(manager.mode, "cdp")
+            self.assertIsNone(manager._lock_fd)
             chromium.connect_over_cdp.assert_awaited_once_with("http://127.0.0.1:9222")
             await manager.stop()
 
         context.close.assert_not_awaited()
         playwright.stop.assert_awaited_once()
+
+    async def test_explicit_managed_mode_launches_even_with_cdp_endpoint(self):
+        context = Mock(pages=[])
+        context.close = AsyncMock()
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(return_value=context)
+        chromium.connect_over_cdp = AsyncMock()
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock(start=AsyncMock(return_value=playwright))
+
+        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(
+                mode="managed",
+                cdp_endpoint="http://127.0.0.1:9222",
+                profile_path=f"/tmp/mimicgate-explicit-managed-{id(context)}",
+            )
+            await manager.start()
+            self.assertEqual(manager.mode, "managed")
+            chromium.connect_over_cdp.assert_not_awaited()
+            chromium.launch_persistent_context.assert_awaited_once()
+            await manager.stop()
 
     async def test_cdp_disconnect_recovers_without_closing_user_chromium(self):
         first_context = Mock(pages=[])
