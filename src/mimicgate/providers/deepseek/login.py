@@ -18,9 +18,10 @@ UNKNOWN_UI = "UNKNOWN_UI"
 AUTH_PROBE_STATES = (CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, CHAT_READY, UNKNOWN_UI)
 
 CHALLENGE_SELECTORS = [
-    "iframe[src*='captcha']", "iframe[title*='captcha' i]", "[id*='captcha' i]",
-    "[class*='captcha' i]", "[id*='challenge' i]", "[class*='challenge' i]",
-    "text=/captcha|verification|verify you are human/i",
+    "iframe[src*='captcha' i]", "iframe[src*='challenge' i]",
+    "iframe[title*='captcha' i]", "iframe[title*='challenge' i]",
+    "[data-testid*='captcha' i]", "[data-testid*='challenge' i]",
+    "[id^='captcha' i]", "[id^='challenge' i]",
 ]
 SIGN_IN_SELECTORS = [
     LOGIN_EMAIL, LOGIN_PASSWORD, *LOGIN_SUBMIT,
