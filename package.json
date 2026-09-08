@@ -1,0 +1,29 @@
+{
+  "name": "mimicgate",
+  "version": "1.0.0",
+  "description": "MimicGate is a local OpenAI-compatible gateway for authenticated DeepSeek Web and Qwen Web sessions. It drives provider web pages through a user-owned browser profile and exposes the verified HTTP boundary to OpenCode, Hermes, OpenClaw, and compatible clients. It does not use the paid DeepSeek API. The historical `mimicgate` command and import namespace, configuration paths, and environment variables remain supported compatibility aliases.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "playwright test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arashashrafii/mimicgate.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/arashashrafii/mimicgate/issues"
+  },
+  "homepage": "https://github.com/arashashrafii/mimicgate#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.4.1"
+  }
+}
