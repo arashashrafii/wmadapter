@@ -32,8 +32,6 @@ def installer_adapter(system: str | None = None) -> InstallerAdapter:
     name = (system or platform.system()).lower()
     if name == "linux":
         return LinuxInstaller()
-    if name in {"darwin", "macos"}:
-        return MacOSInstaller()
-    if name in {"windows", "win32"}:
-        return WindowsInstaller()
-    raise UnsupportedPlatformError(f"Unsupported installer platform: {name}")
+    raise UnsupportedPlatformError(
+        f"Unsupported installer platform for the verified local bundle: {name}; only Ubuntu 24.04 x86-64 Linux is supported"
+    )

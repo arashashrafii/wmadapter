@@ -14,15 +14,14 @@ separate proxy are installer transport responsibilities. A manifest signature
 must be verified with a key supplied by the release environment; no signing
 secret or public trust root is stored in this repository.
 
-## Support matrix
+## Verified local bundle slice
 
 | Platform | Gateway installer | Dedicated browser | Notes |
 |---|---|---|---|
-| Linux | Adapter contract | Playwright Chromium | `install.sh` is the current local adapter. |
-| macOS | Adapter contract | Playwright Chromium | Native packaging is pending. |
-| Windows | Adapter contract | Playwright Chromium | Native packaging is pending. |
+| Ubuntu 24.04 x86-64 | Adapter contract | Playwright Chromium | Local offline/cache bundle contract only. |
 
-The current implementation provides testable integrity, cache ordering,
-staging, and adapter contracts. Publishing real artifacts, CDN/mirror
-endpoints, resumable transport, and release signing are intentionally mocked
-until the release environment supplies them.
+The current implementation validates the manifest schema, host platform,
+artifact size and SHA256, local cache identity, staging, preflight, and atomic
+activation. Publishing real artifacts, CDN/mirror endpoints, resumable
+transport, release signing, macOS, Windows, and public release packaging are
+outside this slice.
