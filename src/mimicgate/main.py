@@ -158,10 +158,11 @@ def _model_provider(model):
 
 
 async def _require_provider_ready(provider) -> None:
-    ready = getattr(provider, "ready", None)
-    if ready is None:
-        status = await provider.status()
-        ready = bool(status.get("ready")) if isinstance(status, dict) else False
+    status = await provider.status()
+    if isinstance(status, dict) and "ready" in status:
+        ready = bool(status["ready"])
+    else:
+        ready = bool(getattr(provider, "ready", False))
     if not ready:
         raise HTTPException(503, "provider_not_ready")
 

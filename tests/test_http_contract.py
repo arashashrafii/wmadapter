@@ -23,7 +23,7 @@ class FakeProvider(ChatProvider):
         pass
 
     async def status(self):
-        return {'ready': True}
+        return {'ready': getattr(self, 'ready', True)}
 
     async def complete(self, prompt, conversation_id=None):
         return 'hello'
