@@ -20,6 +20,15 @@ timeout, authentication failure, or unavailable SDK/OpenClaw adapter is
 cleanup is performed. Select `--group contract`, `--group tools`, or repeated
 `--case T50` values for a bounded run.
 
+With a base URL ending in `/v1`, preflight resolves to `/ready` and completion
+resolves to `/v1/chat/completions`. T49 requires the official `openai` Python
+package and `MIMICGATE_LIVE_API_KEY`; it constructs `OpenAI(...).chat.completions`
+and validates the typed response. T50 requires `MIMICGATE_OPENCLAW_COMMAND` as a
+JSON argv list and `MIMICGATE_OPENCLAW_CONFIG`; it runs exactly those arguments
+via `subprocess` (no shell and no guessed flags), validates exit status and
+configured endpoint evidence, and runs an optional configured tool-loop using
+`MIMICGATE_OPENCLAW_TOOL_ARGS`.
+
 ## Evidence and assertions
 
 Each result records goal, preconditions, method, expected, actual, timestamp,

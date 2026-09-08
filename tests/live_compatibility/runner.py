@@ -4,14 +4,16 @@ import argparse
 import json
 import os
 import time
+import json as _json
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit, urlunsplit
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .assertions import assert_completion_semantics, assert_safe_error, assert_sse_semantics
-from .adapters import adapter_status
+from .adapters import run_openai_sdk, run_openclaw
 from .cases import CASES, GROUPS
 from .report import new_report, write_report
 from .transport import FixtureTransport, TransportResponse
@@ -28,17 +30,24 @@ class LiveContext:
         return {"base_url": self.base_url, "model": self.model, "timeout": self.timeout}
 
 
+def resolve_url(base_url: str, endpoint: str) -> str:
+    parts = urlsplit(base_url)
+    base_path = parts.path.rstrip("/")
+    path = base_path + "/chat/completions" if endpoint == "completion" else (base_path.rsplit("/", 1)[0] or "") + "/ready"
+    return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+
+
 class LiveTransport:
     def __init__(self, context): self.context = context
     def _request(self, path, payload=None):
         data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
-        request = urllib.request.Request(self.context.base_url.rstrip("/") + path, data=data, headers={"Content-Type": "application/json"})
+        request = urllib.request.Request(resolve_url(self.context.base_url, "completion" if path == "/chat/completions" else "ready"), data=data, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(request, timeout=self.context.timeout) as response:
                 return TransportResponse(response.status, response.headers.get_content_type(), response.read().decode())
         except urllib.error.HTTPError as error:
             return TransportResponse(error.code, error.headers.get_content_type(), error.read().decode())
-    def ready(self): return self._request("/../ready")
+    def ready(self): return self._request("/ready")
     def request(self, case, payload): return self._request("/chat/completions", payload)
 
 
@@ -50,7 +59,7 @@ def require_live_confirmation(confirm_live):
 def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=None):
     require_live_confirmation(confirm_live)
     transport = transport or LiveTransport(context)
-    report = new_report([]); preflight = transport.ready() if hasattr(transport, "ready") else None
+    report = new_report([]); report["metadata"] = context.public(); preflight = transport.ready() if hasattr(transport, "ready") else None
     is_live = isinstance(transport, LiveTransport)
     selected = [case for case in CASES if (not groups or case.group in groups) and (not case_ids or case.case_id in case_ids)]
     if preflight is not None and preflight.status != 200: report["preflight"] = {"status": "BLOCKED", "actual": f"HTTP {preflight.status}; provider readiness unavailable"}
@@ -59,11 +68,14 @@ def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=No
         if preflight is not None and preflight.status != 200:
             result.update(status="BLOCKED", actual=f"HTTP {preflight.status}: provider not ready"); report["results"].append(result); continue
         if is_live and case.case_id == "T49":
-            status, detail = adapter_status("openai")
-            if status == "BLOCKED": result.update(status="BLOCKED", actual=detail); report["results"].append(result); continue
+            status, detail = run_openai_sdk(context, case.payload(context.model)); result.update(status=status, actual=detail); report["results"].append(result); continue
         if is_live and case.case_id == "T50":
-            status, detail = adapter_status("openclaw")
-            if status == "BLOCKED": result.update(status="BLOCKED", actual=detail); report["results"].append(result); continue
+            status, detail = run_openclaw(context, "Reply with a short compatibility acknowledgment.")
+            if status == "PASS" and os.environ.get("MIMICGATE_OPENCLAW_TOOL_ARGS"):
+                try: _json.loads(os.environ["MIMICGATE_OPENCLAW_TOOL_ARGS"])
+                except _json.JSONDecodeError: status, detail = "BLOCKED", "MIMICGATE_OPENCLAW_TOOL_ARGS must be a JSON argument list"
+                else: status, detail = run_openclaw(context, "Run the configured compatibility tool-loop and report its result.", include_tools=True)
+            result.update(status=status, actual=detail); report["results"].append(result); continue
         try:
             response = transport.request(case, case.payload(context.model))
             if response.status != case.expected_status:

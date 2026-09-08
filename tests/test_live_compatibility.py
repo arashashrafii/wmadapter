@@ -2,6 +2,8 @@ import json
 import os
 import tempfile
 import unittest
+import sys
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,6 +12,8 @@ from live_compatibility.cases import CASES, GROUPS
 from live_compatibility.report import new_report, redact, write_report
 from live_compatibility.runner import require_live_confirmation
 from live_compatibility.runner import LiveContext, run_suite
+from live_compatibility.runner import resolve_url
+from live_compatibility.adapters import run_openai_sdk, run_openclaw
 from live_compatibility.transport import FixtureTransport, SSEParser, TransportResponse
 
 
@@ -32,6 +36,24 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "confirm-live"):
                 require_live_confirmation(False)
             require_live_confirmation(True)
+
+    def test_url_resolution_keeps_v1_for_completion_and_uses_root_for_ready(self):
+        self.assertEqual(resolve_url("http://127.0.0.1:11556/v1", "completion"), "http://127.0.0.1:11556/v1/chat/completions")
+        self.assertEqual(resolve_url("http://127.0.0.1:11556/v1", "ready"), "http://127.0.0.1:11556/ready")
+
+    def test_openai_adapter_uses_typed_sdk_response(self):
+        message = SimpleNamespace(role="assistant", content="ok")
+        response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: response)))
+        fake_module = SimpleNamespace(OpenAI=lambda **kwargs: client)
+        with patch.dict(sys.modules, {"openai": fake_module}), patch("importlib.util.find_spec", return_value=object()), patch.dict(os.environ, {"MIMICGATE_LIVE_API_KEY": "local-test"}):
+            status, detail = run_openai_sdk(LiveContext("http://localhost:11556/v1", "deepseek-chat"), {"model": "deepseek-chat", "messages": []})
+        self.assertEqual(status, "PASS"); self.assertIn("typed", detail)
+
+    def test_openclaw_adapter_is_blocked_without_explicit_configuration(self):
+        with patch.dict(os.environ, {}, clear=True):
+            status, detail = run_openclaw(LiveContext("http://localhost:11556/v1", "deepseek-chat"), "hello")
+        self.assertEqual(status, "BLOCKED"); self.assertIn("COMMAND", detail)
 
     def test_semantic_assertions_and_safe_redaction(self):
         assert_completion_semantics({"id": "chatcmpl-x", "object": "chat.completion", "created": 1, "model": "deepseek-chat", "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}]}, "deepseek-chat")
