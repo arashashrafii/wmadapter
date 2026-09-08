@@ -1,0 +1,29 @@
+name: Python and shell tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[test]'
+      - name: Compile source
+        run: python -m compileall -q src
+      - name: Run Python tests
+        run: PYTHONPATH=src python -m unittest discover -s tests
+      - name: Check shell syntax
+        run: bash -n install.sh uninstall.sh tests/test_install.sh tests/test_uninstall.sh
+      - name: Run shell tests
+        run: bash tests/test_install.sh && bash tests/test_uninstall.sh
