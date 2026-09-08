@@ -42,6 +42,22 @@ Operational checks:
 - `/health` for process health
 - `/ready` for browser/provider readiness
 
+Installer checks:
+
+- `install.sh` changes into the repository directory before creating generated
+  files, resolves an installed Chrome/Chromium executable, and writes the same
+  absolute executable path, provider URL, and profile selection used by manual
+  authentication and the service.
+- If no supported browser is found, the installer offers the host package
+  manager's Chromium package. It does not install a second Playwright-managed
+  browser.
+- Manual authentication is always foreground and managed-mode only. Google
+  sign-in falls back to an explicit manual click when no matching button is
+  detected; CAPTCHA and credentials remain user-driven.
+- A cancelled login or failed service/health step stops the user service and
+  removes the generated unit file. Browser profile locks are released by the
+  authentication cleanup path; existing profiles and source files are kept.
+
 Known fragile areas:
 
 - DeepSeek DOM selectors and marker extraction. The login probe accepts the

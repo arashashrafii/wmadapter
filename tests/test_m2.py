@@ -285,7 +285,7 @@ class Milestone2Tests(unittest.TestCase):
 
         page = AsyncMock()
         page.is_closed.return_value = False
-        page.url = "https://chat.qwen.ai/"
+        page.url = "https://chat.qwen.ai/custom"
         manager = Mock()
         manager.page = AsyncMock(return_value=page)
         manager.primary_page = AsyncMock(return_value=page)
@@ -293,7 +293,7 @@ class Milestone2Tests(unittest.TestCase):
         manager.stop = AsyncMock()
         config = {
             "browser": {"mode": "managed", "profile_dir": ".profile", "executable_path": "./chrome"},
-            "qwen": {"profile_dir": "./qwen-profile"},
+            "qwen": {"profile_dir": "./qwen-profile", "chat_url": "https://chat.qwen.ai/custom"},
         }
         with patch("mimicgate.manual_auth.BrowserManager", return_value=manager) as manager_class, patch(
             "mimicgate.manual_auth._probe_auth", new=AsyncMock(return_value="CHAT_READY")
@@ -302,7 +302,29 @@ class Milestone2Tests(unittest.TestCase):
         kwargs = manager_class.call_args.kwargs
         self.assertEqual(kwargs["profile_path"], str(Path("./qwen-profile").resolve()))
         self.assertEqual(kwargs["executable_path"], str(Path("./chrome").resolve()))
+        self.assertEqual(kwargs["launch_url"], "https://chat.qwen.ai/custom")
         page.goto.assert_not_awaited()
+
+    def test_manual_auth_rejects_cross_provider_url_before_launch(self):
+        config = load_config('/nonexistent')
+        config["deepseek"]["chat_url"] = "https://example.com/login"
+        with patch("mimicgate.manual_auth.BrowserManager") as manager_class:
+            with self.assertRaisesRegex(RuntimeError, "provider origin"):
+                asyncio.run(run_manual_auth("deepseek", config=config))
+        manager_class.assert_not_called()
+
+    def test_manual_auth_cancellation_stops_browser(self):
+        page = Mock(url="https://chat.deepseek.com/")
+        manager = Mock()
+        manager.primary_page = AsyncMock(return_value=page)
+        manager.stop = AsyncMock()
+        config = load_config('/nonexistent')
+        with patch("mimicgate.manual_auth.BrowserManager", return_value=manager), patch(
+            "mimicgate.manual_auth._wait_for_auth", new=AsyncMock(side_effect=asyncio.CancelledError())
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(run_manual_auth("deepseek", config=config))
+        manager.stop.assert_awaited_once()
     def test_deepseek_remote_delete_uses_web_ui_confirmation(self):
         page = Mock()
         page.url = "https://chat.deepseek.com/a/chat/s/abc123"

@@ -10,6 +10,10 @@ SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
 DISPLAY_VALUE="${DISPLAY:-}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+BROWSER_EXECUTABLE=""
+INSTALL_SUCCESS=0
+
+cd -- "$PROJECT_DIR"
 
 say() { printf '\n%s\n' "$*"; }
 ask() {
@@ -145,7 +149,18 @@ install_current_os() {
   fi
   .venv/bin/python -m pip install --upgrade pip
   .venv/bin/pip install -e .
-  .venv/bin/python -m playwright install chromium
+}
+ensure_browser() {
+  BROWSER_EXECUTABLE="$(detect_browser || true)"
+  if [ -z "$BROWSER_EXECUTABLE" ]; then
+    install_system_chromium
+    BROWSER_EXECUTABLE="$(detect_browser || true)"
+  fi
+  if [ -z "$BROWSER_EXECUTABLE" ]; then
+    echo "Chromium installation completed but no supported browser executable was found." >&2
+    return 1
+  fi
+  BROWSER_EXECUTABLE="$(resolve_browser_path "$BROWSER_EXECUTABLE")"
 }
 write_service() {
   local login_mode="$1"
@@ -189,6 +204,15 @@ run_foreground_auth() {
 stop_service() {
   systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true
 }
+cleanup_failed_install() {
+  local status=$?
+  if [ "$status" -ne 0 ] && [ "$INSTALL_SUCCESS" -ne 1 ]; then
+    stop_service 2>/dev/null || true
+    rm -f -- "$SERVICE_FILE"
+    systemctl --user daemon-reload 2>/dev/null || true
+  fi
+  return "$status"
+}
 wait_health() {
   local i ready_response
   for i in $(seq 1 60); do
@@ -211,6 +235,7 @@ run_smoke() {
 }
 need curl
 need systemctl
+trap cleanup_failed_install EXIT
 API_PORT="$(find_free_port "$API_PORT")"
 API_URL="http://${API_HOST}:${API_PORT}/v1"
 export API_PORT
@@ -235,7 +260,8 @@ fi
 CHAT_URL="$(provider_url "$PROVIDER")"
 HEADLESS="false"
 SERVER_HOST="$API_HOST"
-write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "" "$SERVER_HOST" ""
+ensure_browser
+write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_HOST" ""
 
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
@@ -247,7 +273,7 @@ if ! run_foreground_auth; then
   exit 1
 fi
 HEADLESS="true"
-write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "" "$SERVER_HOST" ""
+write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_HOST" ""
 start_service 0
 say "Waiting for API health after login..."
 if ! wait_health; then
@@ -266,3 +292,4 @@ else
   echo "API URL: ${API_URL}" >&2
   exit 1
 fi
+INSTALL_SUCCESS=1

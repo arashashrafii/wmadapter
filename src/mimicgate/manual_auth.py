@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import asyncio
 import inspect
 from typing import Any
+from urllib.parse import urlsplit
 
 from .browser.manager import BrowserManager
 from .config import canonical_path, load_config, provider_profile_dir
@@ -144,6 +145,16 @@ async def run_manual_auth(
     if browser_cfg.get("mode", "managed") == "cdp":
         raise RuntimeError("Manual authentication requires browser.mode=managed; CDP mode is attach-only")
     target = AUTH_TARGETS[provider]
+    configured_url = config.get(provider, {}).get("chat_url", target.url)
+    configured_parts = urlsplit(configured_url)
+    target_parts = urlsplit(target.url)
+    if (
+        not isinstance(configured_url, str)
+        or configured_parts.scheme != target_parts.scheme
+        or configured_parts.hostname != target_parts.hostname
+    ):
+        raise RuntimeError(f"{provider}.chat_url must use the {target_parts.hostname} provider origin")
+    target = AuthTarget(configured_url, target.profile_dir, target.google_selectors)
     profile_value = browser_cfg.get("profile_dir", provider_profile_dir(provider))
     if provider == "qwen":
         profile_value = config.get("qwen", {}).get("profile_dir", provider_profile_dir("qwen"))
