@@ -6,13 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SECRET = re.compile(r"(?i)(bearer\s+|api[_-]?key\s*[:=]\s*|password\s*[:=]\s*)[^\s,;]+")
+SENSITIVE_KEY = re.compile(r"(?i)(prompt|response|content|credential|profile|path|token|secret|password|authorization|api.?key)")
 
 
 def redact(value):
     if isinstance(value, str):
         return SECRET.sub(r"\1[REDACTED]", value)
     if isinstance(value, dict):
-        return {key: ("[REDACTED]" if re.search(r"(?i)(key|token|password|secret|authorization)", str(key)) else redact(item)) for key, item in value.items()}
+        return {key: ("[REDACTED]" if SENSITIVE_KEY.search(str(key)) else redact(item)) for key, item in value.items()}
     if isinstance(value, list):
         return [redact(item) for item in value]
     return value

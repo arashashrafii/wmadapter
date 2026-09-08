@@ -6,78 +6,93 @@ import os
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .assertions import assert_completion_semantics, assert_safe_error, assert_sse_semantics
+from .adapters import adapter_status
 from .cases import CASES, GROUPS
 from .report import new_report, write_report
+from .transport import FixtureTransport, TransportResponse
 
 
-def require_live_confirmation(confirm_live: bool) -> None:
-    if os.environ.get("MIMICGATE_LIVE_COMPAT") != "1":
-        raise RuntimeError("BLOCKED: set MIMICGATE_LIVE_COMPAT=1 to enable live compatibility tests")
-    if not confirm_live:
-        raise RuntimeError("BLOCKED: pass --confirm-live to enable live compatibility tests")
+@dataclass(frozen=True)
+class LiveContext:
+    base_url: str
+    model: str
+    profile: str | None = None
+    timeout: float = 30.0
+
+    def public(self):
+        return {"base_url": self.base_url, "model": self.model, "timeout": self.timeout}
 
 
-def _post(url: str, payload: dict, timeout: float):
-    request = urllib.request.Request(url.rstrip("/") + "/chat/completions", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.status, response.headers.get_content_type(), response.read().decode()
-    except urllib.error.HTTPError as error:
-        return error.code, error.headers.get_content_type(), error.read().decode()
-
-
-def run_suite(*, base_url: str, model: str, confirm_live: bool, groups=None, case_ids=None, timeout: float = 30.0) -> dict:
-    require_live_confirmation(confirm_live)
-    selected = [case for case in CASES if (not groups or case.group in groups) and (not case_ids or case.case_id in case_ids)]
-    report = new_report([])
-    for case in selected:
-        started = time.monotonic()
-        result = {"case_id": case.case_id, "group": case.group, "title": case.title, "goal": case.goal, "preconditions": case.preconditions, "method": case.method, "expected": case.expected, "started_at": datetime.now(timezone.utc).isoformat()}
+class LiveTransport:
+    def __init__(self, context): self.context = context
+    def _request(self, path, payload=None):
+        data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
+        request = urllib.request.Request(self.context.base_url.rstrip("/") + path, data=data, headers={"Content-Type": "application/json"})
         try:
-            status, content_type, body = _post(base_url, {**case.request, "model": model}, timeout)
-            parsed = json.loads(body)
-            if status >= 400:
-                assert_safe_error(parsed, status)
-            elif case.request.get("stream"):
-                assert_sse_semantics(body)
+            with urllib.request.urlopen(request, timeout=self.context.timeout) as response:
+                return TransportResponse(response.status, response.headers.get_content_type(), response.read().decode())
+        except urllib.error.HTTPError as error:
+            return TransportResponse(error.code, error.headers.get_content_type(), error.read().decode())
+    def ready(self): return self._request("/../ready")
+    def request(self, case, payload): return self._request("/chat/completions", payload)
+
+
+def require_live_confirmation(confirm_live):
+    if os.environ.get("MIMICGATE_LIVE_COMPAT") != "1": raise RuntimeError("BLOCKED: set MIMICGATE_LIVE_COMPAT=1")
+    if not confirm_live: raise RuntimeError("BLOCKED: pass --confirm-live")
+
+
+def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=None):
+    require_live_confirmation(confirm_live)
+    transport = transport or LiveTransport(context)
+    report = new_report([]); preflight = transport.ready() if hasattr(transport, "ready") else None
+    is_live = isinstance(transport, LiveTransport)
+    selected = [case for case in CASES if (not groups or case.group in groups) and (not case_ids or case.case_id in case_ids)]
+    if preflight is not None and preflight.status != 200: report["preflight"] = {"status": "BLOCKED", "actual": f"HTTP {preflight.status}; provider readiness unavailable"}
+    for case in selected:
+        result = {"case_id": case.case_id, "group": case.group, "title": case.title, "goal": case.goal, "preconditions": case.preconditions, "method": case.method, "expected": case.expected, "started_at": datetime.now(timezone.utc).isoformat()}
+        if preflight is not None and preflight.status != 200:
+            result.update(status="BLOCKED", actual=f"HTTP {preflight.status}: provider not ready"); report["results"].append(result); continue
+        if is_live and case.case_id == "T49":
+            status, detail = adapter_status("openai")
+            if status == "BLOCKED": result.update(status="BLOCKED", actual=detail); report["results"].append(result); continue
+        if is_live and case.case_id == "T50":
+            status, detail = adapter_status("openclaw")
+            if status == "BLOCKED": result.update(status="BLOCKED", actual=detail); report["results"].append(result); continue
+        try:
+            response = transport.request(case, case.payload(context.model))
+            if response.status != case.expected_status:
+                if response.status in {401, 408, 429, 502, 503, 504}: result.update(status="BLOCKED", actual=f"HTTP {response.status}: live prerequisite unavailable")
+                else: result.update(status="FAIL", actual=f"unexpected HTTP {response.status}")
+            elif response.status >= 400:
+                assert_safe_error(json.loads(response.body), response.status); result.update(status="PASS", actual=f"HTTP {response.status}; exact expected fixture error")
+            elif case.stream:
+                assert_sse_semantics(response.body); result.update(status="PASS", actual="SSE semantics valid")
             else:
-                assert_completion_semantics(parsed, model)
-            result.update(status="PASS", actual=f"HTTP {status}; {content_type}")
-        except (AssertionError, ValueError, urllib.error.URLError) as error:
-            result.update(status="FAIL", actual=str(error)[:300])
-        except Exception as error:
-            result.update(status="BLOCKED", actual=f"{type(error).__name__}: {error}"[:300])
-        result["duration_ms"] = round((time.monotonic() - started) * 1000, 1)
+                assert_completion_semantics(json.loads(response.body), context.model); result.update(status="PASS", actual="completion semantics valid")
+        except (AssertionError, ValueError) as error: result.update(status="FAIL", actual=str(error)[:300])
+        except (TimeoutError, urllib.error.URLError) as error: result.update(status="BLOCKED", actual=f"live prerequisite unavailable: {type(error).__name__}")
         report["results"].append(result)
     return report
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser():
     parser = argparse.ArgumentParser(description="Opt-in MimicGate live compatibility suite")
-    parser.add_argument("--confirm-live", action="store_true")
-    parser.add_argument("--base-url", default=os.environ.get("MIMICGATE_LIVE_URL", "http://127.0.0.1:11556/v1"))
-    parser.add_argument("--model", default=os.environ.get("MIMICGATE_LIVE_MODEL", "deepseek-chat"))
-    parser.add_argument("--group", action="append", choices=sorted(GROUPS))
-    parser.add_argument("--case", dest="case_ids", action="append")
-    parser.add_argument("--format", choices=("json", "markdown"), default="json")
-    parser.add_argument("--output", default="live-compatibility-report.json")
-    parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--confirm-live", action="store_true"); parser.add_argument("--base-url", default=os.environ.get("MIMICGATE_LIVE_URL", "http://127.0.0.1:11556/v1")); parser.add_argument("--model", default=os.environ.get("MIMICGATE_LIVE_MODEL", "deepseek-chat")); parser.add_argument("--profile", default=None); parser.add_argument("--group", action="append", choices=sorted(GROUPS)); parser.add_argument("--case", dest="case_ids", action="append"); parser.add_argument("--format", choices=("json", "markdown"), default="json"); parser.add_argument("--output", default="live-compatibility-report.json"); parser.add_argument("--timeout", type=float, default=30.0)
     return parser
 
 
-def main(argv=None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    try:
-        report = run_suite(base_url=args.base_url, model=args.model, confirm_live=args.confirm_live, groups=args.group, case_ids=args.case_ids, timeout=args.timeout)
-    except RuntimeError as error:
-        parser.error(str(error))
-    write_report(report, __import__("pathlib").Path(args.output), args.format)
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    try: report = run_suite(context=LiveContext(args.base_url, args.model, args.profile, args.timeout), confirm_live=args.confirm_live, groups=args.group, case_ids=args.case_ids)
+    except RuntimeError as error: build_parser().error(str(error))
+    write_report(report, Path(args.output), args.format)
     return 0 if all(item["status"] == "PASS" for item in report["results"]) else 1
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())
