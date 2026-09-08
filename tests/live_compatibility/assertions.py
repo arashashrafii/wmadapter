@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from .transport import SSEParser
 
 
 def assert_completion_semantics(response: dict, model: str) -> None:
@@ -19,11 +20,12 @@ def assert_completion_semantics(response: dict, model: str) -> None:
 
 
 def assert_sse_semantics(body: str) -> None:
-    frames = [line[6:] for line in body.splitlines() if line.startswith("data: ")]
+    parser = SSEParser(); frames = []
+    for start in range(0, len(body), 7): frames.extend(parser.feed(body[start:start + 7]))
+    frames.extend(parser.finish())
     assert frames and frames[-1] == "[DONE]"
     for frame in frames[:-1]:
-        parsed = json.loads(frame)
-        assert parsed.get("object") == "chat.completion.chunk"
+        if frame != "[DONE]": assert json.loads(frame).get("object") == "chat.completion.chunk"
 
 
 def assert_safe_error(response: dict, status: int) -> None:
