@@ -3,6 +3,7 @@ import multiprocessing
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from mimicgate.browser.distribution import (
@@ -70,7 +71,11 @@ class DistributionTests(unittest.TestCase):
             (staging / "browser").write_text("ok")
             activate_atomically(staging, root / "active")
             self.assertEqual((root / "active" / "browser").read_text(), "ok")
-        self.assertEqual(installer_adapter("linux").platform_name, "linux")
+        with patch("mimicgate.installers.platform.machine", return_value="x86_64"), patch(
+            "mimicgate.installers.platform.freedesktop_os_release",
+            return_value={"ID": "ubuntu", "VERSION_ID": "24.04"},
+        ):
+            self.assertEqual(installer_adapter("linux").platform_name, "linux")
 
     def test_manifest_schema_and_platform_are_strict(self):
         parsed = parse_manifest(self._manifest())
@@ -121,6 +126,24 @@ class DistributionTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(UnsupportedPlatformError):
                 installer_adapter(name)
 
+    def test_linux_platform_gate_rejects_wrong_release_or_arch(self):
+        cases = (("22.04", "x86_64"), ("24.04", "aarch64"))
+        for release, machine in cases:
+            with self.subTest(release=release, machine=machine), patch(
+                "mimicgate.installers.platform.machine", return_value=machine
+            ), patch(
+                "mimicgate.installers.platform.freedesktop_os_release",
+                return_value={"ID": "ubuntu", "VERSION_ID": release},
+            ), self.assertRaises(UnsupportedPlatformError):
+                installer_adapter("linux")
+
+    def test_linux_platform_gate_rejects_non_ubuntu(self):
+        with patch("mimicgate.installers.platform.machine", return_value="x86_64"), patch(
+            "mimicgate.installers.platform.freedesktop_os_release",
+            return_value={"ID": "debian", "VERSION_ID": "24.04"},
+        ), self.assertRaises(UnsupportedPlatformError):
+            installer_adapter("linux")
+
     def test_cross_process_lock_serializes_competing_transactions(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
@@ -133,7 +156,7 @@ class DistributionTests(unittest.TestCase):
                 with _exclusive_lock(lock_path):
                     held.set()
                     time.sleep(0.2)
-                released.set()
+                    released.set()
 
             first = multiprocessing.Process(target=holder)
             first.start()
