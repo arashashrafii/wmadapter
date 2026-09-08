@@ -16,7 +16,7 @@ from mimicgate.ports import find_free_port
 from mimicgate.manual_auth import AUTH_TARGETS, _stable_auth_probe, _wait_for_auth, run_manual_auth
 from mimicgate.providers.base import ChatProvider
 from mimicgate.providers.deepseek.chat import DeepSeekChat
-from mimicgate.providers.deepseek.login import CHAT_READY, DeepSeekLogin
+from mimicgate.providers.deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, DeepSeekLogin
 from mimicgate.browser.manager import BrowserManager
 from mimicgate.service import AUTH_STATES, DeepSeekService, QwenService
 
@@ -95,6 +95,75 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(asyncio.run(login.probe_auth()), CHAT_READY)
         self.assertEqual(login.last_probe_diagnostic["reason"], "editable_chat_input")
         self.assertEqual(login.last_probe_diagnostic["selector"], 'textarea[placeholder*="Message"]')
+
+    def test_challenge_selectors_are_narrow_and_high_confidence(self):
+        from mimicgate.providers.deepseek.login import CHALLENGE_SELECTORS
+
+        self.assertTrue(CHALLENGE_SELECTORS)
+        self.assertTrue(all(selector.startswith(("iframe[", "[data-testid", "[id^=")) for selector in CHALLENGE_SELECTORS))
+        self.assertFalse(any("text=" in selector or "[class*=" in selector or "[id*=" in selector for selector in CHALLENGE_SELECTORS))
+
+    def test_transcript_text_does_not_trigger_challenge(self):
+        class Locator:
+            def __init__(self, visible=False, editable=False):
+                self.last = self
+                self.visible = visible
+                self.editable = editable
+
+            async def is_visible(self, timeout=0):
+                return self.visible
+
+            async def is_editable(self, timeout=0):
+                return self.editable
+
+        class Page:
+            url = "https://chat.deepseek.com/a/chat/s/live"
+            frames = []
+
+            def locator(self, selector):
+                return Locator(
+                    visible=selector == 'textarea[placeholder*="Message"]',
+                    editable=selector == 'textarea[placeholder*="Message"]',
+                )
+
+        login = DeepSeekLogin(Page())
+        self.assertEqual(asyncio.run(login.probe_auth()), "SESSION_PENDING")
+        self.assertEqual(asyncio.run(login.probe_auth()), CHAT_READY)
+
+    def test_visible_high_confidence_markers_trigger_and_hidden_markers_do_not(self):
+        from mimicgate.providers.deepseek.login import CHALLENGE_SELECTORS
+
+        class Locator:
+            def __init__(self, visible=False, editable=False):
+                self.last = self
+                self.visible = visible
+                self.editable = editable
+
+            async def is_visible(self, timeout=0):
+                return self.visible
+
+            async def is_editable(self, timeout=0):
+                return self.editable
+
+        class Page:
+            url = "https://chat.deepseek.com/"
+            frames = []
+
+            def __init__(self, visible):
+                self.visible = visible
+
+            def locator(self, selector):
+                chat = selector == 'textarea[placeholder*="Message"]'
+                return Locator(visible=selector in self.visible or chat, editable=chat)
+
+        for selector in CHALLENGE_SELECTORS:
+            with self.subTest(selector=selector):
+                login = DeepSeekLogin(Page({selector}))
+                self.assertEqual(asyncio.run(login.probe_auth()), CHALLENGE_VISIBLE)
+
+        login = DeepSeekLogin(Page(set()))
+        self.assertEqual(asyncio.run(login.probe_auth()), "SESSION_PENDING")
+        self.assertEqual(asyncio.run(login.probe_auth()), CHAT_READY)
 
     def test_deepseek_unknown_probe_exposes_input_diagnostics(self):
         class Locator:
