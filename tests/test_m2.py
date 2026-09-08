@@ -788,6 +788,8 @@ class ExactPageReadinessTests(unittest.IsolatedAsyncioTestCase):
         service.browser = Mock()
         service.browser.page_for = AsyncMock()
         service.browser.restart = AsyncMock()
+        service.browser.lifecycle_events = []
+        service.browser.browser_generation = 0
         return service
 
     async def test_complete_probes_the_resolved_conversation_page(self):
@@ -816,6 +818,26 @@ class ExactPageReadinessTests(unittest.IsolatedAsyncioTestCase):
         service._authenticate.assert_awaited_once_with(page)
         service.browser.restart.assert_not_awaited()
         self.assertFalse(service.ready)
+
+    async def test_alias_metrics_count_unique_pages_separately_and_rebind_after_reset(self):
+        service = self._service()
+        first = Mock()
+        first.is_closed.return_value = False
+        service._conversation_pages.update({"auto:openclaw": first, "session-id": first, "session-key": first})
+        service._track_page(first)
+        status = await service.status()
+        self.assertEqual(status["unique_pages"], 1)
+        self.assertEqual(status["conversation_aliases"], 3)
+
+        service._clear_conversation_pages()
+        second = Mock()
+        second.is_closed.return_value = False
+        service.browser.page_for.return_value = second
+        resolved = await service._page_for_conversation("auto:openclaw")
+        self.assertIs(resolved, second)
+        self.assertIs(service._conversation_pages["session-id"], second)
+        self.assertIs(service._conversation_pages["session-key"], second)
+        self.assertEqual(len(service._page_records), 1)
 
 
 class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):

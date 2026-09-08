@@ -68,6 +68,7 @@ class DeepSeekService(ChatProvider):
         self.login_attempt_id: str | None = None
         self._conversation_pages: dict[str, object] = {}
         self._conversation_bindings: dict[str, str] = {}
+        self._fallback_aliases: set[str] = {"auto:openclaw"}
         self.max_pages = browser_cfg.get("max_pages", 8)
         self.idle_timeout_ms = browser_cfg.get("idle_timeout_ms", 300000)
         self._page_records: dict[int, _PageRecord] = {}
@@ -181,6 +182,7 @@ class DeepSeekService(ChatProvider):
         self.ready = False
         self._conversation_pages.clear()
         self._conversation_bindings.clear()
+        self._fallback_aliases = {"auto:openclaw"}
         self._page_records.clear()
         self._active_pages.clear()
 
@@ -193,6 +195,8 @@ class DeepSeekService(ChatProvider):
             "ready": self.ready,
             "last_error": self.last_error,
             "conversations": len(self._conversation_pages),
+            "unique_pages": len({id(page) for page in self._conversation_pages.values()}),
+            "conversation_aliases": len(self._conversation_pages),
             "state": self.auth_state,
             "reason_code": self.reason_code,
             "updated_at": self.updated_at,
@@ -287,7 +291,13 @@ class DeepSeekService(ChatProvider):
     def bind_conversation(self, session_id: str, session_key: str | None = None) -> None:
         """Remember OpenClaw identifiers until the first provider request arrives."""
         if session_id and session_key:
-            self._conversation_bindings[session_id] = session_key
+            page = self._conversation_pages.get("auto:openclaw")
+            if page is not None and not page.is_closed():
+                self._conversation_pages[session_id] = page
+                self._conversation_pages[session_key] = page
+                self._fallback_aliases.update((session_id, session_key))
+            else:
+                self._conversation_bindings[session_id] = session_key
 
     async def _page_for_conversation(self, conversation_id: str | None):
         if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
@@ -322,6 +332,10 @@ class DeepSeekService(ChatProvider):
         page = await self.browser.page_for(self.name, conversation_id)
         self._track_page(page)
         self._conversation_pages[conversation_id] = page
+        if conversation_id == "auto:openclaw":
+            for alias in self._fallback_aliases:
+                self._conversation_pages[alias] = page
+            self._conversation_bindings.clear()
         if session_id:
             self._conversation_pages[session_id] = page
         if session_key:
@@ -331,6 +345,11 @@ class DeepSeekService(ChatProvider):
 
     def _clear_conversation_pages(self) -> None:
         """Drop page references invalidated by a browser lifecycle transition."""
+        fallback_page = self._conversation_pages.get("auto:openclaw")
+        if fallback_page is not None:
+            self._fallback_aliases.update(
+                alias for alias, page in self._conversation_pages.items() if page is fallback_page
+            )
         self._conversation_pages.clear()
         self._page_records.clear()
         self._active_pages.clear()
@@ -589,6 +608,8 @@ class QwenService(ChatProvider):
             "ready": self.ready,
             "last_error": self.last_error,
             "conversations": len(self._conversation_pages),
+            "unique_pages": len({id(page) for page in self._conversation_pages.values()}),
+            "conversation_aliases": len(self._conversation_pages),
             "state": self.auth_state,
             "reason_code": self.reason_code,
             "updated_at": self.updated_at,
