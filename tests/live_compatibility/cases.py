@@ -83,7 +83,17 @@ def _build_all():
             if "invalid model" in lower: builder, status = _builder(cid, model="invalid-model"), 404
             if "malformed json" in lower: builder, status = _builder(cid, messages=[]), 400
             if "invalid roles" in lower: builder, status = _builder(cid, messages=[{"role": "invalid", "content": "x"}]), 400
-            if "malformed tool" in lower or "unknown/duplicate" in lower: status = 400
+            if "malformed tool" in lower:
+                builder = _tool_builder(cid, messages=[
+                    {"role": "user", "content": "lookup"},
+                    {"role": "assistant", "tool_calls": [{"id": f"call_{cid.lower()}", "type": "function", "function": {"name": "lookup", "arguments": "{bad-json"}}]},
+                    {"role": "tool", "tool_call_id": "unknown-call", "content": "fixture-result"},
+                ])
+                status = 400
+            if "unknown/duplicate" in lower:
+                duplicate_tools = [*TOOLS, {"type": "function", "function": {"name": "lookup", "description": "duplicate", "parameters": {"type": "object"}}}]
+                builder = _builder(cid, tools=duplicate_tools)
+                status = 400
             result.append(_make(cid, group, title, builder, status, stream)); number += 1
     assert len(result) == 50
     return tuple(result)
