@@ -25,7 +25,7 @@ def run_server() -> None:
         print(f"Port {configured_port} is busy; using {port} instead.")
     print(f"API URL: http://{host}:{port}/v1")
     uvicorn.run(
-        "mimicgate.main:app",
+        "wmadapter.main:app",
         host=host,
         port=port,
         reload=False,
@@ -33,7 +33,7 @@ def run_server() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="mimicgate", description="MimicGate — Web-to-API Gateway for AI Agents")
+    parser = argparse.ArgumentParser(prog="wmadapter", description="Web Model Adapter — Web-to-API Gateway for AI Agents")
     subparsers = parser.add_subparsers(dest="command")
     credentials = subparsers.add_parser("credentials")
     credential_commands = credentials.add_subparsers(dest="credential_command")

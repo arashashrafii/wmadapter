@@ -52,7 +52,7 @@ class LiveTransport:
 
 
 def require_live_confirmation(confirm_live):
-    if os.environ.get("MIMICGATE_LIVE_COMPAT") != "1": raise RuntimeError("BLOCKED: set MIMICGATE_LIVE_COMPAT=1")
+    if os.environ.get("WMADAPTER_LIVE_COMPAT") != "1": raise RuntimeError("BLOCKED: set WMADAPTER_LIVE_COMPAT=1")
     if not confirm_live: raise RuntimeError("BLOCKED: pass --confirm-live")
 
 
@@ -71,9 +71,9 @@ def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=No
             status, detail = run_openai_sdk(context, case.payload(context.model)); result.update(status=status, actual=detail); report["results"].append(result); continue
         if is_live and case.case_id == "T50":
             status, detail = run_openclaw(context, "Reply with a short compatibility acknowledgment.")
-            if status == "PASS" and os.environ.get("MIMICGATE_OPENCLAW_TOOL_ARGS"):
-                try: _json.loads(os.environ["MIMICGATE_OPENCLAW_TOOL_ARGS"])
-                except _json.JSONDecodeError: status, detail = "BLOCKED", "MIMICGATE_OPENCLAW_TOOL_ARGS must be a JSON argument list"
+            if status == "PASS" and os.environ.get("WMADAPTER_OPENCLAW_TOOL_ARGS"):
+                try: _json.loads(os.environ["WMADAPTER_OPENCLAW_TOOL_ARGS"])
+                except _json.JSONDecodeError: status, detail = "BLOCKED", "WMADAPTER_OPENCLAW_TOOL_ARGS must be a JSON argument list"
                 else: status, detail = run_openclaw(context, "Run the configured compatibility tool-loop and report its result.", include_tools=True)
             result.update(status=status, actual=detail); report["results"].append(result); continue
         try:
@@ -94,8 +94,8 @@ def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=No
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="Opt-in MimicGate live compatibility suite")
-    parser.add_argument("--confirm-live", action="store_true"); parser.add_argument("--base-url", default=os.environ.get("MIMICGATE_LIVE_URL", "http://127.0.0.1:11556/v1")); parser.add_argument("--model", default=os.environ.get("MIMICGATE_LIVE_MODEL", "deepseek-chat")); parser.add_argument("--profile", default=None); parser.add_argument("--group", action="append", choices=sorted(GROUPS)); parser.add_argument("--case", dest="case_ids", action="append"); parser.add_argument("--format", choices=("json", "markdown"), default="json"); parser.add_argument("--output", default="live-compatibility-report.json"); parser.add_argument("--timeout", type=float, default=30.0)
+    parser = argparse.ArgumentParser(description="Opt-in Web Model Adapter live compatibility suite")
+    parser.add_argument("--confirm-live", action="store_true"); parser.add_argument("--base-url", default=os.environ.get("WMADAPTER_LIVE_URL", "http://127.0.0.1:11556/v1")); parser.add_argument("--model", default=os.environ.get("WMADAPTER_LIVE_MODEL", "deepseek-chat")); parser.add_argument("--profile", default=None); parser.add_argument("--group", action="append", choices=sorted(GROUPS)); parser.add_argument("--case", dest="case_ids", action="append"); parser.add_argument("--format", choices=("json", "markdown"), default="json"); parser.add_argument("--output", default="live-compatibility-report.json"); parser.add_argument("--timeout", type=float, default=30.0)
     return parser
 
 

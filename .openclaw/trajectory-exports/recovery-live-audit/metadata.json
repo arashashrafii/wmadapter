@@ -4,7 +4,7 @@
   "generatedAt": "2026-09-05T06:52:42.851Z",
   "traceId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
   "sessionId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
-  "sessionKey": "agent:main:webbridge-recovery-live-20260905",
+  "sessionKey": "agent:main:wmadapter-recovery-live-20260905",
   "harness": {
     "type": "openclaw",
     "name": "OpenClaw",
@@ -27,10 +27,10 @@
     ],
     "entrypoint": "~/.npm-global/lib/node_modules/openclaw/dist/index.js",
     "workspaceDir": "$OPENCLAW_STATE_DIR/workspace",
-    "sessionFile": "~/agent:main:webbridge-recovery-live-20260905"
+    "sessionFile": "~/agent:main:wmadapter-recovery-live-20260905"
   },
   "model": {
-    "provider": "webbridge",
+    "provider": "wmadapter",
     "name": "deepseek-chat",
     "api": "openai-completions",
     "fastMode": false,
@@ -60,8 +60,8 @@
       },
       "auth": {
         "profiles": {
-          "webbridge:default": {
-            "provider": "webbridge",
+          "wmadapter:default": {
+            "provider": "wmadapter",
             "mode": "api_key"
           }
         }
@@ -78,7 +78,7 @@
               "limitDepth": 6
             }
           },
-          "webbridge": {
+          "wmadapter": {
             "baseUrl": "http://127.0.0.1:11556/v1",
             "auth": "api-key",
             "models": {
@@ -93,7 +93,7 @@
         "ownership": "explicit",
         "defaults": {
           "model": {
-            "primary": "webbridge/deepseek-chat",
+            "primary": "wmadapter/deepseek-chat",
             "fallbacks": {
               "truncated": true,
               "reason": "trajectory-depth-limit",
@@ -126,17 +126,17 @@
               "reason": "trajectory-depth-limit",
               "limitDepth": 6
             },
-            "webbridge/deepseek-chat": {
+            "wmadapter/deepseek-chat": {
               "truncated": true,
               "reason": "trajectory-depth-limit",
               "limitDepth": 6
             },
-            "webbridge/deepseek-reasoner": {
+            "wmadapter/deepseek-reasoner": {
               "truncated": true,
               "reason": "trajectory-depth-limit",
               "limitDepth": 6
             },
-            "webbridge/qwen-chat": {
+            "wmadapter/qwen-chat": {
               "truncated": true,
               "reason": "trajectory-depth-limit",
               "limitDepth": 6
@@ -183,7 +183,7 @@
             "name": "test7-agent-20260903",
             "workspace": "/tmp/openclaw-test7-agent-20260903",
             "agentDir": "$OPENCLAW_STATE_DIR/agents/test7-agent-20260903/agent",
-            "model": "webbridge/deepseek-chat",
+            "model": "wmadapter/deepseek-chat",
             "identity": {
               "truncated": true,
               "reason": "trajectory-depth-limit",

@@ -2,10 +2,18 @@
 __pycache__/
 *.py[cod]
 config.yaml
-.mimicgate-profile/
-mimicgate.log
+.wmadapter-profile/
+wmadapter.log
 .env
 *.egg-info/
 *.log.*
 .coverage
 .pytest_cache/
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

@@ -136,7 +136,7 @@ class DeepSeekLogin:
         return await self.probe_auth() == CHAT_READY
 
     def _credentials(self) -> tuple[str, str] | None:
-        if os.getenv("MIMICGATE_LOGIN") == "1":
+        if os.getenv("WMADAPTER_LOGIN") == "1":
             return None
         email = os.getenv("DEEPSEEK_EMAIL")
         password = os.getenv("DEEPSEEK_PASSWORD")
@@ -162,7 +162,7 @@ class DeepSeekLogin:
         credentials = self._credentials()
         if credentials is None:
             raise RuntimeError(
-                "DeepSeek is not logged in. Run `.venv/bin/mimicgate credentials set`, "
+                "DeepSeek is not logged in. Run `.venv/bin/wmadapter credentials set`, "
                 "set DEEPSEEK_EMAIL and DEEPSEEK_PASSWORD, or log in manually in the opened browser."
             )
         email, password = credentials

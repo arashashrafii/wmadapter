@@ -7,18 +7,18 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from mimicgate.config import load_config
-from mimicgate.credentials import CredentialStore
-from mimicgate.security import redact
-from mimicgate.providers.router import ProviderRouter
-from mimicgate.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
-from mimicgate.ports import find_free_port
-from mimicgate.manual_auth import AUTH_TARGETS, _stable_auth_probe, _wait_for_auth, run_manual_auth
-from mimicgate.providers.base import ChatProvider
-from mimicgate.providers.deepseek.chat import DeepSeekChat
-from mimicgate.providers.deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, DeepSeekLogin
-from mimicgate.browser.manager import BrowserManager
-from mimicgate.service import AUTH_STATES, DeepSeekService, QwenService
+from wmadapter.config import load_config
+from wmadapter.credentials import CredentialStore
+from wmadapter.security import redact
+from wmadapter.providers.router import ProviderRouter
+from wmadapter.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
+from wmadapter.ports import find_free_port
+from wmadapter.manual_auth import AUTH_TARGETS, _stable_auth_probe, _wait_for_auth, run_manual_auth
+from wmadapter.providers.base import ChatProvider
+from wmadapter.providers.deepseek.chat import DeepSeekChat
+from wmadapter.providers.deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, DeepSeekLogin
+from wmadapter.browser.manager import BrowserManager
+from wmadapter.service import AUTH_STATES, DeepSeekService, QwenService
 
 
 class FakeProvider(ChatProvider):
@@ -44,7 +44,7 @@ class Milestone2Tests(unittest.TestCase):
         page.goto = AsyncMock()
         service.browser.primary_page = AsyncMock(return_value=page)
         service.browser.page_for = AsyncMock()
-        with patch("mimicgate.service.DeepSeekLogin") as login_class:
+        with patch("wmadapter.service.DeepSeekLogin") as login_class:
             login_class.return_value.ensure_authenticated = AsyncMock()
             asyncio.run(service._authenticate())
         service.browser.primary_page.assert_awaited_once_with("deepseek")
@@ -56,7 +56,7 @@ class Milestone2Tests(unittest.TestCase):
         page = Mock(url="https://chat.deepseek.com/a/chat/s/existing")
         page.goto = AsyncMock()
         service.browser.primary_page = AsyncMock(return_value=page)
-        with patch("mimicgate.service.DeepSeekLogin") as login_class:
+        with patch("wmadapter.service.DeepSeekLogin") as login_class:
             login_class.return_value.ensure_authenticated = AsyncMock()
             asyncio.run(service._authenticate())
         page.goto.assert_not_awaited()
@@ -65,7 +65,7 @@ class Milestone2Tests(unittest.TestCase):
         page = Mock()
         target = AUTH_TARGETS["deepseek"]
         with patch(
-            "mimicgate.manual_auth._probe_auth",
+            "wmadapter.manual_auth._probe_auth",
             new=AsyncMock(side_effect=["SESSION_PENDING", CHAT_READY, CHAT_READY]),
         ) as probe:
             self.assertTrue(asyncio.run(_stable_auth_probe("deepseek", page, target)))
@@ -97,7 +97,7 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(login.last_probe_diagnostic["selector"], 'textarea[placeholder*="Message"]')
 
     def test_challenge_selectors_are_narrow_and_high_confidence(self):
-        from mimicgate.providers.deepseek.login import CHALLENGE_SELECTORS
+        from wmadapter.providers.deepseek.login import CHALLENGE_SELECTORS
 
         self.assertTrue(CHALLENGE_SELECTORS)
         self.assertTrue(all(selector.startswith(("iframe[", "[data-testid", "[id^=")) for selector in CHALLENGE_SELECTORS))
@@ -132,7 +132,7 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(asyncio.run(login.probe_auth()), CHAT_READY)
 
     def test_visible_high_confidence_markers_trigger_and_hidden_markers_do_not(self):
-        from mimicgate.providers.deepseek.login import CHALLENGE_SELECTORS
+        from wmadapter.providers.deepseek.login import CHALLENGE_SELECTORS
 
         class Locator:
             def __init__(self, visible=False, editable=False):
@@ -167,7 +167,7 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(asyncio.run(login.probe_auth()), CHAT_READY)
 
     def test_login_transcript_text_does_not_hide_ready_chat(self):
-        from mimicgate.providers.deepseek.login import SIGN_IN_SELECTORS
+        from wmadapter.providers.deepseek.login import SIGN_IN_SELECTORS
 
         self.assertFalse(any("text=" in selector for selector in SIGN_IN_SELECTORS))
 
@@ -198,7 +198,7 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(asyncio.run(login.probe_auth()), CHAT_READY)
 
     def test_visible_login_controls_detect_and_hidden_controls_do_not(self):
-        from mimicgate.providers.deepseek.login import LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
+        from wmadapter.providers.deepseek.login import LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
 
         class Locator:
             def __init__(self, visible):
@@ -366,14 +366,14 @@ class Milestone2Tests(unittest.TestCase):
         manager._mark_disconnected("user_close")
         event = manager.lifecycle_events[-1]
         self.assertEqual(event["event_name"], "auth.cleanup")
-        self.assertEqual(event["initiator"], "mimicgate_cleanup")
+        self.assertEqual(event["initiator"], "wmadapter_cleanup")
         self.assertEqual(event["reason"], "handoff")
 
     def test_display_launch_failure_remains_the_terminal_diagnostic(self):
         starter = Mock()
         starter.start = AsyncMock(side_effect=RuntimeError("no display"))
-        manager = BrowserManager(profile_path=f"/tmp/mimicgate-display-{id(starter)}", headless=False)
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        manager = BrowserManager(profile_path=f"/tmp/wmadapter-display-{id(starter)}", headless=False)
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             with self.assertRaisesRegex(RuntimeError, "no display"):
                 asyncio.run(manager.start())
         event = manager.lifecycle_events[-1]
@@ -423,8 +423,8 @@ class Milestone2Tests(unittest.TestCase):
             "browser": {"mode": "managed", "profile_dir": ".profile", "executable_path": "./chrome"},
             "qwen": {"profile_dir": "./qwen-profile", "chat_url": "https://chat.qwen.ai/custom"},
         }
-        with patch("mimicgate.manual_auth.BrowserManager", return_value=manager) as manager_class, patch(
-            "mimicgate.manual_auth._probe_auth", new=AsyncMock(return_value="CHAT_READY")
+        with patch("wmadapter.manual_auth.BrowserManager", return_value=manager) as manager_class, patch(
+            "wmadapter.manual_auth._probe_auth", new=AsyncMock(return_value="CHAT_READY")
         ):
             asyncio.run(run_manual_auth("qwen", config=config))
         kwargs = manager_class.call_args.kwargs
@@ -436,7 +436,7 @@ class Milestone2Tests(unittest.TestCase):
     def test_manual_auth_rejects_cross_provider_url_before_launch(self):
         config = load_config('/nonexistent')
         config["deepseek"]["chat_url"] = "https://example.com/login"
-        with patch("mimicgate.manual_auth.BrowserManager") as manager_class:
+        with patch("wmadapter.manual_auth.BrowserManager") as manager_class:
             with self.assertRaisesRegex(RuntimeError, "provider origin"):
                 asyncio.run(run_manual_auth("deepseek", config=config))
         manager_class.assert_not_called()
@@ -447,8 +447,8 @@ class Milestone2Tests(unittest.TestCase):
         manager.primary_page = AsyncMock(return_value=page)
         manager.stop = AsyncMock()
         config = load_config('/nonexistent')
-        with patch("mimicgate.manual_auth.BrowserManager", return_value=manager), patch(
-            "mimicgate.manual_auth._wait_for_auth", new=AsyncMock(side_effect=asyncio.CancelledError())
+        with patch("wmadapter.manual_auth.BrowserManager", return_value=manager), patch(
+            "wmadapter.manual_auth._wait_for_auth", new=AsyncMock(side_effect=asyncio.CancelledError())
         ):
             with self.assertRaises(asyncio.CancelledError):
                 asyncio.run(run_manual_auth("deepseek", config=config))
@@ -565,15 +565,15 @@ class Milestone2Tests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "custom.yaml"
             path.write_text("server:\n  port: 8123\n")
-            old = os.environ.get("MIMICGATE_CONFIG")
-            os.environ["MIMICGATE_CONFIG"] = str(path)
+            old = os.environ.get("WMADAPTER_CONFIG")
+            os.environ["WMADAPTER_CONFIG"] = str(path)
             try:
                 self.assertEqual(load_config(None)["server"]["port"], 8123)
             finally:
                 if old is None:
-                    os.environ.pop("MIMICGATE_CONFIG", None)
+                    os.environ.pop("WMADAPTER_CONFIG", None)
                 else:
-                    os.environ["MIMICGATE_CONFIG"] = old
+                    os.environ["WMADAPTER_CONFIG"] = old
 
     def test_canonical_config_environment_is_used(self):
         from tempfile import TemporaryDirectory
@@ -583,15 +583,15 @@ class Milestone2Tests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             canonical = Path(directory) / "canonical.yaml"
             canonical.write_text("server:\n  port: 8124\n")
-            old_value = os.environ.get("MIMICGATE_CONFIG")
-            os.environ["MIMICGATE_CONFIG"] = str(canonical)
+            old_value = os.environ.get("WMADAPTER_CONFIG")
+            os.environ["WMADAPTER_CONFIG"] = str(canonical)
             try:
                 self.assertEqual(load_config(None)["server"]["port"], 8124)
             finally:
                 if old_value is None:
-                    os.environ.pop("MIMICGATE_CONFIG", None)
+                    os.environ.pop("WMADAPTER_CONFIG", None)
                 else:
-                    os.environ["MIMICGATE_CONFIG"] = old_value
+                    os.environ["WMADAPTER_CONFIG"] = old_value
 
     def test_config_allows_explicit_disabled_page_cleanup(self):
         from tempfile import TemporaryDirectory
@@ -750,7 +750,7 @@ class Milestone2Tests(unittest.TestCase):
             "json": '{"ok": true}',
             "c#": "using System;\nConsole.WriteLine(\"Hello\");",
             "sql": "SELECT id FROM users;",
-            "yaml": "name: mimicgate\nenabled: true",
+            "yaml": "name: wmadapter\nenabled: true",
             "javascript": "const answer = 42;",
             "bash": "#!/usr/bin/env bash\necho hello",
             "markdown": "# Hello\n\nText",
@@ -845,7 +845,7 @@ class Milestone2Tests(unittest.TestCase):
 
 class PageCapacityTests(unittest.IsolatedAsyncioTestCase):
     def _deepseek(self, max_pages=8, idle_timeout_ms=300000):
-        from mimicgate.service import DeepSeekService
+        from wmadapter.service import DeepSeekService
 
         config = load_config('/nonexistent')
         config["browser"]["max_pages"] = max_pages
@@ -928,7 +928,7 @@ class ExactPageReadinessTests(unittest.IsolatedAsyncioTestCase):
         service._authenticate = AsyncMock()
         chat = Mock()
         chat.send_message = AsyncMock(return_value='ok')
-        with patch('mimicgate.service.DeepSeekChat', return_value=chat):
+        with patch('wmadapter.service.DeepSeekChat', return_value=chat):
             result = await service.complete('hello', conversation_id='openclaw-session')
         self.assertEqual(result, 'ok')
         service._authenticate.assert_awaited_once_with(page)
@@ -987,8 +987,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         second.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([first, second])
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/mimicgate-test-{id(first)}")
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/wmadapter-test-{id(first)}")
             self.assertIs(await manager.start(), first)
             self.assertTrue(manager.is_running)
             context_callback = first.on.call_args.args[1]
@@ -1003,8 +1003,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.browser = None
         context.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([context])
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/mimicgate-concurrent-{id(context)}")
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/wmadapter-concurrent-{id(context)}")
             first, second = await asyncio.gather(manager.start(), manager.start())
             self.assertIs(first, context)
             self.assertIs(second, context)
@@ -1021,8 +1021,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         second.browser = None
         second.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([first, second])
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/mimicgate-restart-{id(first)}")
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/wmadapter-restart-{id(first)}")
             await manager.start()
             result, observed = await asyncio.gather(manager.restart(), manager.start())
             self.assertIs(result, second)
@@ -1035,8 +1035,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright = Mock(chromium=chromium)
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(side_effect=asyncio.CancelledError()))
-        profile = "/tmp/mimicgate-cancel-launch-test"
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        profile = "/tmp/wmadapter-cancel-launch-test"
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile)
             with self.assertRaises(asyncio.CancelledError):
                 await manager.start()
@@ -1049,8 +1049,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.browser = None
         context.close = AsyncMock(side_effect=asyncio.CancelledError())
         starter, _, playwright = self._managed_playwright([context])
-        profile = f"/tmp/mimicgate-cancel-stop-{id(context)}"
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        profile = f"/tmp/wmadapter-cancel-stop-{id(context)}"
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile)
             await manager.start()
             with self.assertRaises(asyncio.CancelledError):
@@ -1066,8 +1066,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.close = AsyncMock()
         starter, chromium, _ = self._managed_playwright([context])
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/mimicgate-test-{id(context)}")
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/wmadapter-test-{id(context)}")
             self.assertIs(await manager.start(), context)
             self.assertIs(await manager.start(), context)
             chromium.launch_persistent_context.assert_awaited_once()
@@ -1080,8 +1080,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter, chromium, playwright = self._managed_playwright([context])
         chromium.launch_persistent_context.side_effect = [context, RuntimeError("launch failed")]
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
-            manager = BrowserManager(profile_path=f"/tmp/mimicgate-test-{id(context)}")
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(profile_path=f"/tmp/wmadapter-test-{id(context)}")
             await manager.start()
             context.on.call_args.args[1]()
             with self.assertRaisesRegex(RuntimeError, "launch failed"):
@@ -1110,9 +1110,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter = Mock()
         starter.start = AsyncMock(side_effect=[headed_playwright, headless_playwright])
         executable = "/usr/bin/chromium-test"
-        profile = "/tmp/mimicgate-handoff-test"
+        profile = "/tmp/wmadapter-handoff-test"
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, executable_path=executable, headless=False)
             await manager.start()
             auth_probe = AsyncMock(return_value=True)
@@ -1122,7 +1122,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             auth_probe.assert_awaited_once()
             handoff_events = [event for event in manager.lifecycle_events if event["reason"] == "handoff"]
             self.assertTrue(handoff_events)
-            self.assertTrue(all(event["initiator"] == "mimicgate_cleanup" for event in handoff_events))
+            self.assertTrue(all(event["initiator"] == "wmadapter_cleanup" for event in handoff_events))
             self.assertFalse(any(event["reason"] == "user_close" for event in manager.lifecycle_events))
 
         headed_chromium.launch_persistent_context.assert_awaited_once_with(
@@ -1164,9 +1164,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         headless_pw.stop = AsyncMock()
         starter.start = AsyncMock(side_effect=[headed_pw, headless_pw])
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(
-                profile_path=f"/tmp/mimicgate-handoff-blank-{id(headed)}",
+                profile_path=f"/tmp/wmadapter-handoff-blank-{id(headed)}",
                 launch_url="https://chat.deepseek.com/",
                 headless=False,
             )
@@ -1188,9 +1188,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(
-                profile_path=f"/tmp/mimicgate-app-{id(context)}",
+                profile_path=f"/tmp/wmadapter-app-{id(context)}",
                 headless=False,
                 launch_url="https://chat.deepseek.com/",
             )
@@ -1208,8 +1208,8 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         headless_playwright = Mock(chromium=headless_chromium)
         headless_playwright.stop = AsyncMock()
         headless_starter = Mock(start=AsyncMock(return_value=headless_playwright))
-        with patch("mimicgate.browser.manager.async_playwright", return_value=headless_starter):
-            manager = BrowserManager(profile_path=f"/tmp/mimicgate-headless-{id(context)}", headless=True)
+        with patch("wmadapter.browser.manager.async_playwright", return_value=headless_starter):
+            manager = BrowserManager(profile_path=f"/tmp/wmadapter-headless-{id(context)}", headless=True)
             await manager.start()
             await manager.stop()
         self.assertNotIn("args", headless_chromium.launch_persistent_context.await_args.kwargs)
@@ -1230,9 +1230,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
-        profile = "/tmp/mimicgate-handoff-auth-failure-test"
+        profile = "/tmp/wmadapter-handoff-auth-failure-test"
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, headless=False)
             await manager.start()
             with self.assertRaisesRegex(RuntimeError, "headed session was restored"):
@@ -1257,9 +1257,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
-        profile = "/tmp/mimicgate-handoff-launch-failure-test"
+        profile = "/tmp/wmadapter-handoff-launch-failure-test"
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, headless=False)
             await manager.start()
             with self.assertRaisesRegex(RuntimeError, "headed session was restored"):
@@ -1269,12 +1269,12 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             await manager.stop()
 
     async def test_managed_profile_lock_conflict_blocks_second_manager(self):
-        profile = "/tmp/mimicgate-lock-conflict-test"
+        profile = "/tmp/wmadapter-lock-conflict-test"
         first_context = Mock(pages=[])
         first_context.browser = None
         first_context.close = AsyncMock()
         starter, _, _ = self._managed_playwright([first_context])
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             first = BrowserManager(profile_path=profile)
             second = BrowserManager(profile_path=profile)
             await first.start()
@@ -1284,15 +1284,15 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             await first.stop()
 
     async def test_profile_lock_metadata_is_diagnostic_and_removed_by_owner(self):
-        profile = "/tmp/mimicgate-lock-metadata-test"
+        profile = "/tmp/wmadapter-lock-metadata-test"
         context = Mock(pages=[])
         context.browser = None
         context.close = AsyncMock()
         starter, _, _ = self._managed_playwright([context])
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, executable_path="/usr/bin/chromium")
             await manager.start()
-            metadata_path = manager.profile_path / ".mimicgate-profile.lock.json"
+            metadata_path = manager.profile_path / ".wmadapter-profile.lock.json"
             metadata = json.loads(metadata_path.read_text())
             self.assertEqual(metadata["owner_pid"], os.getpid())
             self.assertEqual(metadata["profile"], str(manager.profile_path))
@@ -1302,10 +1302,10 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(metadata_path.exists())
 
     async def test_stale_profile_metadata_is_replaced_without_singleton_deletion(self):
-        profile = "/tmp/mimicgate-stale-metadata-test"
+        profile = "/tmp/wmadapter-stale-metadata-test"
         manager = BrowserManager(profile_path=profile)
         manager.profile_path.mkdir(parents=True, exist_ok=True)
-        metadata_path = manager.profile_path / ".mimicgate-profile.lock.json"
+        metadata_path = manager.profile_path / ".wmadapter-profile.lock.json"
         metadata_path.write_text(json.dumps({"owner_pid": 1, "profile": "/old/profile"}))
         singleton = manager.profile_path / "SingletonLock"
         singleton.write_text("preserve")
@@ -1313,7 +1313,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         context.browser = None
         context.close = AsyncMock()
         starter, _, _ = self._managed_playwright([context])
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             await manager.start()
             self.assertEqual(json.loads(metadata_path.read_text())["profile"], str(manager.profile_path))
             await manager.stop()
@@ -1331,9 +1331,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
-        profile = "/tmp/mimicgate-cancel-handoff-test"
+        profile = "/tmp/wmadapter-cancel-handoff-test"
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile, headless=False)
             await manager.start()
             with self.assertRaises(asyncio.CancelledError):
@@ -1355,7 +1355,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter = Mock()
         starter.start = AsyncMock(return_value=playwright)
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.start(), context)
             self.assertEqual(manager.mode, "cdp")
@@ -1376,11 +1376,11 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(
                 mode="managed",
                 cdp_endpoint="http://127.0.0.1:9222",
-                profile_path=f"/tmp/mimicgate-explicit-managed-{id(context)}",
+                profile_path=f"/tmp/wmadapter-explicit-managed-{id(context)}",
             )
             await manager.start()
             self.assertEqual(manager.mode, "managed")
@@ -1405,7 +1405,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         starter = Mock()
         starter.start = AsyncMock(side_effect=[first_playwright, second_playwright])
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.start(), first_context)
             disconnect_callback = first_browser.on.call_args.args[1]
@@ -1430,7 +1430,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.page_for("deepseek", "d1"), deepseek_page)
             self.assertIs(await manager.page_for("qwen", "q1"), qwen_page)
@@ -1452,7 +1452,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(cdp_endpoint="http://127.0.0.1:9222")
             self.assertIs(await manager.page_for("deepseek", "d1"), deepseek_page)
             self.assertIs(await manager.page_for("qwen", "q1"), qwen_replacement)
@@ -1477,9 +1477,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         playwright = Mock(chromium=chromium)
         playwright.stop = AsyncMock()
         starter = Mock(start=AsyncMock(return_value=playwright))
-        profile = f"/tmp/mimicgate-managed-page-{id(context)}"
+        profile = f"/tmp/wmadapter-managed-page-{id(context)}"
 
-        with patch("mimicgate.browser.manager.async_playwright", return_value=starter):
+        with patch("wmadapter.browser.manager.async_playwright", return_value=starter):
             manager = BrowserManager(profile_path=profile)
             self.assertIs(await manager.page_for("deepseek", "d1"), owned)
             await manager.stop()

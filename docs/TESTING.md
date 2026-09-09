@@ -33,4 +33,4 @@ npm test
 `npm ci` is required for reproducible CI installs. The browser-install step is
 required before the first Playwright run; `--with-deps` also installs Linux
 browser libraries in CI. The current Playwright fixture is a browser smoke
-fixture and is not provider authentication or live MimicGate verification.
+fixture and is not provider authentication or live Web Model Adapter verification.

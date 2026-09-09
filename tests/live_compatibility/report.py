@@ -20,7 +20,7 @@ def redact(value):
 
 
 def new_report(cases) -> dict:
-    return {"schema_version": 1, "suite": "mimicgate-live-compatibility", "started_at": datetime.now(timezone.utc).isoformat(), "results": [redact(case) for case in cases]}
+    return {"schema_version": 1, "suite": "wmadapter-live-compatibility", "started_at": datetime.now(timezone.utc).isoformat(), "results": [redact(case) for case in cases]}
 
 
 def write_report(report: dict, path: Path, fmt: str) -> None:
@@ -29,7 +29,7 @@ def write_report(report: dict, path: Path, fmt: str) -> None:
     if fmt == "json":
         path.write_text(json.dumps(safe, ensure_ascii=False, indent=2) + "\n")
         return
-    lines = ["# MimicGate Live Compatibility Report", "", f"Started: {safe['started_at']}", "", "| Case | Group | Status | Actual |", "|---|---|---|---|"]
+    lines = ["# Web Model Adapter Live Compatibility Report", "", f"Started: {safe['started_at']}", "", "| Case | Group | Status | Actual |", "|---|---|---|---|"]
     for result in safe["results"]:
         actual = str(result.get("actual", "")).replace("|", "\\|")
         lines.append(f"| {result['case_id']} | {result['group']} | {result['status']} | {actual} |")

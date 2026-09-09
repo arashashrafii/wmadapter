@@ -216,7 +216,7 @@ class DeepSeekService(ChatProvider):
         self.browser.set_diagnostics(provider=self.name, login_attempt_id=self.login_attempt_id, auth_state=state)
         self.browser._emit_lifecycle(
             "auth.ready" if state == "READY" else "auth.state",
-            initiator="mimicgate",
+            initiator="wmadapter",
             reason=reason_code,
         )
 
@@ -629,7 +629,7 @@ class QwenService(ChatProvider):
         self.browser.set_diagnostics(provider=self.name, login_attempt_id=self.login_attempt_id, auth_state=state)
         self.browser._emit_lifecycle(
             "auth.ready" if state == "READY" else "auth.state",
-            initiator="mimicgate",
+            initiator="wmadapter",
             reason=reason_code,
         )
 

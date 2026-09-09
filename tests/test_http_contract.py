@@ -4,11 +4,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
-from mimicgate import main
-from mimicgate.api.server import app as alternate_app
-from mimicgate.providers.base import ChatProvider
-from mimicgate.providers.router import ProviderRouter
-from mimicgate.service import PageCapacityError
+from wmadapter import main
+from wmadapter.api.server import app as alternate_app
+from wmadapter.providers.base import ChatProvider
+from wmadapter.providers.router import ProviderRouter
+from wmadapter.service import PageCapacityError
 from test_contract_v2 import TOOLS
 
 
@@ -71,7 +71,7 @@ class HTTPContractTests(unittest.TestCase):
     def test_openclaw_shaped_healthy_request_reaches_inference(self):
         self.provider.ready = True
         response = self.client.post('/v1/chat/completions', json={
-            'model': 'mimicgate/deepseek-chat',
+            'model': 'wmadapter/deepseek-chat',
             'messages': [{'role': 'user', 'content': 'hello from OpenClaw'}],
         })
         self.assertEqual(response.status_code, 200)
@@ -82,7 +82,7 @@ class HTTPContractTests(unittest.TestCase):
         self.provider.ready = True
         for text in ('first turn', 'second turn', 'third turn'):
             response = self.client.post('/v1/chat/completions', json={
-                'model': 'mimicgate/deepseek-chat',
+                'model': 'wmadapter/deepseek-chat',
                 'messages': [{'role': 'user', 'content': text}],
             })
             self.assertEqual(response.status_code, 200)

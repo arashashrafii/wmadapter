@@ -30,9 +30,9 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
 
     def test_live_guard_requires_environment_and_confirmation(self):
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "MIMICGATE_LIVE_COMPAT"):
+            with self.assertRaisesRegex(RuntimeError, "WMADAPTER_LIVE_COMPAT"):
                 require_live_confirmation(True)
-        with patch.dict(os.environ, {"MIMICGATE_LIVE_COMPAT": "1"}, clear=True):
+        with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "confirm-live"):
                 require_live_confirmation(False)
             require_live_confirmation(True)
@@ -46,7 +46,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: response)))
         fake_module = SimpleNamespace(OpenAI=lambda **kwargs: client)
-        with patch.dict(sys.modules, {"openai": fake_module}), patch("importlib.util.find_spec", return_value=object()), patch.dict(os.environ, {"MIMICGATE_LIVE_API_KEY": "local-test"}):
+        with patch.dict(sys.modules, {"openai": fake_module}), patch("importlib.util.find_spec", return_value=object()), patch.dict(os.environ, {"WMADAPTER_LIVE_API_KEY": "local-test"}):
             status, detail = run_openai_sdk(LiveContext("http://localhost:11556/v1", "deepseek-chat"), {"model": "deepseek-chat", "messages": []})
         self.assertEqual(status, "PASS"); self.assertIn("typed", detail)
 
@@ -55,7 +55,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             status_code = 503
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: (_ for _ in ()).throw(ProviderUnavailable()))) )
         fake_module = SimpleNamespace(OpenAI=lambda **kwargs: client)
-        with patch.dict(sys.modules, {"openai": fake_module}), patch("importlib.util.find_spec", return_value=object()), patch.dict(os.environ, {"MIMICGATE_LIVE_API_KEY": "local-test"}):
+        with patch.dict(sys.modules, {"openai": fake_module}), patch("importlib.util.find_spec", return_value=object()), patch.dict(os.environ, {"WMADAPTER_LIVE_API_KEY": "local-test"}):
             status, detail = run_openai_sdk(LiveContext("http://localhost:11556/v1", "deepseek-chat"), {"model": "deepseek-chat", "messages": []})
         self.assertEqual(status, "BLOCKED"); self.assertIn("503", detail)
 
@@ -79,7 +79,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertEqual(events, ['{"x":1}', '[DONE]'])
 
     def test_fixture_transport_executes_all_cases_offline(self):
-        with patch.dict(os.environ, {"MIMICGATE_LIVE_COMPAT": "1"}):
+        with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}):
             report = run_suite(context=LiveContext("fixture://offline", "deepseek-chat"), confirm_live=True, transport=FixtureTransport())
         self.assertEqual(len(report["results"]), 50)
         self.assertTrue(all(item["status"] == "PASS" for item in report["results"]))
@@ -92,7 +92,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         class Down:
             def ready(self): return TransportResponse(503, "application/json", "{}")
             def request(self, case, payload): self.called = True; raise AssertionError("must not request")
-        with patch.dict(os.environ, {"MIMICGATE_LIVE_COMPAT": "1"}):
+        with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}):
             report = run_suite(context=LiveContext("fixture://offline", "deepseek-chat"), confirm_live=True, transport=Down())
         self.assertTrue(all(item["status"] == "BLOCKED" for item in report["results"]))
 

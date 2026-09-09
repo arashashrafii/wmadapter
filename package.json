@@ -1,7 +1,7 @@
 {
-  "name": "mimicgate",
+  "name": "wmadapter",
   "version": "1.0.0",
-  "description": "MimicGate is a local OpenAI-compatible gateway for authenticated DeepSeek Web and Qwen Web sessions. It drives provider web pages through a user-owned browser profile and exposes the verified HTTP boundary to OpenCode, Hermes, OpenClaw, and compatible clients. It does not use the paid DeepSeek API. The historical `mimicgate` command and import namespace, configuration paths, and environment variables remain supported compatibility aliases.",
+  "description": "Web Model Adapter is a local OpenAI-compatible gateway for authenticated DeepSeek Web and Qwen Web sessions. It drives provider web pages through a user-owned browser profile and exposes the verified HTTP boundary to OpenCode, Hermes, OpenClaw, and compatible clients. It does not use the paid DeepSeek API.",
   "main": "index.js",
   "directories": {
     "doc": "docs",
@@ -12,16 +12,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arashashrafii/mimicgate.git"
+    "url": "git+https://github.com/arashashrafii/wmadapter.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/arashashrafii/mimicgate/issues"
+    "url": "https://github.com/arashashrafii/wmadapter/issues"
   },
-  "homepage": "https://github.com/arashashrafii/mimicgate#readme",
+  "homepage": "https://github.com/arashashrafii/wmadapter#readme",
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.4.1"

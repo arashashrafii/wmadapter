@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
     await router.stop()
 
 
-app = FastAPI(title="MimicGate", description="MimicGate — Web-to-API Gateway for AI Agents", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="Web Model Adapter", description="Web Model Adapter — Web-to-API Gateway for AI Agents", version="0.5.0", lifespan=lifespan)
 
 
 def _error(message, kind="invalid_request_error", code=None):

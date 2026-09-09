@@ -1,6 +1,6 @@
 import os
 from openai import OpenAI
-client=OpenAI(api_key='fixture', base_url=os.environ.get('MIMICGATE_TEST_URL', os.environ.get('MIMICGATE_TEST_URL', 'http://127.0.0.1:18761/v1')))
+client=OpenAI(api_key='fixture', base_url=os.environ.get('WMADAPTER_TEST_URL', os.environ.get('WMADAPTER_TEST_URL', 'http://127.0.0.1:18761/v1')))
 tools=[{'type':'function','function':{'name':'lookup','parameters':{'type':'object','properties':{}}}}]
 messages=[{'role':'user','content':'value?'}]
 a=client.chat.completions.create(model='deepseek-chat',messages=messages,tools=tools)

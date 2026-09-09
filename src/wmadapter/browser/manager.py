@@ -35,7 +35,7 @@ class BrowserManager:
 
     def __init__(
         self,
-        profile_path: str = ".mimicgate-profile",
+        profile_path: str = ".wmadapter-profile",
         headless: bool = False,
         executable_path: str | None = None,
         cdp_endpoint: str | None = None,
@@ -44,8 +44,8 @@ class BrowserManager:
         launch_url: str | None = None,
     ):
         self.profile_path = Path(canonical_path(profile_path))
-        login_mode = os.getenv("MIMICGATE_LOGIN") == "1"
-        xvfb = os.getenv("MIMICGATE_XVFB") == "1"
+        login_mode = os.getenv("WMADAPTER_LOGIN") == "1"
+        xvfb = os.getenv("WMADAPTER_XVFB") == "1"
         self.headless = False if login_mode or xvfb else headless
         self.executable_path = canonical_path(executable_path) if executable_path else None
         resolved_mode = mode if mode is not None else ("cdp" if cdp_endpoint else "managed")
@@ -68,7 +68,7 @@ class BrowserManager:
         self._stale_browser: Browser | None = None
         self._stale_playwright: Playwright | None = None
         self._lock_fd: int | None = None
-        self._lock_metadata_path = self.profile_path / ".mimicgate-profile.lock.json"
+        self._lock_metadata_path = self.profile_path / ".wmadapter-profile.lock.json"
         self._lock_token: str | None = None
         self._page_owners: dict[int, str] = {}
         self._page_claims: dict[tuple[str, str | None], Page] = {}
@@ -152,7 +152,7 @@ class BrowserManager:
     def _acquire_profile_lock(self) -> None:
         if self.mode == "cdp" or self._lock_fd is not None:
             return
-        lock_path = self.profile_path / ".mimicgate-profile.lock"
+        lock_path = self.profile_path / ".wmadapter-profile.lock"
         self.profile_path.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
@@ -180,7 +180,7 @@ class BrowserManager:
             "mode": "headless" if self.headless else "headed",
             "lock_token": self._lock_token,
         }
-        temporary = self.profile_path / f".mimicgate-profile.lock.{self._lock_token}.tmp"
+        temporary = self.profile_path / f".wmadapter-profile.lock.{self._lock_token}.tmp"
         try:
             temporary.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
             os.replace(temporary, self._lock_metadata_path)
@@ -220,7 +220,7 @@ class BrowserManager:
         if reason == "playwright_disconnect" and exit_status not in (None, 0):
             reason = "chromium_crash_or_oom"
         event_name = "auth.cleanup" if intentional else "auth.interrupted"
-        initiator = "mimicgate_cleanup" if intentional else "external"
+        initiator = "wmadapter_cleanup" if intentional else "external"
         if intentional:
             reason = self._cleanup_reason
         self._emit_lifecycle(event_name, initiator=initiator, reason=reason, exit_status=exit_status)
@@ -420,7 +420,7 @@ class BrowserManager:
                     raise RuntimeError("The Chromium CDP endpoint has no browser context")
                 self.context = self.browser.contexts[0]
                 self._register_liveness(self.context)
-                self._emit_lifecycle("browser.lifecycle", initiator="mimicgate", reason="connected_cdp")
+                self._emit_lifecycle("browser.lifecycle", initiator="wmadapter", reason="connected_cdp")
                 return self.context
             launch_kwargs = {
                 "user_data_dir": str(self.profile_path),
@@ -452,7 +452,7 @@ class BrowserManager:
             self.launch_info["pid"] = getattr(process, "pid", None)
             self._register_liveness(self.context)
             self.lifecycle_state = LifecycleState.RUNNING
-            self._emit_lifecycle("browser.lifecycle", initiator="mimicgate", reason="started")
+            self._emit_lifecycle("browser.lifecycle", initiator="wmadapter", reason="started")
         except Exception:
             try:
                 await self._stop_unlocked()
@@ -533,7 +533,7 @@ class BrowserManager:
         self.lifecycle_state = LifecycleState.STOPPING
         self._cleanup_in_progress = True
         self._cleanup_reason = cleanup_reason
-        self._emit_lifecycle("auth.cleanup", initiator="mimicgate_cleanup", reason=cleanup_reason)
+        self._emit_lifecycle("auth.cleanup", initiator="wmadapter_cleanup", reason=cleanup_reason)
         context = self.context
         playwright = self.playwright
         self.context = None

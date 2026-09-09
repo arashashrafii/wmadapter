@@ -9,7 +9,7 @@ It is opt-in and is never imported by the default test suite or CI.
 Live execution requires both a deliberate environment gate and a CLI flag:
 
 ```bash
-MIMICGATE_LIVE_COMPAT=1 python -m tests.live_compatibility \
+WMADAPTER_LIVE_COMPAT=1 python -m tests.live_compatibility \
   --confirm-live --base-url http://127.0.0.1:11556/v1 \
   --model deepseek-chat --format markdown --output live-report.md
 ```
@@ -22,12 +22,12 @@ cleanup is performed. Select `--group contract`, `--group tools`, or repeated
 
 With a base URL ending in `/v1`, preflight resolves to `/ready` and completion
 resolves to `/v1/chat/completions`. T49 requires the official `openai` Python
-package and `MIMICGATE_LIVE_API_KEY`; it constructs `OpenAI(...).chat.completions`
-and validates the typed response. T50 requires `MIMICGATE_OPENCLAW_COMMAND` as a
-JSON argv list and `MIMICGATE_OPENCLAW_CONFIG`; it runs exactly those arguments
+package and `WMADAPTER_LIVE_API_KEY`; it constructs `OpenAI(...).chat.completions`
+and validates the typed response. T50 requires `WMADAPTER_OPENCLAW_COMMAND` as a
+JSON argv list and `WMADAPTER_OPENCLAW_CONFIG`; it runs exactly those arguments
 via `subprocess` (no shell and no guessed flags), validates exit status and
 configured endpoint evidence, and runs an optional configured tool-loop using
-`MIMICGATE_OPENCLAW_TOOL_ARGS`.
+`WMADAPTER_OPENCLAW_TOOL_ARGS`.
 
 ## Evidence and assertions
 

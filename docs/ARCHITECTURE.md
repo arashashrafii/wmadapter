@@ -1,4 +1,4 @@
-# MimicGate — Web-to-API Gateway for AI Agents
+# Web Model Adapter — Web-to-API Gateway for AI Agents
 
 ## Goal
 An AI Compatibility Gateway: OpenCode, Hermes and OpenClaw consume standard
@@ -27,8 +27,8 @@ The client agent owns tool execution and sends the result on its next request.
   explicit mode always takes precedence at runtime. Managed mode always launches
   and owns its persistent context, while CDP mode only attaches and never
   acquires the profile lock or closes the user's context. Provider status reports
-  the resolved mode and ownership. See [GitHub Issue #22](https://github.com/arashashrafii/mimicgate/issues/22)
-  and [ADR/Issue #15](https://github.com/arashashrafii/mimicgate/issues/15)
+  the resolved mode and ownership. See [GitHub Issue #22](https://github.com/arashashrafii/wmadapter/issues/22)
+  and [ADR/Issue #15](https://github.com/arashashrafii/wmadapter/issues/15)
   for the migration decisions.
 - Managed authentication uses one canonical absolute profile and executable
   across a sequential headed-to-headless handoff. The managed BrowserManager
@@ -61,7 +61,7 @@ are metadata extensions; unknown token limits/usage remain null. See
 MIGRATION_V2.md for behavior corrections and unsupported sampling controls.
 
 No MCP server is needed for this boundary. A client may itself expose MCP
-functions as model tools; MimicGate simply preserves their schema and results.
+functions as model tools; Web Model Adapter simply preserves their schema and results.
 The OpenClaw plugin is optional session cleanup, not the model transport.
 
 The public gateway always uses the generic policy. It does not inspect message
@@ -69,7 +69,7 @@ text to identify OpenClaw, OpenCode or Hermes. Historical OpenClaw workflow
 guidance remains available only to direct internal helper callers and is not
 part of the agent-facing contract.
 
-MimicGate emulates the API boundary, rather than an agent's workflow. Its
+Web Model Adapter emulates the API boundary, rather than an agent's workflow. Its
 provider adapters may translate structured tools to a WebChat text marker and
 translate that marker back to a standard tool call, but they do not choose,
 execute or verify an agent's tools. OpenClaw-specific session cleanup remains
@@ -81,7 +81,7 @@ behavior remains unchanged.
 
 ### Model response recovery
 OpenClaw owns the research/action/verification loop and executes every tool.
-MimicGate preserves tool calls and results across requests. Both SSE and ordinary
+Web Model Adapter preserves tool calls and results across requests. Both SSE and ordinary
 responses use a shared bounded recovery step: an empty response or unresolved
 tool marker prompts one additional Web-chat completion with the original context.
 Persistent failure returns a provider error, never fabricated success. Normal
@@ -100,12 +100,12 @@ it does not classify every error or guarantee that a changed strategy is correct
   `login_attempt_id`, `browser_generation`, `page_count`, `auth_state`,
   `initiator`, `reason`, `pid`, and nullable `exit_status`. Page closure, page
   crash, context closure, Playwright/browser disconnect, display/session launch
-  failure, and intentional MimicGate cleanup are classified at this boundary.
+  failure, and intentional Web Model Adapter cleanup are classified at this boundary.
   A Playwright transport disconnect is labeled `playwright_disconnect` unless
   the managed Chromium process has a non-zero exit status, in which case it is
   labeled `chromium_crash_or_oom` and retains the PID/status evidence.
   Intentional stop and headed-to-headless handoff use
-  `initiator=mimicgate_cleanup`; external or unknown termination reports
+  `initiator=wmadapter_cleanup`; external or unknown termination reports
   `LOGIN_INTERRUPTED` and cancels the watcher.
 
 `LOGIN_INTERRUPTED` is terminal for the current login attempt. No watcher,

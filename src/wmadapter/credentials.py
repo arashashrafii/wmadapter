@@ -14,11 +14,11 @@ class CredentialStoreError(RuntimeError):
 
 
 def default_key_path() -> Path:
-    return Path(os.getenv("MIMICGATE_KEY_FILE", "~/.config/mimicgate/key")).expanduser()
+    return Path(os.getenv("WMADAPTER_KEY_FILE", "~/.config/wmadapter/key")).expanduser()
 
 
 def default_store_path() -> Path:
-    return Path(os.getenv("MIMICGATE_CREDENTIAL_FILE", "~/.local/share/mimicgate/credentials.json")).expanduser()
+    return Path(os.getenv("WMADAPTER_CREDENTIAL_FILE", "~/.local/share/wmadapter/credentials.json")).expanduser()
 
 
 def _load_or_create_key(path: Path) -> bytes:

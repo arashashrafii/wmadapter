@@ -13,7 +13,7 @@
       "id": "112afef3-2f88-49ce-bb83-ef7029e2cc94",
       "parentId": null,
       "timestamp": "2026-09-04T22:18:02.428Z",
-      "provider": "webbridge",
+      "provider": "wmadapter",
       "modelId": "deepseek-chat"
     },
     {
@@ -28,7 +28,7 @@
       "customType": "model-snapshot",
       "data": {
         "timestamp": 1788560282512,
-        "provider": "webbridge",
+        "provider": "wmadapter",
         "modelApi": "openai-completions",
         "modelId": "deepseek-chat"
       },
@@ -70,7 +70,7 @@
           }
         ],
         "api": "openai-completions",
-        "provider": "webbridge",
+        "provider": "wmadapter",
         "model": "deepseek-chat",
         "usage": {
           "input": 0,
@@ -147,7 +147,7 @@
           }
         ],
         "api": "openai-completions",
-        "provider": "webbridge",
+        "provider": "wmadapter",
         "model": "deepseek-chat",
         "usage": {
           "input": 0,
@@ -220,7 +220,7 @@
           }
         ],
         "api": "openai-completions",
-        "provider": "webbridge",
+        "provider": "wmadapter",
         "model": "deepseek-chat",
         "usage": {
           "input": 0,
@@ -295,7 +295,7 @@
           }
         ],
         "api": "openai-completions",
-        "provider": "webbridge",
+        "provider": "wmadapter",
         "model": "deepseek-chat",
         "usage": {
           "input": 0,

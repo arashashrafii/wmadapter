@@ -1,6 +1,6 @@
-from mimicgate import main
-from mimicgate.providers.base import ChatProvider
-from mimicgate.providers.router import ProviderRouter
+from wmadapter import main
+from wmadapter.providers.base import ChatProvider
+from wmadapter.providers.router import ProviderRouter
 
 class Fixture(ChatProvider):
     name = 'deepseek'

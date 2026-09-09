@@ -5,10 +5,10 @@ server:
   api_key:
 
 browser:
-  # managed uses MimicGate's persistent profile; use cdp to attach to CDP.
+  # managed uses Web Model Adapter's persistent profile; use cdp to attach to CDP.
   mode: managed
   headless: true
-  profile_dir: ~/.local/share/mimicgate/profiles/deepseek
+  profile_dir: ~/.local/share/wmadapter/profiles/deepseek
   executable_path:
   cdp_endpoint:
   restart_retries: 1
@@ -27,7 +27,7 @@ qwen:
   chat_url: https://chat.qwen.ai/
   headless: false
   auth: google
-  profile_dir: ~/.local/share/mimicgate/profiles/qwen
+  profile_dir: ~/.local/share/wmadapter/profiles/qwen
 
 providers:
   default: deepseek
@@ -36,6 +36,6 @@ providers:
 
 logging:
   level: INFO
-  file: mimicgate.log
+  file: wmadapter.log
   max_bytes: 1000000
   backup_count: 3

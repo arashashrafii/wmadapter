@@ -1,11 +1,11 @@
-# MimicGate — Web-to-API Gateway for AI Agents
+# Web Model Adapter — Web-to-API Gateway for AI Agents
 
-MimicGate is a local OpenAI-compatible gateway for authenticated DeepSeek Web
+Web Model Adapter is a local OpenAI-compatible gateway for authenticated DeepSeek Web
 and Qwen Web sessions. It drives provider web pages through a user-owned
 browser profile and exposes the verified HTTP boundary to OpenCode, Hermes,
 OpenClaw, and compatible clients. It does not use the paid DeepSeek API.
-The historical `mimicgate` command and import namespace, configuration
-paths, and environment variables remain supported compatibility aliases.
+The project command, import namespace, configuration paths, and environment
+variables use the `wmadapter` name.
 
 The provider side is Web-only: DeepSeek and Qwen are accessed through their
 browser chat pages.
@@ -32,7 +32,7 @@ The gateway depends on authenticated sessions and the providers' current web
 interfaces. CAPTCHA interaction is user-driven. Selectors, session validity,
 upstream throttling, and provider availability can change without notice.
 
-## MimicGate installer
+## Web Model Adapter installer
 
 Interactive setup:
 
@@ -47,11 +47,11 @@ It does not download Playwright's separate Chromium binary. Playwright is used
 only as the Python library that controls the already-running Chromium session.
 It prints a command that starts local Chromium with an isolated profile and a
 loopback-only debugging endpoint. Complete login in that Chromium window and
-leave it open while MimicGate runs. MimicGate attaches to that session; it does
+leave it open while Web Model Adapter runs. Web Model Adapter attaches to that session; it does
 not launch a second browser or attempt to bypass the site's CAPTCHA.
 
 Browser selection is explicit in config.yaml: browser.mode: managed (the
-default) uses MimicGate's persistent profile, while browser.mode: cdp attaches
+default) uses Web Model Adapter's persistent profile, while browser.mode: cdp attaches
 to a user-launched Chromium configured by browser.cdp_endpoint. Existing
 configurations that set cdp_endpoint without mode are interpreted as cdp for
 backward compatibility. In Stage 1 this is only the configuration and
@@ -61,13 +61,13 @@ Managed authentication uses a sequential handoff on the same canonical
 profile and executable: the headed login context is stopped and its exclusive
 profile lock is released before the headless runtime starts. The headless
 context probes the authenticated session after launch. If launch or the probe
-fails, MimicGate stops the failed context, restores headed mode on the same
+fails, Web Model Adapter stops the failed context, restores headed mode on the same
 profile where possible, and reports the handoff failure. CDP mode remains a
 separate operator-selected attach path and does not use this handoff or close
 the user's browser.
 
 The local installer creates a user-level systemd service named
-`mimicgate.service` for compatibility. Remove the local installation
+`wmadapter.service` for compatibility. Remove the local installation
 with `./uninstall.sh`; systemd teardown is bounded and best-effort, so failures
 are reported while safe local cleanup continues.
 
@@ -75,27 +75,27 @@ are reported while safe local cleanup continues.
 ./uninstall.sh
 ```
 
-MimicGate accepts standard OpenAI-compatible requests from local clients. The
+Web Model Adapter accepts standard OpenAI-compatible requests from local clients. The
 provider is a free Web Chat adapter, not the paid DeepSeek API provider.
 
 ## Linux quick start
 
 ```bash
-git clone https://github.com/arashashrafii/mimicgate.git
-cd mimicgate
+git clone https://github.com/arashashrafii/wmadapter.git
+cd wmadapter
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -e .
 # Install Chromium with your Linux package manager if it is not already present.
-# Do not run `playwright install chromium`: MimicGate attaches to system Chromium.
+# Do not run `playwright install chromium`: Web Model Adapter attaches to system Chromium.
 cp config.example.yaml config.yaml
 ```
 
 For DeepSeek Web:
 
 ```bash
-./.venv/bin/mimicgate auth deepseek
+./.venv/bin/wmadapter auth deepseek
 ```
 
 Complete login in the opened browser. No DeepSeek API key is required.
@@ -103,7 +103,7 @@ Complete login in the opened browser. No DeepSeek API key is required.
 Then start the bridge:
 
 ```bash
-.venv/bin/mimicgate
+.venv/bin/wmadapter
 ```
 
 The server defaults to `http://127.0.0.1:11555`.
@@ -114,16 +114,16 @@ environment and optional user-level systemd service described here.
 For automatic login recovery without storing secrets in `config.yaml`, save encrypted local credentials outside the repository:
 
 ```bash
-.venv/bin/mimicgate credentials set
+.venv/bin/wmadapter credentials set
 ```
 
-The credential key is stored under `~/.config/mimicgate/` and the encrypted credential file under `~/.local/share/mimicgate/` by default.
+The credential key is stored under `~/.config/wmadapter/` and the encrypted credential file under `~/.local/share/wmadapter/` by default.
 
-Canonical environment variables use the `MIMICGATE_*` prefix, including
-`MIMICGATE_CONFIG`, `MIMICGATE_LOGIN`, `MIMICGATE_XVFB`, `MIMICGATE_KEY_FILE`,
-`MIMICGATE_CREDENTIAL_FILE`, and `MIMICGATE_URL`. The historical
-`MIMICGATE_*` names remain fallbacks; when both are set, the MimicGate name
-takes precedence. Existing `mimicgate` profile, credential, log,
+Canonical environment variables use the `WMADAPTER_*` prefix, including
+`WMADAPTER_CONFIG`, `WMADAPTER_LOGIN`, `WMADAPTER_XVFB`, `WMADAPTER_KEY_FILE`,
+`WMADAPTER_CREDENTIAL_FILE`, and `WMADAPTER_URL`. The historical
+`WMADAPTER_*` names remain fallbacks; when both are set, the Web Model Adapter name
+takes precedence. Existing `wmadapter` profile, credential, log,
 service, and plugin paths remain valid compatibility paths.
 
 ## Qwen authentication
@@ -131,10 +131,10 @@ service, and plugin paths remain valid compatibility paths.
 Create a persistent Qwen browser session with manual or Google authentication:
 
 ```bash
-.venv/bin/mimicgate auth qwen --google
+.venv/bin/wmadapter auth qwen --google
 ```
 
-Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.mimicgate-profile/qwen`.
+Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.wmadapter-profile/qwen`.
 
 ## Test
 
@@ -163,7 +163,7 @@ curl http://127.0.0.1:11555/v1/chat/completions \
 
 ## Important limitations
 
-MimicGate's Web adapters depend on website DOM and authentication behavior. Tool-call
+Web Model Adapter's Web adapters depend on website DOM and authentication behavior. Tool-call
 simulation is deliberately allowlisted and the calling agent executes returned
 tools; unresolved tool markers trigger bounded recovery and then a provider error.
 

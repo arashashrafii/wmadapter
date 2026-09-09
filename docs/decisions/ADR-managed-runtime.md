@@ -2,13 +2,13 @@
 
 Status: accepted (phase 1)
 
-MimicGate managed mode uses the Chromium binary installed by Playwright. It
+Web Model Adapter managed mode uses the Chromium binary installed by Playwright. It
 does not search for or attach to a user's Chrome/Chromium installation. The
 installer provisions that binary with `playwright install chromium` and starts
 login through the existing Playwright controller.
 
 Each provider receives a separate canonical profile under
-`~/.local/share/mimicgate/profiles/<provider>`. The profile is never the user's
+`~/.local/share/wmadapter/profiles/<provider>`. The profile is never the user's
 default browser profile. A provider profile is protected by an advisory lock
 and diagnostic metadata containing only owner PID/process group, executable,
 profile, mode, start time, and a lock token. Stale metadata may be replaced

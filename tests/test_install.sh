@@ -5,7 +5,7 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 script="$repo_dir/install.sh"
 
 bash -n "$script"
-grep -q 'MIMICGATE_LOGIN=1 .venv/bin/mimicgate auth' "$script"
+grep -q 'WMADAPTER_LOGIN=1 .venv/bin/wmadapter auth' "$script"
 grep -q 'interactive_session_unavailable' "$script"
 grep -q 'Environment=WAYLAND_DISPLAY=' "$script"
 grep -q 'Environment=XAUTHORITY=' "$script"

@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from mimicgate import main
-from mimicgate.providers.base import ChatProvider
-from mimicgate.providers.router import ProviderRouter
+from wmadapter import main
+from wmadapter.providers.base import ChatProvider
+from wmadapter.providers.router import ProviderRouter
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "openai_compatibility.json"
@@ -82,8 +82,8 @@ class OpenAICompatibilityL1Tests(unittest.TestCase):
 
 class OpenAICompatibilityL2Tests(unittest.TestCase):
     @unittest.skipUnless(
-        os.environ.get("MIMICGATE_OPENAI_COMPAT_L2") == "1",
-        "BLOCKED: set MIMICGATE_OPENAI_COMPAT_L2=1 with a running local fixture endpoint",
+        os.environ.get("WMADAPTER_OPENAI_COMPAT_L2") == "1",
+        "BLOCKED: set WMADAPTER_OPENAI_COMPAT_L2=1 with a running local fixture endpoint",
     )
     def test_official_openai_python_sdk_black_box(self):
         try:
@@ -93,7 +93,7 @@ class OpenAICompatibilityL2Tests(unittest.TestCase):
 
         client = OpenAI(
             api_key="fixture",
-            base_url=os.environ.get("MIMICGATE_TEST_URL", "http://127.0.0.1:18761/v1"),
+            base_url=os.environ.get("WMADAPTER_TEST_URL", "http://127.0.0.1:18761/v1"),
         )
         response = client.chat.completions.create(
             model="deepseek-chat", messages=[{"role": "user", "content": "hello"}]

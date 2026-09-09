@@ -182,7 +182,7 @@ async def run_manual_auth(
             clicked = await _click_first_visible(page, target.google_selectors)
             if not clicked:
                 print("Google sign-in button was not detected automatically. Click it manually in the browser.")
-        print(f"Complete {provider} authentication in the opened browser; MimicGate will continue automatically.")
+        print(f"Complete {provider} authentication in the opened browser; Web Model Adapter will continue automatically.")
         await _wait_for_auth(provider, page, target, interruption=interruption)
         async def auth_probe(page) -> bool:
             return await _stable_auth_probe(provider, page, target)

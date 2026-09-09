@@ -3,9 +3,9 @@ set -euo pipefail
 
 API_HOST="127.0.0.1"
 API_PORT="11555"
-REPO_URL="https://github.com/arashashrafii/mimicgate"
+REPO_URL="https://github.com/arashashrafii/wmadapter"
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="mimicgate.service"
+SERVICE_NAME="wmadapter.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
 DISPLAY_VALUE="${DISPLAY:-}"
@@ -102,7 +102,7 @@ server:
 browser:
   mode: managed
   headless: ${headless}
-  profile_dir: ~/.local/share/mimicgate/profiles/${provider}
+  profile_dir: ~/.local/share/wmadapter/profiles/${provider}
   executable_path: ${executable_path}
   cdp_endpoint: ${cdp_endpoint:-null}
   restart_retries: 1
@@ -113,7 +113,7 @@ provider_choice: ${provider}
 qwen:
   chat_url: ${chat_url}
   auth: google
-  profile_dir: ~/.local/share/mimicgate/profiles/qwen
+  profile_dir: ~/.local/share/wmadapter/profiles/qwen
   headless: ${headless}
 
 deepseek:
@@ -130,7 +130,7 @@ providers:
 
 logging:
   level: INFO
-  file: mimicgate.log
+  file: wmadapter.log
   max_bytes: 1000000
   backup_count: 3
 YAML
@@ -167,20 +167,20 @@ write_service() {
   mkdir -p "$SERVICE_DIR"
   cat > "$SERVICE_FILE" <<SERVICE
 [Unit]
-Description=MimicGate — Web-to-API Gateway for AI Agents
+Description=Web Model Adapter — Web-to-API Gateway for AI Agents
 After=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=${PROJECT_DIR}
 EnvironmentFile=-${PROJECT_DIR}/.env
-Environment=MIMICGATE_LOGIN=${login_mode}
+Environment=WMADAPTER_LOGIN=${login_mode}
 Environment=DISPLAY=${DISPLAY_VALUE}
 Environment=WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}
 Environment=XAUTHORITY=${XAUTHORITY:-}
 Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
 Environment=DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}
-ExecStart=${PROJECT_DIR}/.venv/bin/mimicgate
+ExecStart=${PROJECT_DIR}/.venv/bin/wmadapter
 Restart=on-failure
 RestartSec=5
 
@@ -199,7 +199,7 @@ run_foreground_auth() {
     echo "interactive_session_unavailable: DISPLAY or WAYLAND_DISPLAY is not set" >&2
     return 1
   fi
-  MIMICGATE_LOGIN=1 .venv/bin/mimicgate auth "$PROVIDER"
+  WMADAPTER_LOGIN=1 .venv/bin/wmadapter auth "$PROVIDER"
 }
 stop_service() {
   systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true
@@ -230,8 +230,8 @@ wait_health() {
 run_smoke() {
   curl -fsS "http://${API_HOST}:${API_PORT}/v1/chat/completions" \
     -H 'Content-Type: application/json' \
-    -d "{\"model\":\"${SMOKE_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply exactly: MIMICGATE_OK\"}]}" >/tmp/mimicgate-smoke.json
-  grep -q 'MIMICGATE_OK' /tmp/mimicgate-smoke.json
+    -d "{\"model\":\"${SMOKE_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply exactly: WMADAPTER_OK\"}]}" >/tmp/wmadapter-smoke.json
+  grep -q 'WMADAPTER_OK' /tmp/wmadapter-smoke.json
 }
 need curl
 need systemctl
@@ -240,7 +240,7 @@ API_PORT="$(find_free_port "$API_PORT")"
 API_URL="http://${API_HOST}:${API_PORT}/v1"
 export API_PORT
 
-say "MimicGate — Web-to-API Gateway for AI Agents installer"
+say "Web Model Adapter — Web-to-API Gateway for AI Agents installer"
 say "Local installation"
 
 say "Choose free chatbot provider:"
@@ -267,7 +267,7 @@ say "Manual browser authentication selected; no chatbot credentials will be stor
 
 install_current_os
 stop_service
-say "MimicGate will open its dedicated Playwright Chromium profile for login."
+say "Web Model Adapter will open its dedicated Playwright Chromium profile for login."
 if ! run_foreground_auth; then
   echo "Interactive authentication failed; service was not started." >&2
   exit 1
@@ -277,13 +277,13 @@ write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_
 start_service 0
 say "Waiting for API health after login..."
 if ! wait_health; then
-  echo "Server did not become healthy after login. Check the legacy mimicgate.install.log." >&2
+  echo "Server did not become healthy after login. Check the legacy wmadapter.install.log." >&2
   exit 1
 fi
 
 say "Running complete smoke test..."
 if run_smoke; then
-say "MimicGate — Web-to-API Gateway for AI Agents: ${REPO_URL}"
+say "Web Model Adapter — Web-to-API Gateway for AI Agents: ${REPO_URL}"
   say "API URL: ${API_URL}"
   say "Health: http://${API_HOST}:${API_PORT}/health"
   say "Models: http://${API_HOST}:${API_PORT}/v1/models"

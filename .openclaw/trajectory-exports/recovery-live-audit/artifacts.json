@@ -4,7 +4,7 @@
   "generatedAt": "2026-09-05T06:52:42.852Z",
   "traceId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
   "sessionId": "ed47ac28-5bf3-4012-bc0b-fadc6df3a928",
-  "sessionKey": "agent:main:webbridge-recovery-live-20260905",
+  "sessionKey": "agent:main:wmadapter-recovery-live-20260905",
   "finalStatus": "interrupted",
   "aborted": true,
   "externalAbort": false,

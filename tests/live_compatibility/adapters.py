@@ -10,10 +10,10 @@ from pathlib import Path
 
 def run_openai_sdk(context, payload):
     if importlib.util.find_spec("openai") is None: return "BLOCKED", "official OpenAI SDK is unavailable"
-    if not os.environ.get("MIMICGATE_LIVE_API_KEY"): return "BLOCKED", "MIMICGATE_LIVE_API_KEY is not configured"
+    if not os.environ.get("WMADAPTER_LIVE_API_KEY"): return "BLOCKED", "WMADAPTER_LIVE_API_KEY is not configured"
     from openai import OpenAI
     try:
-        response = OpenAI(api_key=os.environ["MIMICGATE_LIVE_API_KEY"], base_url=context.base_url).chat.completions.create(**payload)
+        response = OpenAI(api_key=os.environ["WMADAPTER_LIVE_API_KEY"], base_url=context.base_url).chat.completions.create(**payload)
     except Exception as error:
         status = getattr(error, "status_code", None)
         if status in {401, 408, 429, 502, 503, 504}:
@@ -24,11 +24,11 @@ def run_openai_sdk(context, payload):
 
 
 def run_openclaw(context, message: str, include_tools: bool = False):
-    command = os.environ.get("MIMICGATE_OPENCLAW_COMMAND")
-    config = os.environ.get("MIMICGATE_OPENCLAW_CONFIG")
-    if not command or not config: return "BLOCKED", "MIMICGATE_OPENCLAW_COMMAND and MIMICGATE_OPENCLAW_CONFIG are required"
+    command = os.environ.get("WMADAPTER_OPENCLAW_COMMAND")
+    config = os.environ.get("WMADAPTER_OPENCLAW_CONFIG")
+    if not command or not config: return "BLOCKED", "WMADAPTER_OPENCLAW_COMMAND and WMADAPTER_OPENCLAW_CONFIG are required"
     if not Path(config).is_file(): return "BLOCKED", "configured OpenClaw config file is unavailable"
-    try: args = json.loads(command); extra = json.loads(os.environ.get("MIMICGATE_OPENCLAW_TOOL_ARGS", "[]")) if include_tools else []
+    try: args = json.loads(command); extra = json.loads(os.environ.get("WMADAPTER_OPENCLAW_TOOL_ARGS", "[]")) if include_tools else []
     except json.JSONDecodeError: return "BLOCKED", "OpenClaw command configuration must be a JSON argument list"
     if not isinstance(args, list) or not all(isinstance(item, str) for item in args): return "BLOCKED", "OpenClaw command must be a JSON string argument list"
     try:
@@ -41,7 +41,7 @@ def run_openclaw(context, message: str, include_tools: bool = False):
         return "FAIL", "OpenClaw did not return JSON execution evidence"
     meta = result.get("result", {}).get("meta", {}).get("agentMeta", {})
     if result.get("status") != "ok": return "FAIL", "OpenClaw reported an unsuccessful run"
-    if meta.get("provider") != "mimicgate" or meta.get("model") != context.model:
+    if meta.get("provider") != "wmadapter" or meta.get("model") != context.model:
         return "FAIL", "OpenClaw execution evidence did not identify the configured provider/model"
     if not result.get("result", {}).get("payloads"): return "FAIL", "OpenClaw returned no response payload"
     return "PASS", "OpenClaw completed with verified provider/model execution evidence"

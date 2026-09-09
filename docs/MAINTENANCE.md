@@ -20,14 +20,14 @@ Use the following taxonomy when triaging a failed headed login:
 - `playwright_disconnect`: the Playwright transport disconnected without process-exit evidence.
 - `chromium_crash_or_oom`: managed Chromium exited with a non-zero status.
 - `display_session_failure`: the headed browser could not be launched or displayed.
-- `mimicgate_cleanup`: expected stop or headed-to-headless handoff, recorded as the event initiator.
+- `wmadapter_cleanup`: expected stop or headed-to-headless handoff, recorded as the event initiator.
 
 The headed-to-headless handoff records `reason=handoff` and closes the headed
 context once before opening the same provider profile headlessly. Cleanup
 callbacks must never be reported as `user_close`.
 
 `LOGIN_INTERRUPTED` deliberately does not relaunch Chromium. Use the explicit
-login retry command to create a new attempt. The `mimicgate_cleanup` initiator
+login retry command to create a new attempt. The `wmadapter_cleanup` initiator
 marks expected stop/handoff callbacks and is not treated as an interruption.
 
 Supported target:

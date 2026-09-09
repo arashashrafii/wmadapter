@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from mimicgate.browser.distribution import (
+from wmadapter.browser.distribution import (
     Artifact,
     SUPPORTED_PLATFORM,
     activate_atomically,
@@ -20,8 +20,8 @@ from mimicgate.browser.distribution import (
     verify_artifact,
     verify_manifest,
 )
-from mimicgate.browser.distribution import _exclusive_lock
-from mimicgate.installers import UnsupportedPlatformError, installer_adapter
+from wmadapter.browser.distribution import _exclusive_lock
+from wmadapter.installers import UnsupportedPlatformError, installer_adapter
 
 
 def _lock_competitor(lock_path, released, result):
@@ -30,10 +30,10 @@ def _lock_competitor(lock_path, released, result):
 
 
 class DistributionTests(unittest.TestCase):
-    def _manifest(self, payload=b"mimicgate"):
+    def _manifest(self, payload=b"wmadapter"):
         return {
             "schema_version": 1,
-            "product": "mimicgate-browser",
+            "product": "wmadapter-browser",
             "playwright_version": "1.63.0",
             "browser": "chromium",
             "platform": dict(SUPPORTED_PLATFORM),
@@ -49,8 +49,8 @@ class DistributionTests(unittest.TestCase):
     def test_artifact_sha256_and_size(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "browser.bin"
-            path.write_bytes(b"mimicgate")
-            artifact = Artifact("offline", hashlib.sha256(b"mimicgate").hexdigest(), 9)
+            path.write_bytes(b"wmadapter")
+            artifact = Artifact("offline", hashlib.sha256(b"wmadapter").hexdigest(), 9)
             verify_artifact(path, artifact)
             with self.assertRaises(ValueError):
                 verify_artifact(path, Artifact("offline", "0" * 64, 9))
@@ -71,8 +71,8 @@ class DistributionTests(unittest.TestCase):
             (staging / "browser").write_text("ok")
             activate_atomically(staging, root / "active")
             self.assertEqual((root / "active" / "browser").read_text(), "ok")
-        with patch("mimicgate.installers.platform.machine", return_value="x86_64"), patch(
-            "mimicgate.installers.platform.freedesktop_os_release",
+        with patch("wmadapter.installers.platform.machine", return_value="x86_64"), patch(
+            "wmadapter.installers.platform.freedesktop_os_release",
             return_value={"ID": "ubuntu", "VERSION_ID": "24.04"},
         ):
             self.assertEqual(installer_adapter("linux").platform_name, "linux")
@@ -91,7 +91,7 @@ class DistributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
             source = root / "bundle"
-            source.write_bytes(b"mimicgate")
+            source.write_bytes(b"wmadapter")
             manifest = parse_manifest(self._manifest())
             key = distribution_key(manifest.playwright_version, manifest.artifact.sha256)
             cached = cache_artifact(source, root / "cache", key, manifest.artifact)
@@ -103,11 +103,11 @@ class DistributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
             source = root / "bundle"
-            source.write_bytes(b"mimicgate")
+            source.write_bytes(b"wmadapter")
             result = preflight_bundle(self._manifest(), source, root / "cache", root / "active")
             self.assertEqual(result.source, source)
             staged = stage_artifact(source, result.manifest.artifact, root / "staging")
-            self.assertEqual(staged.read_bytes(), b"mimicgate")
+            self.assertEqual(staged.read_bytes(), b"wmadapter")
 
     def test_atomic_activation_replaces_previous_payload(self):
         with tempfile.TemporaryDirectory() as root:
@@ -130,16 +130,16 @@ class DistributionTests(unittest.TestCase):
         cases = (("22.04", "x86_64"), ("24.04", "aarch64"))
         for release, machine in cases:
             with self.subTest(release=release, machine=machine), patch(
-                "mimicgate.installers.platform.machine", return_value=machine
+                "wmadapter.installers.platform.machine", return_value=machine
             ), patch(
-                "mimicgate.installers.platform.freedesktop_os_release",
+                "wmadapter.installers.platform.freedesktop_os_release",
                 return_value={"ID": "ubuntu", "VERSION_ID": release},
             ), self.assertRaises(UnsupportedPlatformError):
                 installer_adapter("linux")
 
     def test_linux_platform_gate_rejects_non_ubuntu(self):
-        with patch("mimicgate.installers.platform.machine", return_value="x86_64"), patch(
-            "mimicgate.installers.platform.freedesktop_os_release",
+        with patch("wmadapter.installers.platform.machine", return_value="x86_64"), patch(
+            "wmadapter.installers.platform.freedesktop_os_release",
             return_value={"ID": "debian", "VERSION_ID": "24.04"},
         ), self.assertRaises(UnsupportedPlatformError):
             installer_adapter("linux")

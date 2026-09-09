@@ -1,4 +1,4 @@
-# MimicGate Roadmap
+# Web Model Adapter Roadmap
 
 This roadmap is organized so coding can continue directly from GitHub issues.
 

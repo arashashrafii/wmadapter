@@ -13,7 +13,7 @@ class InstallerAdapter:
     platform_name = "generic"
 
     def browser_install_message(self) -> str:
-        return "MimicGate installs and verifies its dedicated Playwright browser; it never uses a user Chrome installation."
+        return "Web Model Adapter installs and verifies its dedicated Playwright browser; it never uses a user Chrome installation."
 
 
 class LinuxInstaller(InstallerAdapter):

@@ -13,7 +13,7 @@ def canonical_path(value: str | Path) -> str:
 
 
 def provider_profile_dir(provider: str) -> str:
-    root = Path(os.getenv("MIMICGATE_DATA_DIR", "~/.local/share/mimicgate")).expanduser()
+    root = Path(os.getenv("WMADAPTER_DATA_DIR", "~/.local/share/wmadapter")).expanduser()
     return str(root / "profiles" / provider)
 
 
@@ -24,7 +24,7 @@ class ServerConfig(BaseModel):
 
 
 class BrowserConfig(BaseModel):
-    # managed uses MimicGate's existing persistent browser profile; cdp attaches
+    # managed uses Web Model Adapter's existing persistent browser profile; cdp attaches
     # to an already-running Chromium exposed through CDP.
     mode: Literal["managed", "cdp"] = "managed"
     headless: bool = True
@@ -70,7 +70,7 @@ class ProviderConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     level: str = "INFO"
-    file: str | None = "mimicgate.log"
+    file: str | None = "wmadapter.log"
     max_bytes: int = Field(default=1_000_000, ge=10_000)
     backup_count: int = Field(default=3, ge=0, le=20)
 
@@ -89,7 +89,7 @@ class AppConfig(BaseModel):
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     data: dict[str, Any] = {}
-    p = Path(path or os.getenv("MIMICGATE_CONFIG", "config.yaml"))
+    p = Path(path or os.getenv("WMADAPTER_CONFIG", "config.yaml"))
     if p.exists():
         data = yaml.safe_load(p.read_text()) or {}
     try:

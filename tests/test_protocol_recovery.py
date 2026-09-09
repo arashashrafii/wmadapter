@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock
 
-from mimicgate.main import Message, _resolve_web_answer
+from wmadapter.main import Message, _resolve_web_answer
 
 
 TOOLS = [{"type": "function", "function": {"name": "exec"}}]
@@ -9,7 +9,7 @@ TOOLS = [{"type": "function", "function": {"name": "exec"}}]
 
 class ProtocolRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_duplicate_action_after_identical_results_requests_new_strategy(self):
-        from mimicgate.main import _extract_tool_call
+        from wmadapter.main import _extract_tool_call
         answer = '<tool_call>{"name":"exec","arguments":{"command":"nc localhost 8080"}}</tool_call>'
         messages = [Message(role="user", content="Control VLC")]
         for _ in range(2):
@@ -84,7 +84,7 @@ class ProtocolRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_research_action_verification_round_trip(self):
         provider = AsyncMock()
         messages = [Message(role="user", content="Research, act, and verify")]
-        from mimicgate.main import _prompt
+        from wmadapter.main import _prompt
         for command, result in [("research", "official instructions"), ("action", "started"), ("verify", "confirmed")]:
             answer = '<tool_call>{"name":"exec","arguments":{"command":"' + command + '"}}</tool_call>'
             call, _ = await _resolve_web_answer(provider, answer, messages, TOOLS, "a", _prompt(messages, tools=TOOLS))

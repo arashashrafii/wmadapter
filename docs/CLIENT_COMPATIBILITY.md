@@ -20,8 +20,8 @@ Point the official OpenAI Python SDK at a running local fixture endpoint and
 opt in explicitly:
 
 ```bash
-MIMICGATE_OPENAI_COMPAT_L2=1 \
-MIMICGATE_TEST_URL=http://127.0.0.1:18761/v1 \
+WMADAPTER_OPENAI_COMPAT_L2=1 \
+WMADAPTER_TEST_URL=http://127.0.0.1:18761/v1 \
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_openai_compatibility.OpenAICompatibilityL2Tests
 ```
 

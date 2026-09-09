@@ -2,7 +2,7 @@
 
 Status: accepted (release contract; artifact publication pending)
 
-MimicGate uses only a dedicated Playwright browser artifact. It never falls
+Web Model Adapter uses only a dedicated Playwright browser artifact. It never falls
 back to Chrome or Chromium discovered on the user's PATH. Distribution lookup
 checks sources in this order: offline bundle, verified local cache, primary
 CDN, then a signed mirror.

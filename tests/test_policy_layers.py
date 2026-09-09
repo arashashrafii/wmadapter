@@ -1,10 +1,10 @@
 import unittest
 
-from mimicgate.providers.normalizer import ToolProtocolNormalizer
-from mimicgate.providers.policy import ClientPolicy, detect_client_policy
-from mimicgate.providers.protocol import _prompt
-from mimicgate.providers.contract import Message
-from mimicgate.providers.recovery import ToolCallRecovery
+from wmadapter.providers.normalizer import ToolProtocolNormalizer
+from wmadapter.providers.policy import ClientPolicy, detect_client_policy
+from wmadapter.providers.protocol import _prompt
+from wmadapter.providers.contract import Message
+from wmadapter.providers.recovery import ToolCallRecovery
 
 
 class PolicyLayerTests(unittest.IsolatedAsyncioTestCase):
@@ -36,12 +36,12 @@ class PolicyLayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(hasattr(ToolCallRecovery(), "resolve"))
 
     def test_legacy_protocol_name_is_not_recovery_entrypoint(self):
-        from mimicgate.providers.protocol import _legacy_resolve_web_answer
+        from wmadapter.providers.protocol import _legacy_resolve_web_answer
         self.assertTrue(callable(_legacy_resolve_web_answer))
 
     def test_provider_protocol_owns_stable_recovery_dependency(self):
-        from mimicgate.service import DeepSeekService
-        from mimicgate.config import load_config
+        from wmadapter.service import DeepSeekService
+        from wmadapter.config import load_config
         provider = DeepSeekService(load_config('/nonexistent'))
         self.assertIs(provider.protocol.recovery, provider.protocol.recovery)
 
@@ -49,7 +49,7 @@ class PolicyLayerTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import AsyncMock, patch
         provider = type("Provider", (), {})()
         provider.complete = AsyncMock(return_value="repaired")
-        with patch("mimicgate.providers.protocol._legacy_resolve_web_answer", side_effect=AssertionError):
+        with patch("wmadapter.providers.protocol._legacy_resolve_web_answer", side_effect=AssertionError):
             call, visible = await ToolCallRecovery().resolve(
                 provider, "", [], None, "session", "USER: hi"
             )

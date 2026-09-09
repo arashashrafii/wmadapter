@@ -1,4 +1,4 @@
-# MimicGate Proof of Concept Plan
+# Web Model Adapter Proof of Concept Plan
 
 ## Goal
 Validate whether a browser-backed OpenAI-compatible gateway can use DeepSeek Web as a provider.

@@ -134,7 +134,7 @@ class DeepSeekChat:
         if previous_count:
                     previous_text = await self._response_text(response_locator.last)
 
-        attachment_directory = tempfile.TemporaryDirectory(prefix="mimicgate-image-") if attachments else None
+        attachment_directory = tempfile.TemporaryDirectory(prefix="wmadapter-image-") if attachments else None
         try:
             if attachments:
                 await self._attach_data_images(attachments, attachment_directory.name)
