@@ -75,6 +75,10 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertEqual(len(report["results"]), 50)
         self.assertTrue(all(item["status"] == "PASS" for item in report["results"]))
 
+    def test_malformed_messages_case_preserves_empty_message_list(self):
+        case = next(case for case in CASES if case.case_id == "T45")
+        self.assertEqual(case.payload("deepseek-chat")["messages"], [])
+
     def test_readiness_preflight_blocks_without_case_requests(self):
         class Down:
             def ready(self): return TransportResponse(503, "application/json", "{}")

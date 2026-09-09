@@ -28,7 +28,7 @@ GROUPS = {"contract": "Contract / shape", "normalization": "Semantic normalizati
 
 def _builder(case_id: str, messages=None, **extra):
     def build(model: str) -> dict:
-        payload = {"model": model, "messages": messages or [{"role": "user", "content": f"compatibility fixture {case_id}"}]}
+        payload = {"model": model, "messages": messages if messages is not None else [{"role": "user", "content": f"compatibility fixture {case_id}"}]}
         payload.update(extra)
         return payload
     build.__name__ = f"build_{case_id.lower()}"
