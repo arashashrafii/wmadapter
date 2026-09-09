@@ -1159,6 +1159,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
                 "--disable-extensions",
                 "--no-first-run",
             ],
+            ignore_default_args=["--no-sandbox"],
         )
         headless_chromium.launch_persistent_context.assert_awaited_once_with(
             user_data_dir=profile,
@@ -1222,6 +1223,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         kwargs = chromium.launch_persistent_context.await_args.kwargs
         self.assertIn("--app=https://chat.deepseek.com/", kwargs["args"])
         self.assertIn("--disable-sync", kwargs["args"])
+        self.assertEqual(kwargs["ignore_default_args"], ["--no-sandbox"])
 
         headless_context = Mock(pages=[], browser=None)
         headless_context.close = AsyncMock()

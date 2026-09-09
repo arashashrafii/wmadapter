@@ -437,6 +437,10 @@ class BrowserManager:
                     "--disable-extensions",
                     "--no-first-run",
                 ]
+                # Playwright disables Chromium's sandbox by default on Linux. Google
+                # rejects OAuth from that command line, so keep the sandbox enabled
+                # for the user-facing login browser.
+                launch_kwargs["ignore_default_args"] = ["--no-sandbox"]
             self.launch_info = {
                 "argv": list(launch_kwargs.get("args", [])),
                 "executable": self.executable_path,
