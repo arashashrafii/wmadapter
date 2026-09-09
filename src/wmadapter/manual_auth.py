@@ -244,7 +244,12 @@ async def run_manual_auth(
                         diagnostic = getattr(probe, "last_probe_diagnostic", None)
                         break
                 raise RuntimeError(f"Timed out waiting for {provider} authentication; last_probe={diagnostic}")
-            await connected.close()
+            # Explicitly close the persistent context first so Chromium flushes
+            # OAuth cookies/storage before the external process is terminated.
+            try:
+                await context.close()
+            finally:
+                await connected.close()
         finally:
             await playwright.stop()
             if process.poll() is None:
@@ -254,6 +259,7 @@ async def run_manual_auth(
                 except subprocess.TimeoutExpired:
                     process.kill()
                     await asyncio.to_thread(process.wait)
+            await asyncio.sleep(0.5)
         os.environ.pop("WMADAPTER_LOGIN", None)
         browser = BrowserManager(
             profile_path=profile,
