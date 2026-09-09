@@ -429,9 +429,9 @@ class BrowserManager:
                 "viewport": {"width": 1440, "height": 1000},
             }
             if not self.headless:
-                # Keep interactive login app-like while leaving headless API and CDP untouched.
+                # Keep interactive login in a normal browser window. Google OAuth
+                # rejects app/embedded windows even when the Chromium sandbox is on.
                 launch_kwargs["args"] = [
-                    f"--app={self.launch_url or 'about:blank'}",
                     "--disable-sync",
                     "--disable-default-apps",
                     "--disable-extensions",

@@ -1153,7 +1153,6 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             executable_path=executable,
             viewport={"width": 1440, "height": 1000},
             args=[
-                "--app=about:blank",
                 "--disable-sync",
                 "--disable-default-apps",
                 "--disable-extensions",
@@ -1221,7 +1220,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(context.pages), 1)
             await manager.stop()
         kwargs = chromium.launch_persistent_context.await_args.kwargs
-        self.assertIn("--app=https://chat.deepseek.com/", kwargs["args"])
+        self.assertNotIn("--app=https://chat.deepseek.com/", kwargs["args"])
         self.assertIn("--disable-sync", kwargs["args"])
         self.assertEqual(kwargs["ignore_default_args"], ["--no-sandbox"])
 
