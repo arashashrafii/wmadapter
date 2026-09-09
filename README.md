@@ -49,6 +49,9 @@ It prints a command that starts local Chrome with an isolated profile and a
 loopback-only debugging endpoint. Complete login in that Chromium window and
 leave it open while Web Model Adapter runs. Web Model Adapter attaches to that session; it does
 not launch a second browser or attempt to bypass the site's CAPTCHA.
+On Linux, the background service uses Xvfb so Chrome has no visible window while
+retaining the headed browser behavior required by some providers. Install Xvfb
+before running the installer if it is not already present.
 
 Browser selection is explicit in config.yaml: browser.mode: managed (the
 default) uses Web Model Adapter's persistent profile, while browser.mode: cdp attaches

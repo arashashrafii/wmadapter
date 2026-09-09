@@ -17,6 +17,10 @@ grep -q 'trap cleanup_failed_install EXIT' "$script"
 ! grep -q 'playwright install chromium' "$script"
 grep -q 'Google Chrome was not found' "$script"
 grep -q 'system Google Chrome executable' "$script"
+grep -q 'xvfb-run' "$script"
+grep -q 'WMADAPTER_XVFB=' "$script"
+grep -q 'Xvfb is required' "$script"
+grep -q -- "--server-args='-screen 0 1440x1000x24'" "$script"
 
 auth_line=$(grep -n 'run_foreground_auth' "$script" | tail -1 | cut -d: -f1)
 start_line=$(grep -n '^start_service 0$' "$script" | tail -1 | cut -d: -f1)

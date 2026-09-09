@@ -12,6 +12,7 @@ DISPLAY_VALUE="${DISPLAY:-}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 BROWSER_EXECUTABLE=""
 INSTALL_SUCCESS=0
+USE_XVFB=0
 
 cd -- "$PROJECT_DIR"
 
@@ -144,6 +145,10 @@ ensure_browser() {
 write_service() {
   local login_mode="$1"
   mkdir -p "$SERVICE_DIR"
+  local exec_start="${PROJECT_DIR}/.venv/bin/wmadapter"
+  if [ "$USE_XVFB" -eq 1 ]; then
+    exec_start="/usr/bin/xvfb-run --auto-servernum --server-args='-screen 0 1440x1000x24' ${exec_start}"
+  fi
   cat > "$SERVICE_FILE" <<SERVICE
 [Unit]
 Description=Web Model Adapter — Web-to-API Gateway for AI Agents
@@ -154,18 +159,31 @@ Type=simple
 WorkingDirectory=${PROJECT_DIR}
 EnvironmentFile=-${PROJECT_DIR}/.env
 Environment=WMADAPTER_LOGIN=${login_mode}
+Environment=WMADAPTER_XVFB=${USE_XVFB}
 Environment=DISPLAY=${DISPLAY_VALUE}
 Environment=WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}
 Environment=XAUTHORITY=${XAUTHORITY:-}
 Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
 Environment=DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}
-ExecStart=${PROJECT_DIR}/.venv/bin/wmadapter
+ExecStart=${exec_start}
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=default.target
 SERVICE
+}
+prepare_runtime_display() {
+  case "$(uname -s)" in
+    Linux)
+      if ! command -v xvfb-run >/dev/null 2>&1; then
+        echo "Xvfb is required for the hidden Chrome runtime on Linux. Install Xvfb, then rerun this installer." >&2
+        return 1
+      fi
+      USE_XVFB=1
+      ;;
+    *) USE_XVFB=0 ;;
+  esac
 }
 start_service() {
   local login_mode="$1"
@@ -268,6 +286,7 @@ if ! run_foreground_auth; then
 fi
 HEADLESS="true"
 write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_HOST" ""
+prepare_runtime_display
 start_service 0
 say "Waiting for API health after login..."
 if ! wait_health; then
