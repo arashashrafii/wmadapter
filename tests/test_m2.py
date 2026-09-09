@@ -12,7 +12,7 @@ from wmadapter.security import redact
 from wmadapter.providers.router import ProviderRouter
 from wmadapter.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
 from wmadapter.ports import find_free_port
-from wmadapter.manual_auth import AUTH_TARGETS, _stable_auth_probe, _wait_for_auth, run_manual_auth
+from wmadapter.manual_auth import AUTH_TARGETS, _probe_context_auth, _stable_auth_probe, _wait_for_auth, run_manual_auth
 from wmadapter.providers.base import ChatProvider
 from wmadapter.providers.deepseek.chat import DeepSeekChat
 from wmadapter.providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, DeepSeekLogin
@@ -37,6 +37,24 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_external_auth_probes_google_popup_and_chat_pages(self):
+        context = Mock()
+        login_page = Mock()
+        login_page.is_closed.return_value = False
+        chat_page = Mock()
+        chat_page.is_closed.return_value = False
+        context.pages = [login_page, chat_page]
+        target = AUTH_TARGETS["deepseek"]
+
+        async def probe(_provider, page, _target):
+            return CHAT_READY if page is chat_page else "SIGN_IN_VISIBLE"
+
+        with patch("wmadapter.manual_auth._probe_auth", new=probe):
+            state, page = asyncio.run(_probe_context_auth("deepseek", context, target))
+
+        self.assertEqual(state, CHAT_READY)
+        self.assertIs(page, chat_page)
+
     def test_deepseek_auth_uses_primary_page_and_bootstraps_blank_page(self):
         service = DeepSeekService(load_config())
         page = Mock(url="about:blank")

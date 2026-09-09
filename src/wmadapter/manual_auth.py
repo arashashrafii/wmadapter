@@ -77,6 +77,22 @@ async def _probe_auth(provider: str, page, target: AuthTarget) -> str:
     return await QwenChat(page).probe_auth()
 
 
+async def _probe_context_auth(provider: str, context, target: AuthTarget) -> tuple[str | None, object | None]:
+    """Probe every page because Google sign-in may return through a popup."""
+    for page in list(context.pages):
+        try:
+            if page.is_closed():
+                continue
+            state = await _probe_auth(provider, page, target)
+        except Exception:
+            # OAuth popups can disappear while their opener is being updated.
+            # Keep probing the remaining pages in the isolated context.
+            continue
+        if state == CHAT_READY:
+            return state, page
+    return None, None
+
+
 async def _wait_for_auth(
     provider: str,
     page,
@@ -209,13 +225,19 @@ async def run_manual_auth(
             contexts = connected.contexts
             if not contexts or not contexts[0].pages:
                 raise RuntimeError("The isolated Chromium login window has no page")
-            page = contexts[0].pages[0]
+            context = contexts[0]
             while asyncio.get_running_loop().time() < deadline:
-                if await _probe_auth(provider, page, target) == CHAT_READY:
+                state, page = await _probe_context_auth(provider, context, target)
+                if state == CHAT_READY:
                     break
                 await asyncio.sleep(2)
             else:
-                diagnostic = getattr(_DEEPSEEK_PROBES.get(id(page)), "last_probe_diagnostic", None)
+                diagnostic = None
+                for candidate in list(context.pages):
+                    probe = _DEEPSEEK_PROBES.get(id(candidate))
+                    if probe is not None:
+                        diagnostic = getattr(probe, "last_probe_diagnostic", None)
+                        break
                 raise RuntimeError(f"Timed out waiting for {provider} authentication; last_probe={diagnostic}")
             await connected.close()
         finally:
