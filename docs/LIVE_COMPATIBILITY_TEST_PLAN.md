@@ -20,6 +20,11 @@ timeout, authentication failure, or unavailable SDK/OpenClaw adapter is
 cleanup is performed. Select `--group contract`, `--group tools`, or repeated
 `--case T50` values for a bounded run.
 
+Live cases are intentionally executed sequentially: one request is sent and
+verified before the next case starts. Do not parallelize cases or run the full
+suite against a personal provider account; use the fixture transport for broad
+coverage and a dedicated provider account for bounded live smoke tests.
+
 With a base URL ending in `/v1`, preflight resolves to `/ready` and completion
 resolves to `/v1/chat/completions`. T49 requires the official `openai` Python
 package and `WMADAPTER_LIVE_API_KEY`; it constructs `OpenAI(...).chat.completions`

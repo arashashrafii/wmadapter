@@ -12,6 +12,11 @@ Web Model Adapter detects provider suspension pages as a terminal
 `ACCOUNT_SUSPENDED` state and disables automatic login retries. Re-authenticate
 manually or use a separate test account before attempting another live run.
 
+Uninstall removes the persistent Web Model Adapter provider profile directory
+under `~/.local/share/wmadapter/profiles`, so reinstalling starts with a fresh
+browser profile and requires a new provider login. Credentials outside that
+profile are not removed automatically.
+
 - Do not commit `config.yaml`, browser profiles, logs, credentials, or encryption keys.
 - Never put chatbot passwords or tokens in `config.yaml`, commands, or logs.
 - The encrypted credential file is stored outside the repository by default under

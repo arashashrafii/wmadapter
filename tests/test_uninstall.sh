@@ -7,6 +7,7 @@ script="$repo_dir/uninstall.sh"
 new_case() {
   case_dir="$(mktemp -d)"
   mkdir -p "$case_dir/bin" "$case_dir/project/.venv" "$case_dir/project/.wmadapter-profile"
+  mkdir -p "$case_dir/home/.local/share/wmadapter/profiles/deepseek" "$case_dir/home/.local/share/wmadapter/profiles/qwen"
   cp "$script" "$case_dir/project/uninstall.sh"
   chmod +x "$case_dir/project/uninstall.sh"
   touch "$case_dir/project/config.yaml" "$case_dir/project/keep.me"
@@ -16,6 +17,7 @@ new_case() {
 
 assert_removed() {
   [[ ! -e "$case_dir/project/.venv" && ! -e "$case_dir/project/.wmadapter-profile" ]]
+  [[ ! -e "$case_dir/home/.local/share/wmadapter/profiles" ]]
   [[ ! -e "$case_dir/project/config.yaml" ]]
   [[ -e "$case_dir/project/keep.me" ]]
 }

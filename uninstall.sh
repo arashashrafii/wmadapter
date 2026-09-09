@@ -5,6 +5,7 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="wmadapter.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
+PROFILE_ROOT="${WMADAPTER_PROFILE_ROOT:-$HOME/.local/share/wmadapter/profiles}"
 UNINSTALL_TIMEOUT_SEC="${UNINSTALL_TIMEOUT_SEC:-10}"
 
 if [[ ! "$UNINSTALL_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
@@ -60,8 +61,10 @@ fi
 rm -f -- "$SERVICE_FILE"
 
 # Keep local cleanup safe and idempotent: every target is rooted at this script
-# or is an explicitly configured generated unit path.
+# or is an explicitly configured generated unit path. Profile removal is
+# intentional: reinstalling must require a fresh provider login.
 rm -rf -- "$PROJECT_DIR/.venv" "$PROJECT_DIR/.wmadapter-profile"
+rm -rf -- "$PROFILE_ROOT"
 rm -f -- \
   "$PROJECT_DIR/.env" \
   "$PROJECT_DIR/config.yaml" \
