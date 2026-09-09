@@ -284,7 +284,7 @@ write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
 stop_service
-say "Web Model Adapter will open its dedicated Playwright Chromium profile for login."
+say "Web Model Adapter will open its dedicated Chromium app window for login."
 if ! run_foreground_auth; then
   echo "Interactive authentication failed; service was not started." >&2
   exit 1

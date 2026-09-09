@@ -183,8 +183,15 @@ async def run_manual_auth(
             [executable, f"--user-data-dir={profile}", f"--app={target.url}", "--no-first-run", "--disable-sync", f"--remote-debugging-port={cdp_port}"],
             start_new_session=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
+        await asyncio.sleep(0.75)
+        if process.poll() is not None:
+            details = b""
+            if process.stderr is not None:
+                details = await asyncio.to_thread(process.stderr.read)
+            detail = details.decode("utf-8", errors="replace").strip()[-500:]
+            raise RuntimeError(f"Isolated Chromium exited before login started: {detail or 'no diagnostic output'}")
         print(
             f"Complete {provider} authentication in the isolated Chromium window; it will close automatically."
         )
