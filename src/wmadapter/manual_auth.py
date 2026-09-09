@@ -4,9 +4,11 @@ from dataclasses import dataclass
 import asyncio
 import inspect
 import os
+import socket
 import subprocess
 from typing import Any
 from urllib.parse import urlsplit
+from playwright.async_api import async_playwright
 
 from .browser.manager import BrowserManager
 from .config import canonical_path, load_config, provider_profile_dir
@@ -174,19 +176,42 @@ async def run_manual_auth(
         if not executable:
             raise RuntimeError("External authentication requires browser.executable_path")
         profile = canonical_path(profile_value)
+        with socket.socket() as probe_socket:
+            probe_socket.bind(("127.0.0.1", 0))
+            cdp_port = probe_socket.getsockname()[1]
         process = subprocess.Popen(
-            [executable, f"--user-data-dir={profile}", f"--app={target.url}", "--no-first-run", "--disable-sync"],
+            [executable, f"--user-data-dir={profile}", f"--app={target.url}", "--no-first-run", "--disable-sync", f"--remote-debugging-port={cdp_port}"],
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         print(
-            f"Complete {provider} authentication in the system Chrome window, then close it "
-            "and press Enter here."
+            f"Complete {provider} authentication in the isolated Chromium window; it will close automatically."
         )
+        playwright = await async_playwright().start()
+        connected = None
         try:
-            await asyncio.to_thread(input)
+            deadline = asyncio.get_running_loop().time() + 300
+            while connected is None and asyncio.get_running_loop().time() < deadline:
+                try:
+                    connected = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+                except Exception:
+                    await asyncio.sleep(0.5)
+            if connected is None:
+                raise RuntimeError("Could not connect to the isolated Chromium login window")
+            contexts = connected.contexts
+            if not contexts or not contexts[0].pages:
+                raise RuntimeError("The isolated Chromium login window has no page")
+            page = contexts[0].pages[0]
+            while asyncio.get_running_loop().time() < deadline:
+                if await _probe_auth(provider, page, target) == CHAT_READY:
+                    break
+                await asyncio.sleep(2)
+            else:
+                raise RuntimeError(f"Timed out waiting for {provider} authentication")
+            await connected.close()
         finally:
+            await playwright.stop()
             if process.poll() is None:
                 process.terminate()
                 try:
