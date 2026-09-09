@@ -269,6 +269,9 @@ async def run_manual_auth(
         )
         try:
             page = await browser.primary_page(provider)
+            current_url = getattr(page, "url", "")
+            if not isinstance(current_url, str) or not current_url.startswith(target.url.rstrip("/")):
+                await page.goto(target.url, wait_until="domcontentloaded")
             if not await _stable_auth_probe(provider, page, target):
                 raise RuntimeError(f"{provider} authentication was not detected in the external browser profile")
         finally:
