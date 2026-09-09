@@ -2,8 +2,8 @@
 __pycache__/
 *.py[cod]
 config.yaml
-.wmadapter-profile/
-wmadapter.log
+wmadapter-profile/
+*.log
 .env
 *.egg-info/
 *.log.*
