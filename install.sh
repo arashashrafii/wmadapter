@@ -225,6 +225,20 @@ run_foreground_auth() {
 stop_service() {
   systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true
 }
+cleanup_previous_install() {
+  local profile_root="$HOME/.local/share/wmadapter/profiles"
+  stop_service
+  pkill -TERM -f "$PROJECT_DIR/.venv/bin/wmadapter auth " 2>/dev/null || true
+  local pids
+  pids="$(ps -eo pid=,args= | awk -v root="$profile_root" 'index($0,"--user-data-dir=" root "/") > 0 {print $1}')"
+  if [ -n "$pids" ]; then
+    kill $pids 2>/dev/null || true
+  fi
+  rm -rf -- "$profile_root"
+  rm -f -- "$SERVICE_FILE" "$PROJECT_DIR/config.yaml"
+  systemctl --user daemon-reload 2>/dev/null || true
+  say "Previous Web Model Adapter runtime and profile cleaned up."
+}
 cleanup_failed_install() {
   local status=$?
   if [ "$status" -ne 0 ] && [ "$INSTALL_SUCCESS" -ne 1 ]; then
@@ -273,6 +287,7 @@ case "$CHOICE" in
   2|qwen) PROVIDER="qwen" ;;
   *) echo "Invalid provider: $CHOICE" >&2; exit 1 ;;
 esac
+cleanup_previous_install
 SMOKE_MODEL="$PROVIDER-chat"
 if [ "$PROVIDER" != "deepseek" ]; then
   say "Using the $PROVIDER browser-backed runtime adapter."

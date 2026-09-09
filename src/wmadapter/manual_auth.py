@@ -215,7 +215,8 @@ async def run_manual_auth(
                     break
                 await asyncio.sleep(2)
             else:
-                raise RuntimeError(f"Timed out waiting for {provider} authentication")
+                diagnostic = getattr(_DEEPSEEK_PROBES.get(id(page)), "last_probe_diagnostic", None)
+                raise RuntimeError(f"Timed out waiting for {provider} authentication; last_probe={diagnostic}")
             await connected.close()
         finally:
             await playwright.stop()
