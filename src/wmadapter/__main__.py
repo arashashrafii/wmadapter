@@ -41,6 +41,7 @@ def main() -> None:
     auth = subparsers.add_parser("auth")
     auth.add_argument("provider", choices=["deepseek", "qwen"])
     auth.add_argument("--google", action="store_true", help="Open provider login and start Google authentication when possible")
+    auth.add_argument("--external-browser", action="store_true", help="Authenticate in system Chrome, then verify the profile headlessly")
     auth.add_argument("--executable-path", help="Chrome/Chromium executable path")
     args = parser.parse_args()
 
@@ -53,6 +54,7 @@ def main() -> None:
             run_manual_auth(
                 args.provider,
                 use_google=args.google,
+                external_browser=args.external_browser,
                 executable_path=args.executable_path,
                 config=config,
             )

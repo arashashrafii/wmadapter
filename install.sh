@@ -42,7 +42,7 @@ need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }
 }
 detect_browser() {
-  for browser in google-chrome chromium chromium-browser; do
+  for browser in chromium chromium-browser google-chrome; do
     if command -v "$browser" >/dev/null 2>&1; then
       command -v "$browser"
       return 0
@@ -199,7 +199,7 @@ run_foreground_auth() {
     echo "interactive_session_unavailable: DISPLAY or WAYLAND_DISPLAY is not set" >&2
     return 1
   fi
-  WMADAPTER_LOGIN=1 .venv/bin/wmadapter auth "$PROVIDER"
+  WMADAPTER_LOGIN=1 .venv/bin/wmadapter auth "$PROVIDER" --external-browser
 }
 stop_service() {
   systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true

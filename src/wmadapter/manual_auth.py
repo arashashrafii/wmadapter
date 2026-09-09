@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import asyncio
 import inspect
+import os
+import subprocess
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -134,6 +136,7 @@ async def run_manual_auth(
     provider: str,
     *,
     use_google: bool = False,
+    external_browser: bool = False,
     executable_path: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> None:
@@ -166,6 +169,45 @@ async def run_manual_auth(
             "--executable-path does not match browser.executable_path; configure the Gateway executable first"
         )
     interruption: dict[str, str | None] = {"state": None, "reason": None}
+    if external_browser:
+        executable = configured_executable
+        if not executable:
+            raise RuntimeError("External authentication requires browser.executable_path")
+        profile = canonical_path(profile_value)
+        process = subprocess.Popen(
+            [executable, f"--user-data-dir={profile}", f"--app={target.url}", "--no-first-run", "--disable-sync"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        print(
+            f"Complete {provider} authentication in the system Chrome window, then close it "
+            "and press Enter here."
+        )
+        try:
+            await asyncio.to_thread(input)
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    await asyncio.to_thread(process.wait, 10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    await asyncio.to_thread(process.wait)
+        os.environ.pop("WMADAPTER_LOGIN", None)
+        browser = BrowserManager(
+            profile_path=profile,
+            headless=True,
+            executable_path=executable,
+            launch_url=target.url,
+        )
+        try:
+            page = await browser.primary_page(provider)
+            if not await _stable_auth_probe(provider, page, target):
+                raise RuntimeError(f"{provider} authentication was not detected in the external browser profile")
+        finally:
+            await browser.stop()
+        return
     browser = BrowserManager(
         profile_path=canonical_path(profile_value),
         headless=False,
