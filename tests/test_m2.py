@@ -12,7 +12,7 @@ from wmadapter.security import redact
 from wmadapter.providers.router import ProviderRouter
 from wmadapter.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
 from wmadapter.ports import find_free_port
-from wmadapter.manual_auth import AUTH_TARGETS, _probe_context_auth, _stable_auth_probe, _wait_for_auth, run_manual_auth
+from wmadapter.manual_auth import AUTH_TARGETS, _close_external_browser, _probe_context_auth, _stable_auth_probe, _wait_for_auth, run_manual_auth
 from wmadapter.providers.base import ChatProvider
 from wmadapter.providers.deepseek.chat import DeepSeekChat
 from wmadapter.providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, RATE_LIMITED, SIGN_IN_VISIBLE, DeepSeekLogin
@@ -514,6 +514,57 @@ class Milestone2Tests(unittest.TestCase):
             with self.assertRaises(asyncio.CancelledError):
                 asyncio.run(run_manual_auth("deepseek", config=config))
         manager.stop.assert_awaited_once()
+
+    def test_external_auth_closes_browser_over_cdp_before_profile_reuse(self):
+        browser = Mock()
+        session = Mock()
+        session.send = AsyncMock()
+        session.detach = AsyncMock()
+        browser.new_browser_cdp_session = AsyncMock(return_value=session)
+        process = Mock()
+        process.poll.return_value = 0
+
+        with patch("wmadapter.manual_auth._wait_for_process_exit", new=AsyncMock(return_value=True)) as wait_process, patch(
+            "wmadapter.manual_auth._wait_for_profile_unlock", new=AsyncMock(return_value=True)
+        ) as wait_profile:
+            asyncio.run(_close_external_browser(browser, process, "/tmp/wmadapter-profile"))
+
+        browser.new_browser_cdp_session.assert_awaited_once()
+        session.send.assert_awaited_once_with("Browser.close")
+        session.detach.assert_awaited_once()
+        wait_process.assert_awaited_once_with(process)
+        wait_profile.assert_awaited_once_with("/tmp/wmadapter-profile")
+        process.terminate.assert_not_called()
+
+    def test_external_auth_uses_termination_only_after_cdp_close_times_out(self):
+        browser = Mock()
+        session = Mock(send=AsyncMock(), detach=AsyncMock())
+        browser.new_browser_cdp_session = AsyncMock(return_value=session)
+        process = Mock()
+        process.poll.side_effect = [None, 0]
+
+        with patch("wmadapter.manual_auth._wait_for_process_exit", new=AsyncMock(side_effect=[False, True])), patch(
+            "wmadapter.manual_auth._wait_for_profile_unlock", new=AsyncMock(return_value=True)
+        ):
+            asyncio.run(_close_external_browser(browser, process, "/tmp/wmadapter-profile"))
+
+        session.send.assert_awaited_once_with("Browser.close")
+        process.terminate.assert_called_once()
+        process.kill.assert_not_called()
+
+    def test_external_auth_falls_back_when_cdp_disconnects_during_close(self):
+        browser = Mock()
+        session = Mock(send=AsyncMock(side_effect=RuntimeError("disconnected")), detach=AsyncMock())
+        browser.new_browser_cdp_session = AsyncMock(return_value=session)
+        process = Mock()
+        process.poll.side_effect = [None, 0]
+
+        with patch("wmadapter.manual_auth._wait_for_process_exit", new=AsyncMock(side_effect=[False, True])), patch(
+            "wmadapter.manual_auth._wait_for_profile_unlock", new=AsyncMock(return_value=True)
+        ):
+            asyncio.run(_close_external_browser(browser, process, "/tmp/wmadapter-profile"))
+
+        process.terminate.assert_called_once()
     def test_deepseek_remote_delete_uses_web_ui_confirmation(self):
         page = Mock()
         page.url = "https://chat.deepseek.com/a/chat/s/abc123"
@@ -1180,13 +1231,14 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
                 "--disable-extensions",
                 "--no-first-run",
             ],
-            ignore_default_args=["--no-sandbox"],
+            ignore_default_args=["--no-sandbox", "--password-store=basic", "--use-mock-keychain"],
         )
         headless_chromium.launch_persistent_context.assert_awaited_once_with(
             user_data_dir=profile,
             headless=True,
             executable_path=executable,
             viewport={"width": 1440, "height": 1000},
+            ignore_default_args=["--no-sandbox", "--password-store=basic", "--use-mock-keychain"],
         )
         headed.close.assert_awaited_once()
         headed_playwright.stop.assert_awaited_once()
@@ -1244,7 +1296,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
         kwargs = chromium.launch_persistent_context.await_args.kwargs
         self.assertNotIn("--app=https://chat.deepseek.com/", kwargs["args"])
         self.assertIn("--disable-sync", kwargs["args"])
-        self.assertEqual(kwargs["ignore_default_args"], ["--no-sandbox"])
+        self.assertEqual(kwargs["ignore_default_args"], ["--no-sandbox", "--password-store=basic", "--use-mock-keychain"])
 
         headless_context = Mock(pages=[], browser=None)
         headless_context.close = AsyncMock()
@@ -1257,7 +1309,17 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             manager = BrowserManager(profile_path=f"/tmp/wmadapter-headless-{id(context)}", headless=True)
             await manager.start()
             await manager.stop()
-        self.assertNotIn("args", headless_chromium.launch_persistent_context.await_args.kwargs)
+        headless_kwargs = headless_chromium.launch_persistent_context.await_args.kwargs
+        self.assertNotIn("args", headless_kwargs)
+        self.assertEqual(
+            headless_kwargs["ignore_default_args"],
+            ["--no-sandbox", "--password-store=basic", "--use-mock-keychain"],
+        )
+
+    async def test_xvfb_forces_hidden_service_to_headed_chrome(self):
+        with patch.dict(os.environ, {"WMADAPTER_XVFB": "1"}, clear=False):
+            manager = BrowserManager(profile_path="/tmp/wmadapter-xvfb", headless=True)
+        self.assertFalse(manager.headless)
 
     async def test_handoff_auth_probe_failure_restores_headed_session(self):
         headed = Mock(pages=[])

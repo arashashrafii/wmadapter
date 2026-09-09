@@ -43,6 +43,7 @@ AUTH_TARGETS = {
 }
 _AUTH_TASKS: dict[int, asyncio.Task] = {}
 _DEEPSEEK_PROBES: dict[int, DeepSeekLogin] = {}
+_PROFILE_LOCK_FILES = ("SingletonLock", "SingletonCookie", "SingletonSocket")
 
 
 async def _click_first_visible(page, selectors: tuple[str, ...], timeout: int = 1500) -> bool:
@@ -91,6 +92,58 @@ async def _probe_context_auth(provider: str, context, target: AuthTarget) -> tup
         if state == CHAT_READY:
             return state, page
     return None, None
+
+
+async def _wait_for_profile_unlock(profile: str, timeout_s: float = 5) -> bool:
+    """Wait until Chrome has released its persistent-profile locks."""
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    while any(os.path.lexists(os.path.join(profile, name)) for name in _PROFILE_LOCK_FILES):
+        if asyncio.get_running_loop().time() >= deadline:
+            return False
+        await asyncio.sleep(0.1)
+    return True
+
+
+async def _wait_for_process_exit(process: subprocess.Popen, timeout_s: float = 10) -> bool:
+    try:
+        await asyncio.to_thread(process.wait, timeout_s)
+    except subprocess.TimeoutExpired:
+        return False
+    return True
+
+
+async def _close_external_browser(browser, process: subprocess.Popen, profile: str) -> None:
+    """Close the CDP-owned Chrome cleanly before reusing its profile."""
+    session = None
+    try:
+        session = await browser.new_browser_cdp_session()
+        await session.send("Browser.close")
+    except Exception:
+        # A disconnected CDP client can still mean Chrome is already exiting.
+        # The process/profile checks below decide whether a fallback is needed.
+        pass
+    finally:
+        if session is not None:
+            try:
+                await session.detach()
+            except Exception:
+                pass
+
+    exited = await _wait_for_process_exit(process)
+    unlocked = await _wait_for_profile_unlock(profile) if exited else False
+    if exited and unlocked:
+        return
+
+    # Browser.close is the normal path. Only fall back to termination when a
+    # stuck process still owns the isolated profile.
+    if process.poll() is None:
+        process.terminate()
+        exited = await _wait_for_process_exit(process)
+    if not exited and process.poll() is None:
+        process.kill()
+        await _wait_for_process_exit(process)
+    if not await _wait_for_profile_unlock(profile):
+        raise RuntimeError("Isolated Google Chrome did not release its login profile")
 
 
 async def _wait_for_auth(
@@ -244,12 +297,17 @@ async def run_manual_auth(
                         diagnostic = getattr(probe, "last_probe_diagnostic", None)
                         break
                 raise RuntimeError(f"Timed out waiting for {provider} authentication; last_probe={diagnostic}")
-            # Explicitly close the persistent context first so Chrome flushes
-            # OAuth cookies/storage before the external process is terminated.
+            # A CDP Browser.close lets Chrome flush the persistent profile.
+            # Closing only the Playwright context disconnects the client but
+            # leaves the externally launched browser alive.
             try:
-                await context.close()
+                await _close_external_browser(connected, process, profile)
             finally:
-                await connected.close()
+                try:
+                    await connected.close()
+                except Exception:
+                    # Browser.close disconnects this CDP client by design.
+                    pass
         finally:
             await playwright.stop()
             if process.poll() is None:
@@ -259,7 +317,7 @@ async def run_manual_auth(
                 except subprocess.TimeoutExpired:
                     process.kill()
                     await asyncio.to_thread(process.wait)
-            await asyncio.sleep(0.5)
+            await _wait_for_profile_unlock(profile)
         os.environ.pop("WMADAPTER_LOGIN", None)
         # The service performs the post-login probe inside its configured
         # hidden display. A second pure-headless launch is provider-blocked.

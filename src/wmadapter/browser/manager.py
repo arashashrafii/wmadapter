@@ -427,6 +427,14 @@ class BrowserManager:
                 "headless": self.headless,
                 "executable_path": self.executable_path,
                 "viewport": {"width": 1440, "height": 1000},
+                # Use the operating system's native credential store for the
+                # system Google Chrome profile in both visible and Xvfb modes.
+                # Keep Playwright's sandbox override removed as before.
+                "ignore_default_args": [
+                    "--no-sandbox",
+                    "--password-store=basic",
+                    "--use-mock-keychain",
+                ],
             }
             if not self.headless:
                 # Keep interactive login in a normal browser window. Google OAuth
@@ -440,7 +448,6 @@ class BrowserManager:
                 # Playwright disables Chromium's sandbox by default on Linux. Google
                 # rejects OAuth from that command line, so keep the sandbox enabled
                 # for the user-facing login browser.
-                launch_kwargs["ignore_default_args"] = ["--no-sandbox"]
             self.launch_info = {
                 "argv": list(launch_kwargs.get("args", [])),
                 "executable": self.executable_path,
