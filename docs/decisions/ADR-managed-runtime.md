@@ -1,11 +1,11 @@
-# ADR: Dedicated managed browser runtime
+# ADR: Dedicated system Chrome runtime
 
 Status: accepted (phase 1)
 
-Web Model Adapter managed mode uses the Chromium binary installed by Playwright. It
-does not search for or attach to a user's Chrome/Chromium installation. The
-installer provisions that binary with `playwright install chromium` and starts
-login through the existing Playwright controller.
+Web Model Adapter managed mode uses the user's installed Google Chrome binary. It
+does not install Chromium or download a Playwright browser. The installer searches
+for supported Chrome installations and stops with an installation instruction when
+Chrome is absent.
 
 Each provider receives a separate canonical profile under
 `~/.local/share/wmadapter/profiles/<provider>`. The profile is never the user's
@@ -20,11 +20,11 @@ Managed mode is the default. CDP remains an explicit attach mode only when
 acquire managed locks or close the operator's browser. The installer no longer
 creates or assumes a fixed CDP/9222 endpoint.
 
-The headed login and headless runtime reuse the same provider profile and
-Playwright browser installation. Authentication remains user-driven, including
-CAPTCHA. A future phase may add a dedicated supervisor process for stronger
-cross-platform process-group reaping; phase 1 establishes the path, lock, and
-binary ownership contract.
+The headed login and headless runtime reuse the same provider profile and system
+Chrome installation. Authentication remains user-driven, including CAPTCHA. A
+future phase may add a dedicated supervisor process for stronger cross-platform
+process-group reaping; phase 1 establishes the path, lock, and binary ownership
+contract.
 
 Migration safety: existing profiles and credentials are not moved or removed by
 the installer. Operators must stop the old runtime, verify the lock owner, and

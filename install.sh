@@ -42,7 +42,26 @@ need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }
 }
 detect_browser() {
-  local version path snap_chrome
+  local candidate version program_files_x86
+  program_files_x86="$(printenv 'PROGRAMFILES(X86)' 2>/dev/null || true)"
+  local candidates=("google-chrome" "google-chrome-stable" "google-chrome-beta"
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    "$HOME/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    "${PROGRAMFILES:-}/Google/Chrome/Application/chrome.exe"
+    "${program_files_x86}/Google/Chrome/Application/chrome.exe"
+    "${LOCALAPPDATA:-}/Google/Chrome/Application/chrome.exe")
+  for candidate in "${candidates[@]}"; do
+    if [ -x "$candidate" ] || command -v "$candidate" >/dev/null 2>&1; then
+      version="$($candidate --version 2>/dev/null || true)"
+      if printf '%s' "$version" | grep -Eq 'Google Chrome|Chrome'; then
+        if command -v "$candidate" >/dev/null 2>&1; then command -v "$candidate"; else printf '%s' "$candidate"; fi
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+detect_browser_old() {
   snap_chrome="/snap/chromium/current/usr/lib/chromium-browser/chrome"
   if [ -x "$snap_chrome" ]; then
     printf '%s' "$snap_chrome"
@@ -98,8 +117,7 @@ install_system_chromium() {
 resolve_browser_path() {
   local requested="$1"
   case "${requested,,}" in
-    google-chrome|googlechrome) requested="google-chrome" ;;
-    chromium|chromium-browser) requested="chromium" ;;
+    googlechrome) requested="google-chrome" ;;
   esac
   if [ -x "$requested" ]; then
     printf '%s' "$requested"
@@ -170,18 +188,11 @@ install_current_os() {
 ensure_browser() {
   BROWSER_EXECUTABLE="$(detect_browser || true)"
   if [ -z "$BROWSER_EXECUTABLE" ]; then
-    install_system_chromium
-    BROWSER_EXECUTABLE="$(detect_browser || true)"
-  fi
-  if [ -z "$BROWSER_EXECUTABLE" ]; then
-    BROWSER_EXECUTABLE="$(detect_playwright_browser || true)"
-  fi
-  if [ -z "$BROWSER_EXECUTABLE" ] || [ ! -x "$BROWSER_EXECUTABLE" ]; then
-    echo "Chromium installation completed but no supported browser executable was found." >&2
+    echo "Google Chrome was not found. Install Google Chrome for your operating system, then rerun this installer." >&2
     return 1
   fi
   BROWSER_EXECUTABLE="$(resolve_browser_path "$BROWSER_EXECUTABLE")"
-  say "Using Chromium executable: ${BROWSER_EXECUTABLE}"
+  say "Using system Google Chrome executable: ${BROWSER_EXECUTABLE}"
 }
 write_service() {
   local login_mode="$1"
@@ -303,7 +314,7 @@ write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
 stop_service
-say "Web Model Adapter will open its dedicated Chromium app window for login."
+say "Web Model Adapter will open a dedicated system Google Chrome app window for login."
 if ! run_foreground_auth; then
   echo "Interactive authentication failed; service was not started." >&2
   exit 1

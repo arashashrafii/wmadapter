@@ -26,11 +26,8 @@ From a clean clone, install the pinned Node dependency graph from the lockfile:
 
 ```bash
 npm ci
-npx playwright install --with-deps
 npm test
 ```
 
-`npm ci` is required for reproducible CI installs. The browser-install step is
-required before the first Playwright run; `--with-deps` also installs Linux
-browser libraries in CI. The current Playwright fixture is a browser smoke
+`npm ci` is required for reproducible CI installs. The current Playwright fixture is a browser smoke
 fixture and is not provider authentication or live Web Model Adapter verification.

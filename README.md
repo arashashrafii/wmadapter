@@ -40,19 +40,19 @@ Interactive setup:
 ./install.sh
 ```
 
-The installer sets up a local Python environment, lets you choose DeepSeek Web or Qwen Web, opens a browser for manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. If Chrome or Chromium is unavailable, it offers to install the system Chromium package on supported Linux distributions. No paid API key is required.
+The installer sets up a local Python environment, lets you choose DeepSeek Web or Qwen Web, opens system Google Chrome for manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. If Google Chrome is unavailable, it stops and asks the user to install it. No paid API key is required.
 
-The installer uses one browser process only: the installed system Chromium.
-It does not download Playwright's separate Chromium binary. Playwright is used
-only as the Python library that controls the already-running Chromium session.
-It prints a command that starts local Chromium with an isolated profile and a
+The installer uses one browser process only: the installed system Google Chrome.
+It does not download Playwright's separate browser binary. Playwright is used
+only as the Python library that controls the already-running Chrome session.
+It prints a command that starts local Chrome with an isolated profile and a
 loopback-only debugging endpoint. Complete login in that Chromium window and
 leave it open while Web Model Adapter runs. Web Model Adapter attaches to that session; it does
 not launch a second browser or attempt to bypass the site's CAPTCHA.
 
 Browser selection is explicit in config.yaml: browser.mode: managed (the
 default) uses Web Model Adapter's persistent profile, while browser.mode: cdp attaches
-to a user-launched Chromium configured by browser.cdp_endpoint. Existing
+to a user-launched Chrome configured by browser.cdp_endpoint. Existing
 configurations that set cdp_endpoint without mode are interpreted as cdp for
 backward compatibility. In Stage 1 this is only the configuration and
 migration contract; it does not yet change runtime browser selection.
@@ -87,8 +87,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -e .
-# Install Chromium with your Linux package manager if it is not already present.
-# Do not run `playwright install chromium`: Web Model Adapter attaches to system Chromium.
+# Install Google Chrome from https://www.google.com/chrome/ if it is not already present.
+# Web Model Adapter uses the system Google Chrome binary and does not install a browser.
 cp config.example.yaml config.yaml
 ```
 
@@ -112,7 +112,7 @@ Container packaging is temporarily unavailable. Use the local virtual
 environment and optional user-level systemd service described here.
 
 Authentication is browser-only. Web Model Adapter never accepts, stores, or
-automates provider usernames or passwords; only the isolated Chromium profile
+automates provider usernames or passwords; only the isolated Chrome profile
 holds browser-managed session state.
 
 Canonical environment variables use the `WMADAPTER_*` prefix, including
