@@ -38,7 +38,7 @@ def main() -> None:
     auth.add_argument("provider", choices=["deepseek", "qwen"])
     auth.add_argument("--google", action="store_true", help="Open provider login and start Google authentication when possible")
     auth.add_argument("--external-browser", action="store_true", help="Authenticate in system Chrome, then verify the profile headlessly")
-    auth.add_argument("--executable-path", help="Chrome/Chromium executable path")
+    auth.add_argument("--executable-path", help="Google Chrome executable path")
     args = parser.parse_args()
 
     if args.command == "auth":

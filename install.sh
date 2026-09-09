@@ -61,59 +61,6 @@ detect_browser() {
   done
   return 1
 }
-detect_browser_old() {
-  snap_chrome="/snap/chromium/current/usr/lib/chromium-browser/chrome"
-  if [ -x "$snap_chrome" ]; then
-    printf '%s' "$snap_chrome"
-    return 0
-  fi
-  for browser in chromium chromium-browser; do
-    version=""
-    path=""
-    if command -v "$browser" >/dev/null 2>&1; then
-      path="$(readlink -f "$(command -v "$browser")")"
-      version="$("$browser" --version 2>/dev/null || true)"
-    fi
-    if printf '%s' "$version" | grep -Eq 'Chromium|Chrome'; then
-      command -v "$browser"
-      return 0
-    fi
-  done
-  return 1
-}
-detect_playwright_browser() {
-  .venv/bin/python -c 'from playwright.sync_api import sync_playwright
-with sync_playwright() as p:
-    print(p.chromium.executable_path)' 2>/dev/null
-}
-install_system_chromium() {
-  local package_manager
-  package_manager=""
-  for package_manager in apt-get dnf pacman zypper apk; do
-    if command -v "$package_manager" >/dev/null 2>&1; then
-      break
-    fi
-    package_manager=""
-  done
-  if [ -z "$package_manager" ]; then
-    echo "No supported package manager found. Install Chromium manually, then rerun this installer." >&2
-    return 1
-  fi
-  say "Installing Chromium with ${package_manager}; your system may ask for your password."
-  case "$package_manager" in
-    apt-get)
-      if sudo apt-get install -y chromium; then
-        :
-      else
-        sudo apt-get install -y chromium-browser
-      fi
-      ;;
-    dnf) sudo dnf install -y chromium ;;
-    pacman) sudo pacman -S --needed --noconfirm chromium ;;
-    zypper) sudo zypper --non-interactive install chromium ;;
-    apk) sudo apk add chromium ;;
-  esac
-}
 resolve_browser_path() {
   local requested="$1"
   case "${requested,,}" in

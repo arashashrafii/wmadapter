@@ -162,4 +162,4 @@ class DeepSeekLogin:
         if state in (CHALLENGE_VISIBLE, UNKNOWN_UI, SESSION_PENDING):
             raise RuntimeError(f"DeepSeek authentication is pending ({state.lower()})")
 
-        raise RuntimeError("DeepSeek is not logged in. Complete login manually in the isolated Chromium browser.")
+        raise RuntimeError("DeepSeek is not logged in. Complete login manually in the isolated Google Chrome browser.")

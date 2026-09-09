@@ -20,7 +20,7 @@ profile are not removed automatically.
 - Do not commit `config.yaml`, browser profiles, logs, credentials, or encryption keys.
 - Never put chatbot passwords or tokens in `config.yaml`, commands, or logs.
 - Provider usernames and passwords are not accepted, logged, or stored. Login is
-  performed manually in the isolated Chromium profile; only browser-managed
+  performed manually in the isolated Google Chrome profile; only browser-managed
   session state remains in that profile.
 - Logs redact common password, token, cookie, authorization, and credential values.
 - Both web adapters can require CAPTCHA or manual login. Tool markers are

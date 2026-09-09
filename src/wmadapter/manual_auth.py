@@ -207,9 +207,9 @@ async def run_manual_auth(
             if process.stderr is not None:
                 details = await asyncio.to_thread(process.stderr.read)
             detail = details.decode("utf-8", errors="replace").strip()[-500:]
-            raise RuntimeError(f"Isolated Chromium exited before login started: {detail or 'no diagnostic output'}")
+            raise RuntimeError(f"Isolated Google Chrome exited before login started: {detail or 'no diagnostic output'}")
         print(
-            f"Complete {provider} authentication in the isolated Chromium window; it will close automatically."
+            f"Complete {provider} authentication in the isolated Google Chrome window; it will close automatically."
         )
         playwright = await async_playwright().start()
         connected = None
@@ -221,10 +221,10 @@ async def run_manual_auth(
                 except Exception:
                     await asyncio.sleep(0.5)
             if connected is None:
-                raise RuntimeError("Could not connect to the isolated Chromium login window")
+                raise RuntimeError("Could not connect to the isolated Google Chrome login window")
             contexts = connected.contexts
             if not contexts or not contexts[0].pages:
-                raise RuntimeError("The isolated Chromium login window has no page")
+                raise RuntimeError("The isolated Google Chrome login window has no page")
             context = contexts[0]
             while asyncio.get_running_loop().time() < deadline:
                 state, page = await _probe_context_auth(provider, context, target)
@@ -244,7 +244,7 @@ async def run_manual_auth(
                         diagnostic = getattr(probe, "last_probe_diagnostic", None)
                         break
                 raise RuntimeError(f"Timed out waiting for {provider} authentication; last_probe={diagnostic}")
-            # Explicitly close the persistent context first so Chromium flushes
+            # Explicitly close the persistent context first so Chrome flushes
             # OAuth cookies/storage before the external process is terminated.
             try:
                 await context.close()

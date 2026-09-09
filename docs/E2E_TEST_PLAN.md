@@ -9,7 +9,7 @@ expected result, and actual result as PASS, FAIL, or BLOCKED.
 1. Clean-environment installation
 2. Python environment creation
 3. Dependency installation
-4. Dedicated Web Model Adapter browser installation/availability
+4. System Google Chrome installation/availability
 5. Service execution
 6. Provider login opens
 7. Isolated profile verification

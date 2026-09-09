@@ -12,7 +12,7 @@ Implemented base scope:
 
 Operational notes:
 
-- Complete provider login manually in the isolated Chromium profile.
+- Complete provider login manually in the isolated Google Chrome profile.
 - Manual browser login still works with the persistent profile.
 - CAPTCHA, verification challenges, and upstream UI changes still require manual intervention.
 - Streaming remains M3 scope.

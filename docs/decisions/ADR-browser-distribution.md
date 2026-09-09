@@ -1,11 +1,11 @@
-# ADR: Verified dedicated browser distribution
+# ADR: Verified dedicated browser distribution (superseded)
 
-Status: accepted (release contract; artifact publication pending)
+Status: superseded by `ADR-managed-runtime.md`
 
-Web Model Adapter uses only a dedicated Playwright browser artifact. It never falls
-back to Chrome or Chromium discovered on the user's PATH. Distribution lookup
-checks sources in this order: offline bundle, verified local cache, primary
-CDN, then a signed mirror.
+This historical proposal is no longer the runtime contract. Web Model Adapter now
+requires the user's installed Google Chrome and does not download or install a
+Playwright browser artifact. The current installer stops with instructions when
+Google Chrome is absent.
 
 The cache key contains OS, architecture, Playwright version, and browser hash.
 Artifacts are staged in a temporary directory, checked for size and SHA256,

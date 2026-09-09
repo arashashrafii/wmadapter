@@ -24,8 +24,8 @@ class ServerConfig(BaseModel):
 
 
 class BrowserConfig(BaseModel):
-    # managed uses Web Model Adapter's existing persistent browser profile; cdp attaches
-    # to an already-running Chromium exposed through CDP.
+    # managed uses the installed Google Chrome with a Web Model Adapter profile; cdp
+    # attaches to an already-running Chrome exposed through CDP.
     mode: Literal["managed", "cdp"] = "managed"
     headless: bool = True
     profile_dir: str = provider_profile_dir("deepseek")

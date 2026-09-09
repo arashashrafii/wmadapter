@@ -33,7 +33,7 @@ marks expected stop/handoff callbacks and is not treated as an interruption.
 Supported target:
 
 - Local Linux, Python 3.11+
-- DeepSeek Web and Qwen Web through Playwright Chromium or a configured Chrome/Chromium executable
+- DeepSeek Web and Qwen Web through the configured system Google Chrome executable
 
 Operational checks:
 
@@ -45,12 +45,11 @@ Operational checks:
 Installer checks:
 
 - `install.sh` changes into the repository directory before creating generated
-  files, resolves an installed Chrome/Chromium executable, and writes the same
+  files, resolves an installed Google Chrome executable, and writes the same
   absolute executable path, provider URL, and profile selection used by manual
   authentication and the service.
-- If no supported browser is found, the installer offers the host package
-  manager's Chromium package. It does not install a second Playwright-managed
-  browser.
+- If Google Chrome is not found, the installer stops with instructions to install
+  Chrome and rerun it. It never installs Chromium or a Playwright-managed browser.
 - Manual authentication is always foreground and managed-mode only. Google
   sign-in falls back to an explicit manual click when no matching button is
   detected; CAPTCHA and credentials remain user-driven.

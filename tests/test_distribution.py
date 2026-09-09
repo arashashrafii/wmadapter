@@ -121,28 +121,12 @@ class DistributionTests(unittest.TestCase):
             activate_atomically(staging, destination)
             self.assertEqual((destination / "browser").read_text(), "new")
 
-    def test_non_linux_platforms_are_outside_verified_slice(self):
-        for name in ("darwin", "windows", "android"):
-            with self.subTest(name=name), self.assertRaises(UnsupportedPlatformError):
-                installer_adapter(name)
-
-    def test_linux_platform_gate_rejects_wrong_release_or_arch(self):
-        cases = (("22.04", "x86_64"), ("24.04", "aarch64"))
-        for release, machine in cases:
-            with self.subTest(release=release, machine=machine), patch(
-                "wmadapter.installers.platform.machine", return_value=machine
-            ), patch(
-                "wmadapter.installers.platform.freedesktop_os_release",
-                return_value={"ID": "ubuntu", "VERSION_ID": release},
-            ), self.assertRaises(UnsupportedPlatformError):
-                installer_adapter("linux")
-
-    def test_linux_platform_gate_rejects_non_ubuntu(self):
-        with patch("wmadapter.installers.platform.machine", return_value="x86_64"), patch(
-            "wmadapter.installers.platform.freedesktop_os_release",
-            return_value={"ID": "debian", "VERSION_ID": "24.04"},
-        ), self.assertRaises(UnsupportedPlatformError):
-            installer_adapter("linux")
+    def test_desktop_platforms_use_system_chrome_adapters(self):
+        self.assertEqual(installer_adapter("darwin").platform_name, "darwin")
+        self.assertEqual(installer_adapter("windows").platform_name, "windows")
+        self.assertIn("Google Chrome", installer_adapter("linux").browser_install_message())
+        with self.assertRaises(UnsupportedPlatformError):
+            installer_adapter("android")
 
     def test_cross_process_lock_serializes_competing_transactions(self):
         with tempfile.TemporaryDirectory() as root:
