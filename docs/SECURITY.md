@@ -1,5 +1,17 @@
 # Security Guidance
 
+## Provider account safety
+
+Web providers may suspend accounts after high-volume browser automation,
+repeated retries, CAPTCHA interaction, or policy-sensitive test prompts. Never
+run the full live compatibility suite against a personal or production
+account. Use a dedicated test account, keep live runs bounded, and run
+contract and negative cases against the local fixture transport.
+
+Web Model Adapter detects provider suspension pages as a terminal
+`ACCOUNT_SUSPENDED` state and disables automatic login retries. Re-authenticate
+manually or use a separate test account before attempting another live run.
+
 - Do not commit `config.yaml`, browser profiles, logs, credentials, or encryption keys.
 - Never put chatbot passwords or tokens in `config.yaml`, commands, or logs.
 - The encrypted credential file is stored outside the repository by default under

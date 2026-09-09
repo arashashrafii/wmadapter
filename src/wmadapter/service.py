@@ -12,7 +12,7 @@ from .providers.base import ChatProvider
 from .providers.contract import ModelCapabilities
 from .providers.deepseek.chat import DeepSeekChat
 from .providers.deepseek.login import DeepSeekLogin
-from .providers.deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, UNKNOWN_UI, DeepSeekLogin
+from .providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, UNKNOWN_UI, DeepSeekLogin
 from .providers.qwen.chat import QwenChat
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 AUTH_STATES = (
     "STARTING", "CHECKING_SESSION", "LOGIN_REQUIRED", "AUTHENTICATING",
-    "HANDOFF", "VERIFYING_SESSION", "READY", "LOGIN_INTERRUPTED", "LOGIN_CANCELLED",
+    "HANDOFF", "VERIFYING_SESSION", "READY", "LOGIN_INTERRUPTED", "LOGIN_CANCELLED", "ACCOUNT_SUSPENDED",
 )
 
 
@@ -93,13 +93,15 @@ class DeepSeekService(ChatProvider):
         self._auth_generation += 1
         try:
             await self._authenticate()
-        except Exception:
-            if self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
+        except Exception as exc:
+            if "account is suspended" in str(exc).lower():
+                self._set_auth_state("ACCOUNT_SUSPENDED", "account_suspended")
+            if self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED", "ACCOUNT_SUSPENDED"}:
                 self._start_auth_watcher(self._auth_generation)
             raise
 
     def _start_auth_watcher(self, generation: int) -> None:
-        if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
+        if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED", "ACCOUNT_SUSPENDED"}:
             return
         if self._auth_watch_task is None or self._auth_watch_task.done():
             self._auth_watch_task = asyncio.create_task(self._watch_auth(generation))
@@ -115,7 +117,7 @@ class DeepSeekService(ChatProvider):
         ready_streak = 0
         probe = None
         try:
-            while generation == self._auth_generation and self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
+            while generation == self._auth_generation and self.auth_state not in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED", "ACCOUNT_SUSPENDED"}:
                 page = self.browser._primary_pages.get(self.name)
                 if page is None:
                     page = next((candidate for (owner, _), candidate in self.browser._page_claims.items() if owner == self.name), None)
@@ -126,6 +128,9 @@ class DeepSeekService(ChatProvider):
                 state = await probe.probe_auth()
                 self._last_probe_at = time.time()
                 self._last_probe_result = state
+                if state == ACCOUNT_SUSPENDED:
+                    self._set_auth_state("ACCOUNT_SUSPENDED", "account_suspended")
+                    return
                 if state == CHAT_READY:
                     ready_streak += 1
                     if ready_streak >= 2:
@@ -359,7 +364,7 @@ class DeepSeekService(ChatProvider):
         message = str(exc).lower()
         return any(marker in message for marker in (
             "challenge_visible", "sign_in_visible", "unknown_ui", "session_pending",
-            "provider_login_required", "no_visible_editable_chat_input",
+            "provider_login_required", "no_visible_editable_chat_input", "account_suspended",
         ))
 
     async def _authenticate(self, page=None) -> None:

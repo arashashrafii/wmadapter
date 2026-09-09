@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import asyncio
 import inspect
+import re
 from typing import Any
 
 from playwright.async_api import Page
@@ -15,7 +16,8 @@ CHALLENGE_VISIBLE = "CHALLENGE_VISIBLE"
 SIGN_IN_VISIBLE = "SIGN_IN_VISIBLE"
 SESSION_PENDING = "SESSION_PENDING"
 UNKNOWN_UI = "UNKNOWN_UI"
-AUTH_PROBE_STATES = (CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, CHAT_READY, UNKNOWN_UI)
+ACCOUNT_SUSPENDED = "ACCOUNT_SUSPENDED"
+AUTH_PROBE_STATES = (CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, CHAT_READY, UNKNOWN_UI, ACCOUNT_SUSPENDED)
 
 CHALLENGE_SELECTORS = [
     "iframe[src*='captcha' i]", "iframe[src*='challenge' i]",
@@ -93,6 +95,14 @@ class DeepSeekLogin:
     async def probe_auth(self) -> str:
         """Inspect the current UI only; this method never navigates or submits."""
         roots = [self.page, *getattr(self.page, "frames", [])]
+        try:
+            body_text = await self.page.locator("body").inner_text(timeout=500)
+        except Exception:
+            body_text = ""
+        if re.search(r"account has been suspended|violation of user policies", body_text, re.IGNORECASE):
+            self._ready_probe_streak = 0
+            self.last_probe_diagnostic = {"state": ACCOUNT_SUSPENDED, "reason": "account_suspended", "url": self.page.url}
+            return ACCOUNT_SUSPENDED
         challenge = any([await self._visible(root, CHALLENGE_SELECTORS) for root in roots])
         if challenge:
             self._ready_probe_streak = 0
@@ -156,6 +166,8 @@ class DeepSeekLogin:
         state = await self.probe_auth()
         if state == CHAT_READY:
             return
+        if state == ACCOUNT_SUSPENDED:
+            raise RuntimeError("DeepSeek account is suspended by the provider; automatic retries are disabled")
         if state in (CHALLENGE_VISIBLE, UNKNOWN_UI, SESSION_PENDING):
             raise RuntimeError(f"DeepSeek authentication is pending ({state.lower()})")
 
