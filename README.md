@@ -26,7 +26,7 @@ Verified capabilities:
   configurable page caps, idle cleanup, and protected in-flight pages.
 - CDP attach as a separate ownership path that never closes the user's browser.
 - Loopback defaults, optional bearer authentication, readiness/status output,
-  redacted logs, encrypted local credentials, and YAML configuration.
+  redacted logs, isolated browser sessions, and YAML configuration.
 
 The gateway depends on authenticated sessions and the providers' current web
 interfaces. CAPTCHA interaction is user-driven. Selectors, session validity,
@@ -111,20 +111,12 @@ The server defaults to `http://127.0.0.1:11555`.
 Container packaging is temporarily unavailable. Use the local virtual
 environment and optional user-level systemd service described here.
 
-For automatic login recovery without storing secrets in `config.yaml`, save encrypted local credentials outside the repository:
-
-```bash
-.venv/bin/wmadapter credentials set
-```
-
-The credential key is stored under `~/.config/wmadapter/` and the encrypted credential file under `~/.local/share/wmadapter/` by default.
+Authentication is browser-only. Web Model Adapter never accepts, stores, or
+automates provider usernames or passwords; only the isolated Chromium profile
+holds browser-managed session state.
 
 Canonical environment variables use the `WMADAPTER_*` prefix, including
-`WMADAPTER_CONFIG`, `WMADAPTER_LOGIN`, `WMADAPTER_XVFB`, `WMADAPTER_KEY_FILE`,
-`WMADAPTER_CREDENTIAL_FILE`, and `WMADAPTER_URL`. The historical
-`WMADAPTER_*` names remain fallbacks; when both are set, the Web Model Adapter name
-takes precedence. Existing `wmadapter` profile, credential, log,
-service, and plugin paths remain valid compatibility paths.
+`WMADAPTER_CONFIG`, `WMADAPTER_LOGIN`, `WMADAPTER_XVFB`, and `WMADAPTER_URL`.
 
 ## Qwen authentication
 

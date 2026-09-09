@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from wmadapter.config import load_config
-from wmadapter.credentials import CredentialStore
 from wmadapter.security import redact
 from wmadapter.providers.router import ProviderRouter
 from wmadapter.main import Message, _clean_renderer_artifacts, _extract_tool_call, _fallback_conversation_id, _is_title_request, _local_title, _prompt
@@ -635,23 +634,6 @@ class Milestone2Tests(unittest.TestCase):
             path.write_text("server:\n  port: 99999\n")
             with self.assertRaisesRegex(RuntimeError, "Invalid configuration"):
                 load_config(path)
-
-    def test_credential_store_round_trip_is_not_plaintext(self):
-        from tempfile import TemporaryDirectory
-        from pathlib import Path
-
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            store_path = root / "credentials.json"
-            key_path = root / "key"
-            store = CredentialStore(store_path=store_path, key_path=key_path)
-            store.save("user@example.com", "secret-password")
-
-            self.assertEqual(store.load(), ("user@example.com", "secret-password"))
-            raw = store_path.read_text()
-            self.assertNotIn("secret-password", raw)
-            self.assertNotIn("user@example.com", raw)
-            self.assertEqual(json.loads(raw)["version"], 1)
 
     def test_redact_masks_secret_values(self):
         self.assertEqual(

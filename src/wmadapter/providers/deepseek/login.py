@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import asyncio
 import inspect
 import re
@@ -8,8 +7,7 @@ from typing import Any
 
 from playwright.async_api import Page
 
-from ...credentials import CredentialStore, CredentialStoreError
-from .selectors import CHAT_INPUTS, COOKIE_ACCEPT, LOGIN_AGREE, LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
+from .selectors import CHAT_INPUTS, COOKIE_ACCEPT, LOGIN_EMAIL, LOGIN_PASSWORD, LOGIN_SUBMIT
 
 CHAT_READY = "CHAT_READY"
 CHALLENGE_VISIBLE = "CHALLENGE_VISIBLE"
@@ -145,18 +143,6 @@ class DeepSeekLogin:
         """Compatibility wrapper; callers needing reasons must use probe_auth."""
         return await self.probe_auth() == CHAT_READY
 
-    def _credentials(self) -> tuple[str, str] | None:
-        if os.getenv("WMADAPTER_LOGIN") == "1":
-            return None
-        email = os.getenv("DEEPSEEK_EMAIL")
-        password = os.getenv("DEEPSEEK_PASSWORD")
-        if email and password:
-            return email, password
-        try:
-            return CredentialStore().load()
-        except CredentialStoreError as exc:
-            raise RuntimeError(str(exc)) from exc
-
     async def ensure_authenticated(self) -> None:
         # Keep the current DeepSeek page when it is already logged in. Navigating
         # to the home URL for every API request starts a new web conversation.
@@ -171,36 +157,4 @@ class DeepSeekLogin:
         if state in (CHALLENGE_VISIBLE, UNKNOWN_UI, SESSION_PENDING):
             raise RuntimeError(f"DeepSeek authentication is pending ({state.lower()})")
 
-        credentials = self._credentials()
-        if credentials is None:
-            raise RuntimeError(
-                "DeepSeek is not logged in. Run `.venv/bin/wmadapter credentials set`, "
-                "set DEEPSEEK_EMAIL and DEEPSEEK_PASSWORD, or log in manually in the opened browser."
-            )
-        email, password = credentials
-
-        await self.accept_cookies()
-        await self.page.locator(LOGIN_EMAIL).fill(email, timeout=self.timeout_ms)
-        await self.page.locator(LOGIN_PASSWORD).fill(password, timeout=self.timeout_ms)
-        try:
-            checkbox = self.page.locator(LOGIN_AGREE)
-            if await checkbox.is_visible(timeout=1000):
-                await checkbox.click()
-        except Exception:
-            pass
-        if not await self._click_first_visible(LOGIN_SUBMIT, timeout=1500):
-            raise RuntimeError("DeepSeek login submit button was not found")
-        deadline = asyncio.get_running_loop().time() + self.timeout_ms / 1000
-        state = SESSION_PENDING
-        while asyncio.get_running_loop().time() < deadline:
-            state = await self.probe_auth()
-            if state == CHAT_READY:
-                return
-            if state == CHALLENGE_VISIBLE:
-                raise RuntimeError("DeepSeek authentication is pending (challenge_visible)")
-            await self.page.wait_for_timeout(1000)
-        if state != CHAT_READY:
-            raise RuntimeError(
-                "Automatic DeepSeek login did not complete. CAPTCHA, verification, invalid credentials, "
-                "or a UI change may require manual login."
-            )
+        raise RuntimeError("DeepSeek is not logged in. Complete login manually in the isolated Chromium browser.")

@@ -16,12 +16,13 @@ Goal: make the DeepSeek bridge reliable enough for daily use.
 
 Issues:
 - #3 Harden DeepSeek session and authentication recovery
-- #4 Add encrypted credential storage and secret-safe logging
+- #4 Deliberately rejected: provider credential storage is out of scope; use
+  browser-only authentication and browser-managed session state.
 - #5 Improve reliability, configuration, logging, and conversation handling
 
 Exit criteria:
 - Restart/recovery works without manual browser intervention in normal cases.
-- Credentials are encrypted locally and never logged.
+- Provider passwords are never accepted or stored; browser session state is isolated.
 - Repeated conversations work reliably in one running process.
 
 ## Milestone 3 — Agent Compatibility
