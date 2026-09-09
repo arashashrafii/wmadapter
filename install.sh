@@ -224,15 +224,20 @@ cleanup_failed_install() {
   fi
   return "$status"
 }
-wait_health() {
-  local i ready_response
+wait_service_ready() {
+  local i health_response ready_response
   for i in $(seq 1 60); do
+    health_response="$(curl -sS "http://${API_HOST}:${API_PORT}/health" 2>/dev/null || true)"
     ready_response="$(curl -sS "http://${API_HOST}:${API_PORT}/ready" 2>/dev/null || true)"
-    if printf '%s' "$ready_response" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"'; then
+    if printf '%s' "$health_response" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' \
+      && printf '%s' "$ready_response" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"'; then
       return 0
     fi
     sleep 2
   done
+  if [ -n "$health_response" ]; then
+    say "API health is not ready: $health_response"
+  fi
   if [ -n "$ready_response" ]; then
     say "Provider is not ready: $ready_response"
   fi
@@ -288,8 +293,8 @@ HEADLESS="true"
 write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_HOST" ""
 prepare_runtime_display
 start_service 0
-say "Waiting for API health after login..."
-if ! wait_health; then
+say "Waiting for API health and provider readiness after login..."
+if ! wait_service_ready; then
   echo "Server did not become healthy after login. Check the legacy wmadapter.install.log." >&2
   exit 1
 fi

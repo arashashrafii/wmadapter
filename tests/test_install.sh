@@ -6,6 +6,8 @@ script="$repo_dir/install.sh"
 
 bash -n "$script"
 grep -q 'WMADAPTER_LOGIN=1 .venv/bin/wmadapter auth' "$script"
+grep -q 'wait_service_ready' "$script"
+grep -q 'http://\${API_HOST}:\${API_PORT}/health' "$script"
 grep -q 'interactive_session_unavailable' "$script"
 grep -q 'Environment=WAYLAND_DISPLAY=' "$script"
 grep -q 'Environment=XAUTHORITY=' "$script"
