@@ -15,7 +15,8 @@ SIGN_IN_VISIBLE = "SIGN_IN_VISIBLE"
 SESSION_PENDING = "SESSION_PENDING"
 UNKNOWN_UI = "UNKNOWN_UI"
 ACCOUNT_SUSPENDED = "ACCOUNT_SUSPENDED"
-AUTH_PROBE_STATES = (CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, CHAT_READY, UNKNOWN_UI, ACCOUNT_SUSPENDED)
+RATE_LIMITED = "RATE_LIMITED"
+AUTH_PROBE_STATES = (CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, CHAT_READY, UNKNOWN_UI, ACCOUNT_SUSPENDED, RATE_LIMITED)
 
 CHALLENGE_SELECTORS = [
     "iframe[src*='captcha' i]", "iframe[src*='challenge' i]",
@@ -101,6 +102,10 @@ class DeepSeekLogin:
             self._ready_probe_streak = 0
             self.last_probe_diagnostic = {"state": ACCOUNT_SUSPENDED, "reason": "account_suspended", "url": self.page.url}
             return ACCOUNT_SUSPENDED
+        if re.search(r"too many requests|40029", body_text, re.IGNORECASE):
+            self._ready_probe_streak = 0
+            self.last_probe_diagnostic = {"state": RATE_LIMITED, "reason": "provider_rate_limited", "url": self.page.url}
+            return RATE_LIMITED
         challenge = any([await self._visible(root, CHALLENGE_SELECTORS) for root in roots])
         if challenge:
             self._ready_probe_streak = 0

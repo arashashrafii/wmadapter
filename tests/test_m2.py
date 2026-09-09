@@ -15,7 +15,7 @@ from wmadapter.ports import find_free_port
 from wmadapter.manual_auth import AUTH_TARGETS, _probe_context_auth, _stable_auth_probe, _wait_for_auth, run_manual_auth
 from wmadapter.providers.base import ChatProvider
 from wmadapter.providers.deepseek.chat import DeepSeekChat
-from wmadapter.providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, DeepSeekLogin
+from wmadapter.providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, RATE_LIMITED, SIGN_IN_VISIBLE, DeepSeekLogin
 from wmadapter.browser.manager import BrowserManager
 from wmadapter.service import AUTH_STATES, DeepSeekService, QwenService
 
@@ -169,6 +169,28 @@ class Milestone2Tests(unittest.TestCase):
         login = DeepSeekLogin(Page())
         self.assertEqual(asyncio.run(login.probe_auth()), ACCOUNT_SUSPENDED)
         self.assertEqual(login.last_probe_diagnostic["reason"], "account_suspended")
+
+    def test_rate_limit_callback_is_terminal_and_diagnostic(self):
+        class Locator:
+            last = None
+            async def inner_text(self, timeout=0):
+                return '{"code":40029,"msg":"TOO MANY REQUESTS","data":null}'
+            async def is_visible(self, timeout=0):
+                return False
+            async def is_editable(self, timeout=0):
+                return False
+
+        class Page:
+            url = "https://chat.deepseek.com/api/v0/users/oauth/google/callback"
+            frames = []
+            def locator(self, selector):
+                locator = Locator()
+                locator.last = locator
+                return locator
+
+        login = DeepSeekLogin(Page())
+        self.assertEqual(asyncio.run(login.probe_auth()), RATE_LIMITED)
+        self.assertEqual(login.last_probe_diagnostic["reason"], "provider_rate_limited")
 
     def test_visible_high_confidence_markers_trigger_and_hidden_markers_do_not(self):
         from wmadapter.providers.deepseek.login import CHALLENGE_SELECTORS

@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 
 from .browser.manager import BrowserManager
 from .config import canonical_path, load_config, provider_profile_dir
-from .providers.deepseek.login import CHAT_READY, DeepSeekLogin
+from .providers.deepseek.login import CHAT_READY, RATE_LIMITED, DeepSeekLogin
 from .providers.qwen.chat import QwenChat
 
 
@@ -230,6 +230,11 @@ async def run_manual_auth(
                 state, page = await _probe_context_auth(provider, context, target)
                 if state == CHAT_READY:
                     break
+                if state == RATE_LIMITED:
+                    raise RuntimeError(
+                        f"{provider} rejected the authentication callback with TOO MANY REQUESTS (40029); "
+                        "wait before retrying and do not repeat the login flow"
+                    )
                 await asyncio.sleep(2)
             else:
                 diagnostic = None
