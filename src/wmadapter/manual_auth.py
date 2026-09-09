@@ -261,21 +261,8 @@ async def run_manual_auth(
                     await asyncio.to_thread(process.wait)
             await asyncio.sleep(0.5)
         os.environ.pop("WMADAPTER_LOGIN", None)
-        browser = BrowserManager(
-            profile_path=profile,
-            headless=True,
-            executable_path=executable,
-            launch_url=target.url,
-        )
-        try:
-            page = await browser.primary_page(provider)
-            current_url = getattr(page, "url", "")
-            if not isinstance(current_url, str) or not current_url.startswith(target.url.rstrip("/")):
-                await page.goto(target.url, wait_until="domcontentloaded")
-            if not await _stable_auth_probe(provider, page, target):
-                raise RuntimeError(f"{provider} authentication was not detected in the external browser profile")
-        finally:
-            await browser.stop()
+        # The service performs the post-login probe inside its configured
+        # hidden display. A second pure-headless launch is provider-blocked.
         return
     browser = BrowserManager(
         profile_path=canonical_path(profile_value),
