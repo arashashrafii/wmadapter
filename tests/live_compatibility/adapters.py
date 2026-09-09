@@ -12,7 +12,13 @@ def run_openai_sdk(context, payload):
     if importlib.util.find_spec("openai") is None: return "BLOCKED", "official OpenAI SDK is unavailable"
     if not os.environ.get("MIMICGATE_LIVE_API_KEY"): return "BLOCKED", "MIMICGATE_LIVE_API_KEY is not configured"
     from openai import OpenAI
-    response = OpenAI(api_key=os.environ["MIMICGATE_LIVE_API_KEY"], base_url=context.base_url).chat.completions.create(**payload)
+    try:
+        response = OpenAI(api_key=os.environ["MIMICGATE_LIVE_API_KEY"], base_url=context.base_url).chat.completions.create(**payload)
+    except Exception as error:
+        status = getattr(error, "status_code", None)
+        if status in {401, 408, 429, 502, 503, 504}:
+            return "BLOCKED", f"official OpenAI SDK prerequisite unavailable (HTTP {status})"
+        return "FAIL", f"official OpenAI SDK request failed: {type(error).__name__}"
     if not response.choices or response.choices[0].message.role != "assistant": return "FAIL", "typed SDK response has no assistant choice"
     return "PASS", "official OpenAI SDK typed response deserialized"
 

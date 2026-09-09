@@ -50,6 +50,15 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             status, detail = run_openai_sdk(LiveContext("http://localhost:11556/v1", "deepseek-chat"), {"model": "deepseek-chat", "messages": []})
         self.assertEqual(status, "PASS"); self.assertIn("typed", detail)
 
+    def test_openai_adapter_classifies_provider_unavailable_as_blocked(self):
+        class ProviderUnavailable(Exception):
+            status_code = 503
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kwargs: (_ for _ in ()).throw(ProviderUnavailable()))) )
+        fake_module = SimpleNamespace(OpenAI=lambda **kwargs: client)
+        with patch.dict(sys.modules, {"openai": fake_module}), patch("importlib.util.find_spec", return_value=object()), patch.dict(os.environ, {"MIMICGATE_LIVE_API_KEY": "local-test"}):
+            status, detail = run_openai_sdk(LiveContext("http://localhost:11556/v1", "deepseek-chat"), {"model": "deepseek-chat", "messages": []})
+        self.assertEqual(status, "BLOCKED"); self.assertIn("503", detail)
+
     def test_openclaw_adapter_is_blocked_without_explicit_configuration(self):
         with patch.dict(os.environ, {}, clear=True):
             status, detail = run_openclaw(LiveContext("http://localhost:11556/v1", "deepseek-chat"), "hello")
