@@ -42,7 +42,12 @@ need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }
 }
 detect_browser() {
-  local version path
+  local version path snap_chrome
+  snap_chrome="/snap/chromium/current/usr/lib/chromium-browser/chrome"
+  if [ -x "$snap_chrome" ]; then
+    printf '%s' "$snap_chrome"
+    return 0
+  fi
   for browser in chromium chromium-browser; do
     version=""
     path=""
