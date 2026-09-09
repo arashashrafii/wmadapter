@@ -42,13 +42,27 @@ need() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }
 }
 detect_browser() {
-  for browser in chromium chromium-browser google-chrome; do
+  local version path
+  for browser in chromium chromium-browser; do
+    version=""
+    path=""
     if command -v "$browser" >/dev/null 2>&1; then
+      path="$(readlink -f "$(command -v "$browser")")"
+      version="$("$browser" --version 2>/dev/null || true)"
+    fi
+    if printf '%s' "$version" | grep -Eq 'Chromium|Chrome' \
+      && ! printf '%s' "$path" | grep -Eq '(^|/)snap(/|$)' \
+      && ! { [ "$browser" = "chromium-browser" ] && grep -q '/snap/bin/chromium' "$(command -v "$browser")"; }; then
       command -v "$browser"
       return 0
     fi
   done
   return 1
+}
+detect_playwright_browser() {
+  .venv/bin/python -c 'from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    print(p.chromium.executable_path)' 2>/dev/null
 }
 install_system_chromium() {
   local package_manager
@@ -157,6 +171,9 @@ ensure_browser() {
     BROWSER_EXECUTABLE="$(detect_browser || true)"
   fi
   if [ -z "$BROWSER_EXECUTABLE" ]; then
+    BROWSER_EXECUTABLE="$(detect_playwright_browser || true)"
+  fi
+  if [ -z "$BROWSER_EXECUTABLE" ] || [ ! -x "$BROWSER_EXECUTABLE" ]; then
     echo "Chromium installation completed but no supported browser executable was found." >&2
     return 1
   fi
@@ -257,6 +274,7 @@ if [ "$PROVIDER" != "deepseek" ]; then
   say "Using the $PROVIDER browser-backed runtime adapter."
 fi
 
+install_current_os
 CHAT_URL="$(provider_url "$PROVIDER")"
 HEADLESS="false"
 SERVER_HOST="$API_HOST"
@@ -265,7 +283,6 @@ write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_
 
 say "Manual browser authentication selected; no chatbot credentials will be stored."
 
-install_current_os
 stop_service
 say "Web Model Adapter will open its dedicated Playwright Chromium profile for login."
 if ! run_foreground_auth; then
