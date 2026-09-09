@@ -46,7 +46,7 @@ The installer uses one browser process only: the installed system Google Chrome.
 It does not download Playwright's separate browser binary. Playwright is used
 only as the Python library that controls the already-running Chrome session.
 It prints a command that starts local Chrome with an isolated profile and a
-loopback-only debugging endpoint. Complete login in that Chromium window and
+loopback-only debugging endpoint. Complete login in that Chrome window and
 leave it open while Web Model Adapter runs. Web Model Adapter attaches to that session; it does
 not launch a second browser or attempt to bypass the site's CAPTCHA.
 On Linux, the background service uses Xvfb so Chrome has no visible window while

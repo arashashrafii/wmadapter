@@ -18,7 +18,7 @@ secret or public trust root is stored in this repository.
 
 | Platform | Gateway installer | Dedicated browser | Notes |
 |---|---|---|---|
-| Ubuntu 24.04 x86-64 | Adapter contract | Playwright Chromium | Local offline/cache bundle contract only. |
+| Linux, macOS, Windows | System Chrome | Google Chrome | Installer detects an existing system installation. |
 
 The current implementation validates the manifest schema, host platform,
 artifact size and SHA256, local cache identity, staging, preflight, and atomic
