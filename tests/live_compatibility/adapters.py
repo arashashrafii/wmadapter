@@ -5,6 +5,7 @@ import shutil
 import json
 import os
 import subprocess
+from pathlib import Path
 
 
 def run_openai_sdk(context, payload):
@@ -20,16 +21,24 @@ def run_openclaw(context, message: str, include_tools: bool = False):
     command = os.environ.get("MIMICGATE_OPENCLAW_COMMAND")
     config = os.environ.get("MIMICGATE_OPENCLAW_CONFIG")
     if not command or not config: return "BLOCKED", "MIMICGATE_OPENCLAW_COMMAND and MIMICGATE_OPENCLAW_CONFIG are required"
+    if not Path(config).is_file(): return "BLOCKED", "configured OpenClaw config file is unavailable"
     try: args = json.loads(command); extra = json.loads(os.environ.get("MIMICGATE_OPENCLAW_TOOL_ARGS", "[]")) if include_tools else []
     except json.JSONDecodeError: return "BLOCKED", "OpenClaw command configuration must be a JSON argument list"
     if not isinstance(args, list) or not all(isinstance(item, str) for item in args): return "BLOCKED", "OpenClaw command must be a JSON string argument list"
     try:
         completed = subprocess.run(args + extra, input=message, text=True, capture_output=True, timeout=context.timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as error: return "BLOCKED", f"OpenClaw execution unavailable: {type(error).__name__}"
-    output = (completed.stdout + "\n" + completed.stderr).lower()
     if completed.returncode != 0: return "FAIL", f"OpenClaw exited {completed.returncode}"
-    if context.base_url.lower() not in output: return "FAIL", "OpenClaw output did not evidence the configured endpoint"
-    return "PASS", "OpenClaw exited successfully with endpoint evidence"
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return "FAIL", "OpenClaw did not return JSON execution evidence"
+    meta = result.get("result", {}).get("meta", {}).get("agentMeta", {})
+    if result.get("status") != "ok": return "FAIL", "OpenClaw reported an unsuccessful run"
+    if meta.get("provider") != "mimicgate" or meta.get("model") != context.model:
+        return "FAIL", "OpenClaw execution evidence did not identify the configured provider/model"
+    if not result.get("result", {}).get("payloads"): return "FAIL", "OpenClaw returned no response payload"
+    return "PASS", "OpenClaw completed with verified provider/model execution evidence"
 
 
 def adapter_status(name: str) -> tuple[str, str]:
