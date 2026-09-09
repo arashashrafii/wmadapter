@@ -50,9 +50,7 @@ detect_browser() {
       path="$(readlink -f "$(command -v "$browser")")"
       version="$("$browser" --version 2>/dev/null || true)"
     fi
-    if printf '%s' "$version" | grep -Eq 'Chromium|Chrome' \
-      && ! printf '%s' "$path" | grep -Eq '(^|/)snap(/|$)' \
-      && ! { [ "$browser" = "chromium-browser" ] && grep -q '/snap/bin/chromium' "$(command -v "$browser")"; }; then
+    if printf '%s' "$version" | grep -Eq 'Chromium|Chrome'; then
       command -v "$browser"
       return 0
     fi
@@ -178,6 +176,7 @@ ensure_browser() {
     return 1
   fi
   BROWSER_EXECUTABLE="$(resolve_browser_path "$BROWSER_EXECUTABLE")"
+  say "Using Chromium executable: ${BROWSER_EXECUTABLE}"
 }
 write_service() {
   local login_mode="$1"
