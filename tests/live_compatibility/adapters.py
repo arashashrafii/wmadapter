@@ -107,6 +107,22 @@ def _opencode_log_evidence(stderr: str) -> tuple[str, str] | None:
     return (provider, model) if provider and model else None
 
 
+def _opencode_tool_invocation(stdout: str) -> bool:
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        part = event.get("part") or event.get("properties", {}).get("part") or {}
+        tool = event.get("tool") or event.get("name")
+        if isinstance(part, dict):
+            tool = part.get("tool") or part.get("name") or tool
+        if event.get("type") in {"tool_use", "tool_call"} or (isinstance(part, dict) and part.get("type") in {"tool", "tool-use", "tool_call"}):
+            if tool == "bash":
+                return True
+    return False
+
+
 def _opencode_terminal_event(event: dict, pending_tool_calls: set[str]) -> bool:
     event_type = event.get("type")
     part = event.get("part") or event.get("properties", {}).get("part") or {}
@@ -354,7 +370,10 @@ def run_client_case(context, case, payload: dict):
     if case.kind == "sse" and case.client.lower() != "opencode" and evidence.get("stream_classification") not in {"buffered", "progressive"}:
         return "FAIL", f"{case.client} omitted SSE classification"
     if case.kind == "tool_roundtrip" and evidence.get("tool_round_trip") is not True:
-        return "FAIL", f"{case.client} did not verify the tool round trip"
+        if case.client.lower() != "opencode" or not _opencode_tool_invocation(completed.stdout):
+            return "FAIL", f"{case.client} did not verify the tool round trip"
+    if case.client.lower() == "opencode" and case.kind == "tool_roundtrip":
+        return "PASS", f"{case.client} completed client tool loop with terminal provider/model evidence"
     if case.client.lower() == "opencode" and case.kind == "sse":
         return "PASS", f"{case.client} completed stream with terminal provider/model evidence"
     return "PASS", f"{case.client} completed {case.kind} with provider/model evidence"

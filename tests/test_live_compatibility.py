@@ -140,6 +140,10 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertTrue(case.stream)
         self.assertEqual(case.payload("deepseek-chat")["messages"], [{"role": "user", "content": "Reply exactly WMADAPTER_LIVE_T52"}])
 
+    def test_opencode_t53_uses_harmless_builtin_tool_prompt(self):
+        case = next(case for case in CASES if case.case_id == "T53")
+        self.assertEqual(case.payload("deepseek-chat")["messages"], [{"role": "user", "content": "Run the built-in bash tool with pwd, then report the result."}])
+
     def test_opencode_stream_completion_does_not_claim_raw_sse_classification(self):
         case = next(case for case in CASES if case.case_id == "T52")
         with tempfile.TemporaryDirectory() as directory:
@@ -391,6 +395,35 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
 
         self.assertEqual(status, "FAIL")
         self.assertIn("logs", detail)
+
+    def test_opencode_tool_case_requires_observed_bash_invocation_and_terminal(self):
+        case = next(case for case in CASES if case.case_id == "T53")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout='{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_pwd"}}\n'
+                       '{"type":"tool_result","part":{"type":"tool_result","callID":"call_pwd"}}\n'
+                       '{"type":"step_finish","part":{"reason":"stop"}}',
+                stderr="INFO providerID=wmadapter modelID=deepseek-chat",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "--format", "json", "--print-logs", "--log-level", "INFO"]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                },
+            ), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)):
+                status, detail = run_client_case(
+                    LiveContext("http://localhost:11556/v1", "deepseek-chat"),
+                    case,
+                    case.payload("deepseek-chat"),
+                )
+
+        self.assertEqual(status, "PASS")
+        self.assertIn("client tool loop", detail)
+        self.assertNotIn("gateway", detail)
 
     def test_client_case_harness_requires_explicit_configuration(self):
         case = next(case for case in CASES if case.client == "openclaw" and case.kind == "image")
