@@ -252,6 +252,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                 self.assertTrue(Path(observed["XDG_RUNTIME_DIR"]).is_dir())
                 self.assertEqual(observed["WMADAPTER_OPENCODE_CONFIG"], str(config))
                 self.assertEqual(kwargs["timeout"], 7)
+                self.assertEqual(kwargs["cwd"], str(config.parent.resolve()))
                 return SimpleNamespace(
                     returncode=0,
                     stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}),

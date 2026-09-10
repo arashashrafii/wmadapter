@@ -164,6 +164,7 @@ def run_client_case(context, case, payload: dict):
         }
         if case.client.lower() == "opencode":
             run_options["stdin"] = subprocess.DEVNULL
+            run_options["cwd"] = str(Path(config).resolve().parent)
         try:
             completed = subprocess.run(client_args, **run_options)
         except (OSError, subprocess.TimeoutExpired) as error:
