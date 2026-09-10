@@ -113,6 +113,17 @@ class ChatRequest(BaseModel):
     reasoning_effort: str | None = None
 
 
+class ResponsesRequest(BaseModel):
+    """Minimal text-only request contract for the Responses compatibility path."""
+
+    model_config = ConfigDict(extra="allow")
+    model: str = "deepseek-chat"
+    input: Any
+    conversation_id: ConversationId | None = None
+    previous_response_id: ResponseId | None = None
+    stream: bool = False
+
+
 
 class ModelCapabilities(BaseModel):
     tool_calling: Literal["none", "emulated", "native"] = "emulated"

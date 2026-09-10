@@ -19,7 +19,17 @@ from .providers.router import ProviderRouter
 from .security import redact
 from .service import DeepSeekService, PageCapacityError, QwenService
 
-from .providers.contract import Message, ChatRequest, ProviderRequest, ProviderResult, canonicalize
+from .providers.contract import (
+    ConversationId,
+    Message,
+    ChatRequest,
+    ProviderRequest,
+    ProviderResult,
+    ResponseId,
+    ResponsesRequest,
+    canonicalize,
+)
+from .providers.state import ConversationStateConflict, GatewayState, UnknownResponseId
 from .providers.protocol import (
     _content_text,
     _image_attachments,
@@ -41,6 +51,7 @@ providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
 router = ProviderRouter(providers, config["providers"]["default"])
 default_system_prompt = config["deepseek"].get("system_prompt", "")
 gateway_api_key = config["server"].get("api_key")
+response_state = GatewayState()
 
 
 def _authorize(request: Request) -> None:
@@ -91,6 +102,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Startup provider readiness check failed: %s", exc)
     yield
     await router.stop()
+    response_state.clear()
 
 
 app = FastAPI(title="Web Model Adapter", description="Web Model Adapter — Web-to-API Gateway for AI Agents", version="0.5.0", lifespan=lifespan)
@@ -248,3 +260,70 @@ async def chat_completion(payload: ChatRequest, request: Request):
     response["choices"][0]["finish_reason"] = result.finish_reason
     response["usage"] = result.usage
     return response
+
+
+@app.post("/v1/responses")
+async def responses(payload: ResponsesRequest, request: Request):
+    """Minimal text-only Responses compatibility channel."""
+    _authorize(request)
+    unsupported = sorted(payload.model_extra or {})
+    if unsupported:
+        raise HTTPException(400, f"Responses feature is not supported: {unsupported[0]}")
+    if payload.stream:
+        raise HTTPException(400, "Responses streaming is not supported yet")
+    if not isinstance(payload.input, str):
+        raise HTTPException(400, "Multimodal or structured Responses input is not supported yet")
+
+    provider = _model_provider(payload.model)
+    chat = ChatRequest(
+        model=payload.model,
+        messages=[Message(role="user", content=payload.input)],
+        conversation_id=payload.conversation_id,
+        previous_response_id=payload.previous_response_id,
+    )
+    validate_chat(chat, provider)
+    await _require_provider_ready(provider)
+    try:
+        conversation_id = response_state.resolve(
+            conversation_id=payload.conversation_id,
+            previous_response_id=payload.previous_response_id,
+        )
+    except UnknownResponseId as exc:
+        raise HTTPException(400, "Unknown or expired previous_response_id") from exc
+    except ConversationStateConflict as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if conversation_id is None:
+        conversation_id = ConversationId(f"resp-{uuid.uuid4().hex}")
+
+    inference = ProviderRequest(
+        chat=chat,
+        canonical=canonicalize(chat),
+        conversation_id=conversation_id,
+        previous_response_id=payload.previous_response_id,
+        system_prompt="" if provider.name == "qwen" else default_system_prompt,
+    )
+    try:
+        result = await provider.infer(inference)
+    except PageCapacityError as exc:
+        raise _provider_http_error(exc) from exc
+    except Exception as exc:
+        raise _provider_http_error(exc) from exc
+
+    response_id = ResponseId(f"resp_{uuid.uuid4().hex}")
+    response_state.remember(response_id, conversation_id)
+    text = result.content or ""
+    return {
+        "id": response_id,
+        "object": "response",
+        "created_at": int(time.time()),
+        "status": "completed",
+        "model": payload.model,
+        "conversation_id": conversation_id,
+        "output": [{
+            "id": f"msg_{uuid.uuid4().hex}",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": text, "annotations": []}],
+        }],
+        "output_text": text,
+    }
