@@ -527,6 +527,38 @@ def _normalize_tool_arguments(name: str, arguments: dict[str, Any]) -> dict[str,
 
 
 def _extract_tool_call(answer: str, tools: list[dict[str, Any]] | None) -> tuple[dict[str, Any] | None, str]:
+    """Normalize web-model tool markup into one OpenAI-compatible call."""
+    if tools:
+        allowed = {item.get("function", {}).get("name") for item in tools}
+        pattern = re.compile(
+            r"<｜｜DSML｜｜\s*invoke\s+name=[\"']([^\"']+)[\"']\s*>"
+            r"(.*?)</｜｜DSML｜｜\s*invoke\s*>", re.DOTALL,
+        )
+        match = pattern.search(answer)
+        if match and match.group(1) in allowed:
+            arguments: dict[str, Any] = {}
+            for parameter in re.finditer(
+                r"<｜｜DSML｜｜\s*parameter\s+name=[\"']([^\"']+)[\"']"
+                r"(?:\s+string=[\"'][^\"']*[\"'])?\s*>(.*?)"
+                r"</｜｜DSML｜｜\s*parameter\s*>", match.group(2), re.DOTALL,
+            ):
+                key, value = parameter.group(1), parameter.group(2).strip()
+                try:
+                    arguments[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    arguments[key] = value
+            name = match.group(1)
+            arguments = _normalize_tool_arguments(name, arguments)
+            call = {"id": f"call_{uuid.uuid4().hex}", "type": "function", "function": {
+                "name": name,
+                "arguments": json.dumps(arguments, ensure_ascii=False, separators=(",", ":")),
+            }}
+            visible = (answer[:match.start()] + answer[match.end():]).strip()
+            return call, visible
+    return _extract_tool_call_legacy(answer, tools)
+
+
+def _extract_tool_call_legacy(answer: str, tools: list[dict[str, Any]] | None) -> tuple[dict[str, Any] | None, str]:
     if not tools:
         return None, answer
     match = re.search(r"<tool_call>\s*(\{.*\})\s*</tool_call>", answer, re.DOTALL)

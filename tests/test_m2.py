@@ -762,6 +762,31 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(call["function"]["name"], "exec")
         self.assertEqual(json.loads(call["function"]["arguments"]), {"command": 'printf {"ok":true}'})
 
+    def test_deepseek_dsml_tool_call_becomes_openai_call(self):
+        answer = (
+            '<｜｜DSML｜｜ invoke name="bash">'
+            '<｜｜DSML｜｜ parameter name="command" string="true">pwd'
+            '</｜｜DSML｜｜ parameter>'
+            '</｜｜DSML｜｜ invoke>'
+        )
+        call, visible = _extract_tool_call(
+            answer,
+            [{"type": "function", "function": {"name": "bash"}}],
+        )
+        self.assertEqual(visible, "")
+        self.assertEqual(call["type"], "function")
+        self.assertEqual(call["function"]["name"], "bash")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {"command": "pwd"})
+
+    def test_unknown_dsml_tool_is_not_executed(self):
+        answer = '<｜｜DSML｜｜ invoke name="rm">x</｜｜DSML｜｜ invoke>'
+        call, visible = _extract_tool_call(
+            answer,
+            [{"type": "function", "function": {"name": "bash"}}],
+        )
+        self.assertIsNone(call)
+        self.assertIn("DSML", visible)
+
     def test_unknown_text_tool_marker_is_not_executed(self):
         call, visible = _extract_tool_call(
             '<tool_call>{"name":"rm_everything","arguments":{}}</tool_call>',
