@@ -32,6 +32,7 @@ from .providers.contract import (
     validate_structured_output,
 )
 from .providers.state import ConversationStateConflict, GatewayState, UnknownResponseId
+from .providers.opencode import translate_request as translate_opencode_request
 from .providers.errors import (
     ContextLimitError,
     ProviderInternalError,
@@ -357,6 +358,17 @@ async def chat_completion(payload: ChatRequest, request: Request):
     response["choices"][0]["finish_reason"] = result.finish_reason
     response["usage"] = result.usage
     return response
+
+
+@app.post("/v1/opencode/chat/completions")
+async def opencode_chat_completion(request: Request):
+    """Isolated OpenCode channel; inference remains the shared chat contract."""
+    _authorize(request)
+    try:
+        payload = translate_opencode_request(await request.json())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await chat_completion(payload, request)
 
 
 @app.post("/v1/responses")
