@@ -331,11 +331,19 @@ class ResponsesRequest(BaseModel):
     text: dict[str, Any] | None = None
 
 
+class EmbeddingsRequest(BaseModel):
+    """OpenAI-compatible embeddings shape, validated but not implemented."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "text-embedding"
+    input: Any
+
+
 
 class ModelCapabilities(BaseModel):
     tool_calling: Literal["none", "emulated", "native"] = "emulated"
     streaming: Literal["buffered"] = "buffered"
     image_input: bool = False
+    embeddings: bool = False
     context_window: int | None = None
     max_output_tokens: int | None = None
     sampling_controls: bool = False

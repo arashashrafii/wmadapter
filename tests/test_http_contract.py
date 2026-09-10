@@ -52,6 +52,7 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(len(models), 2)
         self.assertEqual(models[0]['capabilities']['streaming'], 'buffered')
         self.assertFalse(models[0]['capabilities']['image_input'])
+        self.assertFalse(models[0]['capabilities']['embeddings'])
         self.assertIsNone(models[0]['capabilities']['context_window'])
 
     def test_completion(self):
@@ -61,6 +62,26 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(body['choices'][0]['message']['content'], 'hello')
         self.assertEqual(body['choices'][0]['finish_reason'], 'stop')
         self.assertIsNone(body['usage'])
+
+    def test_embeddings_are_explicitly_unsupported_without_fake_vectors(self):
+        response = self.client.post('/v1/embeddings', json={
+            'model': 'deepseek-chat', 'input': 'hello',
+        })
+        self.assertEqual(response.status_code, 501)
+        body = response.json()
+        self.assertEqual(body['error']['code'], 'embeddings_not_supported')
+        self.provider.complete.assert_not_called()
+
+    def test_embeddings_validate_input_and_fields_before_unsupported_response(self):
+        for body, message in (
+            ({'model': 'deepseek-chat', 'input': ['hello', 1]}, 'string or list of strings'),
+            ({'model': 'deepseek-chat', 'input': 'hello', 'encoding_format': 'float'}, 'Unsupported embeddings field'),
+        ):
+            with self.subTest(body=body):
+                response = self.client.post('/v1/embeddings', json=body)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
 
     def test_legacy_completion_uses_canonical_chat_contract_and_shape(self):
         response = self.client.post('/v1/completions', json={

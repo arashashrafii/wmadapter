@@ -25,6 +25,7 @@ from .providers.contract import (
     ConversationId,
     Message,
     ChatRequest,
+    EmbeddingsRequest,
     LegacyCompletionRequest,
     ProviderRequest,
     ProviderResult,
@@ -195,6 +196,9 @@ async def http_error(request, exc):
     if exc.status_code == 504:
         return JSONResponse(_error("Provider request timed out", "provider_error", "provider_timeout"),
                             status_code=504)
+    if exc.status_code == 501:
+        return JSONResponse(_error("Embeddings are not supported by the configured web providers",
+                                   "invalid_request_error", "embeddings_not_supported"), status_code=501)
     if exc.status_code == 503:
         messages = {
             "provider_login_required": ("Provider login is required", "provider_login_required"),
@@ -459,6 +463,27 @@ async def legacy_completions(request: Request):
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "Connection": "close"})
+
+
+@app.post("/v1/embeddings")
+async def embeddings(payload: EmbeddingsRequest, request: Request):
+    """Validate the embeddings contract without fabricating vectors."""
+    _authorize(request)
+    unsupported = sorted(payload.model_extra or {})
+    if unsupported:
+        raise HTTPException(400, f"Unsupported embeddings field: {unsupported[0]}")
+    if isinstance(payload.input, str):
+        inputs = [payload.input]
+    elif isinstance(payload.input, list) and all(isinstance(item, str) for item in payload.input):
+        inputs = payload.input
+    else:
+        raise HTTPException(400, "Embeddings input must be a string or list of strings")
+    if not inputs or any(not item for item in inputs):
+        raise HTTPException(400, "Embeddings input must not be empty")
+    provider = _model_provider(payload.model)
+    if not provider.capabilities.embeddings:
+        raise HTTPException(501, "embeddings_not_supported")
+    raise HTTPException(501, "embeddings_not_supported")
 
 
 @app.post("/v1/opencode/chat/completions")

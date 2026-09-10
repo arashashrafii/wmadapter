@@ -19,6 +19,7 @@ Verified capabilities:
 - `/v1/models`
 - `/v1/chat/completions` (ordinary responses and buffered SSE)
 - `/v1/completions` (supported legacy text-completion subset)
+- `/v1/embeddings` (contract validation; vectors are not currently supported)
 - OpenAI-compatible chat requests, buffered SSE, model capabilities, and
   preservation of tools and tool results through the provider contract.
 - DeepSeek/Qwen provider routing; Qwen is text-only and DeepSeek image input is

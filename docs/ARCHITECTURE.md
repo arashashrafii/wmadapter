@@ -54,7 +54,7 @@ The client agent owns tool execution and sends the result on its next request.
 
 ## Contract scope
 
-POST /v1/chat/completions, POST /v1/completions, and GET /v1/models support text messages, system/user/
+POST /v1/chat/completions, POST /v1/completions, POST /v1/embeddings, and GET /v1/models support text messages, system/user/
 assistant/tool roles, emulated function calls, tool_choice, finish_reason and
 buffered SSE. DeepSeek retains bounded data-URL upload code for verified use,
 but image input is not advertised until live model/UI verification establishes
@@ -67,6 +67,10 @@ stream flag, translates the prompt to one canonical user message, and returns
 the legacy text-completion envelope. Unsupported legacy fields and non-string
 prompts are rejected explicitly; token arrays, logprobs, echo, suffix, and
 other provider-specific options are not silently emulated.
+
+The embeddings route validates string input and model selection but returns
+`501 embeddings_not_supported`; current web providers expose no verified
+embedding capability, and the gateway never fabricates deterministic vectors.
 
 Only providers listed in `providers.enabled` are started at application launch;
 an enabled-provider startup failure leaves the application running with that
