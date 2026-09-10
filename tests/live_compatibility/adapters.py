@@ -4,8 +4,27 @@ import importlib.util
 import shutil
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
+
+
+_STDERR_SENSITIVE_VALUE = re.compile(
+    r"(?i)\b(authorization\s*[:=]\s*(?:bearer\s+)?|bearer\s+|"
+    r"(?:api[_-]?key|token|secret|password|credential)\s*[:=]\s*)([^\s,;]+)"
+)
+_STDERR_DIAGNOSTIC_LIMIT = 500
+
+
+def _stderr_diagnostic(stderr: str) -> str:
+    """Return a short diagnostic without exposing credential-like values."""
+    sanitized = _STDERR_SENSITIVE_VALUE.sub(r"\1[REDACTED]", stderr or "")
+    sanitized = " ".join(sanitized.split())
+    if not sanitized:
+        return "<empty>"
+    if len(sanitized) > _STDERR_DIAGNOSTIC_LIMIT:
+        return sanitized[:_STDERR_DIAGNOSTIC_LIMIT] + "…"
+    return sanitized
 
 
 def run_openai_sdk(context, payload):
@@ -68,7 +87,8 @@ def run_client_case(context, case, payload: dict):
     except (OSError, subprocess.TimeoutExpired) as error:
         return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
     if completed.returncode != 0:
-        return "FAIL", f"{case.client} exited {completed.returncode}"
+        diagnostic = _stderr_diagnostic(completed.stderr)
+        return "FAIL", f"{case.client} exited {completed.returncode} (stderr: {diagnostic})"
     try:
         evidence = json.loads(completed.stdout)
     except json.JSONDecodeError:

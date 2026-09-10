@@ -147,9 +147,40 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             completed = SimpleNamespace(returncode=0, stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}), stderr="")
             with patch.dict(os.environ, {"WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "compat-harness"]), "WMADAPTER_OPENCODE_CONFIG": str(config)}), patch("subprocess.run", return_value=completed) as run:
                 status, detail = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, case.payload("deepseek-chat"))
-            self.assertEqual(status, "PASS")
-            self.assertIn("opencode", detail)
-            self.assertEqual(run.call_args.kwargs["shell"], False)
+                self.assertEqual(status, "PASS")
+                self.assertIn("opencode", detail)
+                self.assertEqual(run.call_args.kwargs["shell"], False)
+
+    def test_client_case_failure_includes_bounded_redacted_stderr(self):
+        case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            completed = SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="fatal: Authorization: Bearer super-secret-token; " + "diagnostic " * 200,
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "compat-harness"]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                },
+            ), patch("subprocess.run", return_value=completed) as run:
+                status, detail = run_client_case(
+                    LiveContext("http://localhost:11556/v1", "deepseek-chat"),
+                    case,
+                    case.payload("deepseek-chat"),
+                )
+
+        self.assertEqual(status, "FAIL")
+        self.assertIn("opencode exited 1", detail)
+        self.assertIn("fatal", detail)
+        self.assertIn("[REDACTED]", detail)
+        self.assertNotIn("super-secret-token", detail)
+        self.assertLessEqual(len(detail), 600)
+        self.assertEqual(run.call_args.kwargs["shell"], False)
 
     def test_client_case_harness_requires_explicit_configuration(self):
         case = next(case for case in CASES if case.client == "openclaw" and case.kind == "image")
