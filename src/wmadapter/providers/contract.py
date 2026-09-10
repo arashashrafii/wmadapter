@@ -417,6 +417,7 @@ class ModelCapabilities(BaseModel):
     sampling_controls: bool = False
     parallel_tool_calls: bool = False
     reasoning: bool = False
+    usage_reporting: Literal["unavailable", "provider_observed"] = "unavailable"
     gateway_max_input_chars: int | None = None
     gateway_max_output_chars: int | None = None
 

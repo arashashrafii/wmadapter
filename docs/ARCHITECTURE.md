@@ -78,6 +78,15 @@ top_p, token limits, penalties, seed, or stop sequences, so those values are
 rejected explicitly. `n=1` and streamed `stream_options.include_usage` are the
 only supported controls; Responses applies the same truthful rejection policy.
 
+Model discovery includes the registered provider identity and a separate limits
+object. Gateway character limits are reported when configured; upstream context
+and output-token limits remain `null` when unverified. Usage is never estimated
+from message text or response length. Chat Completions and Responses expose
+provider usage only when all three token counts are observed, non-negative
+integers, and internally consistent; otherwise they return `usage: null`.
+When streamed usage is requested, the final empty-choice chunk is emitted with
+that same observed usage or `null`, and contains no provider-private fields.
+
 The images route validates a non-empty text prompt and model selection but
 returns `501 image_generation_not_supported`; current web providers expose no
 verified image-generation path, and the gateway never fabricates image data.

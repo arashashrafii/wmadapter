@@ -31,6 +31,10 @@ Verified capabilities:
   support.
 - Sampling controls are validated; only `n=1` and streamed
   `stream_options.include_usage` are supported by the current web adapters.
+- `/v1/models` identifies the backing web provider and reports gateway limits;
+  provider context/output limits and usage remain unknown unless observed.
+- Chat Completions and Responses return usage only when the provider supplies a
+  complete, internally consistent token record; otherwise usage is `null`.
 - Managed browser sessions with headed login, canonical profile ownership,
   headed-to-headless handoff, session probing, profile locking, page ownership,
   configurable page caps, idle cleanup, and protected in-flight pages.

@@ -11,6 +11,7 @@ from wmadapter.api.server import app as alternate_app
 from wmadapter.providers.base import ChatProvider
 from wmadapter.providers.router import ProviderRouter
 from wmadapter.service import PageCapacityError
+from wmadapter.providers.contract import ProviderResult
 from test_contract_v2 import TOOLS
 
 
@@ -63,7 +64,11 @@ class HTTPContractTests(unittest.TestCase):
         self.assertFalse(models[0]['capabilities']['pdf_input'])
         self.assertFalse(models[0]['capabilities']['batching'])
         self.assertFalse(models[0]['capabilities']['sampling_controls'])
+        self.assertEqual(models[0]['capabilities']['usage_reporting'], 'unavailable')
         self.assertIsNone(models[0]['capabilities']['context_window'])
+        self.assertEqual(models[0]['provider'], 'deepseek')
+        self.assertIsNone(models[0]['limits']['context_window'])
+        self.assertIsNone(models[0]['limits']['max_output_tokens'])
 
     def test_completion(self):
         response = self.post()
@@ -72,6 +77,21 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(body['choices'][0]['message']['content'], 'hello')
         self.assertEqual(body['choices'][0]['finish_reason'], 'stop')
         self.assertIsNone(body['usage'])
+
+    def test_usage_is_forwarded_only_from_complete_observed_provider_data(self):
+        self.provider.infer = AsyncMock(return_value=ProviderResult(
+            content='hello', usage={'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5}
+        ))
+        response = self.post()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['usage'], {
+            'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5
+        })
+
+        self.provider.infer = AsyncMock(return_value=ProviderResult(
+            content='hello', usage={'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 99}
+        ))
+        self.assertIsNone(self.post().json()['usage'])
 
     def test_unsupported_sampling_and_stop_controls_are_rejected_before_provider(self):
         for field, value in (
@@ -352,8 +372,25 @@ class HTTPContractTests(unittest.TestCase):
             self.assertEqual(chunks[0]['choices'][0]['delta']['role'], 'assistant')
             self.assertEqual(chunks[-2]['choices'][0]['finish_reason'], finish)
             self.assertEqual(chunks[-1]['choices'], [])
+            self.assertIsNone(chunks[-1]['usage'])
             if finish == 'tool_calls':
                 self.assertEqual(chunks[1]['choices'][0]['delta']['tool_calls'][0]['index'], 0)
+
+    def test_sse_usage_is_observed_and_private_fields_are_redacted(self):
+        self.provider.infer = AsyncMock(return_value=ProviderResult(
+            content='hello', usage={
+                'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5,
+                'provider_trace': 123,
+            }
+        ))
+        response = self.post(stream=True, stream_options={'include_usage': True})
+        frames = [json.loads(line[6:]) for line in response.text.splitlines()
+                  if line.startswith('data: {')]
+        usage = frames[-1]['usage']
+        self.assertEqual(usage, {
+            'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5
+        })
+        self.assertNotIn('provider_trace', response.text)
 
     def test_streaming_delayed_provider_emits_heartbeats_and_one_done(self):
         self.provider.infer = AsyncMock()

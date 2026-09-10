@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from wmadapter import main
 from wmadapter.providers.base import ChatProvider
+from wmadapter.providers.contract import ProviderResult
 from wmadapter.providers.router import ProviderRouter
 
 
@@ -51,8 +52,19 @@ class ResponsesEndpointTests(unittest.TestCase):
         self.assertTrue(body["id"].startswith("resp_"))
         self.assertEqual(body["status"], "completed")
         self.assertEqual(body["output_text"], "hello")
+        self.assertIsNone(body["usage"])
         self.assertEqual(body["output"][0]["content"][0]["type"], "output_text")
         self.assertTrue(body["conversation_id"].startswith("resp-"))
+
+    def test_observed_usage_is_returned_without_gateway_estimation(self):
+        self.provider.infer = AsyncMock(return_value=ProviderResult(
+            content="hello",
+            usage={"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+        ))
+        body = self.post().json()
+        self.assertEqual(body["usage"], {
+            "prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5
+        })
 
     def test_previous_response_id_continues_same_local_conversation(self):
         first = self.post().json()

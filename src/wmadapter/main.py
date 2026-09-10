@@ -271,6 +271,32 @@ def _public_capabilities(provider):
     return capabilities
 
 
+def _observed_usage(result: ProviderResult) -> dict[str, int] | None:
+    """Expose usage only when the provider supplied a complete safe record."""
+    usage = getattr(result, "usage", None)
+    required = ("prompt_tokens", "completion_tokens", "total_tokens")
+    if not isinstance(usage, dict) or any(key not in usage for key in required):
+        return None
+    values = {key: usage[key] for key in required}
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
+           for value in values.values()):
+        return None
+    if values["total_tokens"] != values["prompt_tokens"] + values["completion_tokens"]:
+        return None
+    return values
+
+
+def _model_limits(provider) -> dict[str, int | None]:
+    capabilities = provider.capabilities
+    limits = config.get("limits", {})
+    return {
+        "context_window": capabilities.context_window,
+        "max_output_tokens": capabilities.max_output_tokens,
+        "gateway_max_input_chars": limits.get("max_input_chars"),
+        "gateway_max_output_chars": limits.get("max_output_chars"),
+    }
+
+
 def _enforce_output_limit(content: str, max_output_chars: int | None) -> None:
     if max_output_chars is not None and len(content) > max_output_chars:
         raise HTTPException(502, "gateway_output_limit")
@@ -329,8 +355,10 @@ async def _require_provider_ready(provider) -> None:
 async def props(model: str, autoload: bool = False):
     provider = _model_provider(model)
     await _require_provider_ready(provider)
-    return {"model": model, "context_length": provider.capabilities.context_window,
-            "supports_chat": True, "capabilities": _public_capabilities(provider)}
+    return {"model": model, "provider": provider.name,
+            "context_length": provider.capabilities.context_window,
+            "supports_chat": True, "capabilities": _public_capabilities(provider),
+            "limits": _model_limits(provider)}
 
 
 @app.get("/v1/models")
@@ -338,7 +366,8 @@ async def models(request: Request):
     _authorize(request)
     return {"object": "list", "data": [
         {"id": model, "object": "model", "created": 0, "owned_by": name + "-web",
-         "capabilities": _public_capabilities(router.providers[name])}
+         "provider": name, "capabilities": _public_capabilities(router.providers[name]),
+         "limits": _model_limits(router.providers[name])}
         for model, name in _model_catalog().items() if name in router.providers
     ]}
 
@@ -411,7 +440,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
                 if (getattr(payload, "stream_options", None) or {}).get("include_usage"):
                     yield _sse({"id": request_id, "object": "chat.completion.chunk",
                                 "created": created, "model": payload.model,
-                                "choices": [], "usage": result.usage})
+                                "choices": [], "usage": _observed_usage(result)})
             except (asyncio.TimeoutError, TimeoutError):
                 inference_task.cancel()
                 with suppress(asyncio.CancelledError, asyncio.TimeoutError):
@@ -438,7 +467,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
     _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
     response = _completion_response(request_id, payload.model, result.content or "", result.tool_calls)
     response["choices"][0]["finish_reason"] = result.finish_reason
-    response["usage"] = result.usage
+    response["usage"] = _observed_usage(result)
     return response
 
 
@@ -734,4 +763,5 @@ async def responses(payload: ResponsesRequest, request: Request):
             "content": [{"type": "output_text", "text": text, "annotations": []}],
         }],
         "output_text": text,
+        "usage": _observed_usage(result),
     }
