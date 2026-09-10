@@ -142,7 +142,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
 
     def test_opencode_t53_uses_harmless_builtin_tool_prompt(self):
         case = next(case for case in CASES if case.case_id == "T53")
-        self.assertEqual(case.payload("deepseek-chat")["messages"], [{"role": "user", "content": "Run the built-in bash tool with pwd, then report the result."}])
+        self.assertEqual(case.payload("deepseek-chat")["messages"], [{"role": "user", "content": "Use the bash tool to run exactly: pwd. After receiving the tool result, reply exactly: WMADAPTER_OPENCODE_TOOL_OK"}])
 
     def test_opencode_stream_completion_does_not_claim_raw_sse_classification(self):
         case = next(case for case in CASES if case.case_id == "T52")
@@ -396,7 +396,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertEqual(status, "FAIL")
         self.assertIn("logs", detail)
 
-    def test_opencode_tool_case_requires_observed_bash_invocation_and_terminal(self):
+    def test_opencode_tool_case_requires_bash_invocation_completed_result_and_terminal(self):
         case = next(case for case in CASES if case.case_id == "T53")
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "opencode.json"

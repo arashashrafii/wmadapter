@@ -119,7 +119,8 @@ def _build_all():
                     {"type": "input_audio", "input_audio": {"data": "ZmFrZQ==", "format": "wav"}},
                 ]}])
             elif kind == "tool_roundtrip":
-                prompt = "Run the built-in bash tool with pwd, then report the result." if client == "opencode" else "Look up the fixture nonce."
+                prompt = ("Use the bash tool to run exactly: pwd. After receiving the tool result, "
+                          "reply exactly: WMADAPTER_OPENCODE_TOOL_OK" if client == "opencode" else "Look up the fixture nonce.")
                 builder = _tool_builder(cid, messages=[{"role": "user", "content": prompt}])
             elif kind == "provider_not_ready":
                 builder = _builder(cid, messages=[{"role": "user", "content": "bounded readiness probe"}])
