@@ -87,6 +87,11 @@ are false, unsupported content parts return safe validation errors, and file
 metadata/upload/delete routes return `501 files_not_supported`. No file store,
 PDF parser, or provider-understanding claim is introduced.
 
+Batch create/list/retrieve/cancel routes validate the supported request shape
+where applicable but return `501 batches_not_supported`. Batch capability is
+false because the gateway has no verified asynchronous provider job path or
+persistent job store.
+
 Only providers listed in `providers.enabled` are started at application launch;
 an enabled-provider startup failure leaves the application running with that
 provider not ready while other enabled providers are still attempted. Qwen's

@@ -23,6 +23,7 @@ Verified capabilities:
 - `/v1/images` (contract validation; image generation is not currently supported)
 - `/v1/audio/*` and `/v1/realtime` (validated contracts; audio/realtime are not currently supported)
 - `/v1/files` (validated contract; file/PDF handling is not currently supported)
+- `/v1/batches` (validated contract; asynchronous batch processing is not currently supported)
 - OpenAI-compatible chat requests, buffered SSE, model capabilities, and
   preservation of tools and tool results through the provider contract.
 - DeepSeek/Qwen provider routing; Qwen is text-only and DeepSeek image input is

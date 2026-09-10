@@ -378,6 +378,15 @@ class FilesRequest(BaseModel):
     file: Any = None
 
 
+class BatchCreateRequest(BaseModel):
+    """OpenAI-compatible batch creation shape, validated but not persisted."""
+    model_config = ConfigDict(extra="allow")
+    input_file_id: Any
+    endpoint: Any
+    completion_window: Any
+    metadata: dict[str, str] | None = None
+
+
 
 class ModelCapabilities(BaseModel):
     tool_calling: Literal["none", "emulated", "native"] = "emulated"
@@ -391,6 +400,7 @@ class ModelCapabilities(BaseModel):
     video_input: bool = False
     file_input: bool = False
     pdf_input: bool = False
+    batching: bool = False
     context_window: int | None = None
     max_output_tokens: int | None = None
     sampling_controls: bool = False

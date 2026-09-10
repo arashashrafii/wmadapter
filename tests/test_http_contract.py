@@ -61,6 +61,7 @@ class HTTPContractTests(unittest.TestCase):
         self.assertFalse(models[0]['capabilities']['video_input'])
         self.assertFalse(models[0]['capabilities']['file_input'])
         self.assertFalse(models[0]['capabilities']['pdf_input'])
+        self.assertFalse(models[0]['capabilities']['batching'])
         self.assertIsNone(models[0]['capabilities']['context_window'])
 
     def test_completion(self):
@@ -168,6 +169,34 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(metadata.status_code, 501)
         deleted = self.client.delete('/v1/files/file-fixture')
         self.assertEqual(deleted.status_code, 501)
+        self.provider.complete.assert_not_called()
+
+    def test_batches_are_explicitly_unsupported_without_fake_jobs(self):
+        response = self.client.post('/v1/batches', json={
+            'input_file_id': 'file-fixture',
+            'endpoint': '/v1/chat/completions',
+            'completion_window': '24h',
+            'metadata': {'case': 'fixture'},
+        })
+        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.json()['error']['code'], 'batches_not_supported')
+        self.assertNotIn('id', response.json())
+        self.assertEqual(self.client.get('/v1/batches').status_code, 501)
+        self.assertEqual(self.client.get('/v1/batches/batch-fixture').status_code, 501)
+        self.assertEqual(self.client.post('/v1/batches/batch-fixture/cancel').status_code, 501)
+        self.provider.complete.assert_not_called()
+
+    def test_batches_validate_shape_before_unsupported_response(self):
+        for body, message in (
+            ({'input_file_id': 'file-fixture', 'endpoint': '/v1/unknown', 'completion_window': '24h'}, 'Unsupported batch endpoint'),
+            ({'input_file_id': 'file-fixture', 'endpoint': '/v1/chat/completions', 'completion_window': '1h'}, 'Unsupported batch completion_window'),
+            ({'input_file_id': '', 'endpoint': '/v1/chat/completions', 'completion_window': '24h'}, 'non-empty string'),
+            ({'input_file_id': 'file-fixture', 'endpoint': '/v1/chat/completions', 'completion_window': '24h', 'foo': 'bar'}, 'Unsupported batches field'),
+        ):
+            with self.subTest(body=body):
+                response = self.client.post('/v1/batches', json=body)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.json()['error']['message'])
         self.provider.complete.assert_not_called()
 
     def test_legacy_completion_uses_canonical_chat_contract_and_shape(self):

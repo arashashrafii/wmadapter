@@ -31,6 +31,7 @@ from .providers.contract import (
     ImagesRequest,
     RealtimeRequest,
     FilesRequest,
+    BatchCreateRequest,
     LegacyCompletionRequest,
     ProviderRequest,
     ProviderResult,
@@ -209,6 +210,7 @@ async def http_error(request, exc):
             "audio_not_supported": "Audio input and output are not supported by the configured web providers",
             "realtime_not_supported": "Realtime sessions are not supported by the configured web providers",
             "files_not_supported": "File and PDF inputs are not supported by the configured web providers",
+            "batches_not_supported": "Batch processing is not supported by the configured web providers",
         }
         return JSONResponse(_error(messages.get(code, "Requested capability is not supported by the configured web providers"),
                                    "invalid_request_error", code), status_code=501)
@@ -586,6 +588,44 @@ async def delete_file(file_id: str, request: Request):
     if not file_id:
         raise HTTPException(400, "File ID is required")
     raise HTTPException(501, "files_not_supported")
+
+
+@app.post("/v1/batches")
+async def create_batch(payload: BatchCreateRequest, request: Request):
+    """Validate batch creation without creating an asynchronous job."""
+    _authorize(request)
+    _unsupported_request_fields(payload, "batches")
+    _require_nonempty_text(payload.input_file_id, "Batch input_file_id must be a non-empty string")
+    if payload.endpoint not in {"/v1/chat/completions", "/v1/completions", "/v1/embeddings"}:
+        raise HTTPException(400, "Unsupported batch endpoint")
+    if payload.completion_window != "24h":
+        raise HTTPException(400, "Unsupported batch completion_window")
+    raise HTTPException(501, "batches_not_supported")
+
+
+@app.get("/v1/batches")
+async def list_batches(request: Request):
+    """Reject batch listing because no asynchronous job store exists."""
+    _authorize(request)
+    raise HTTPException(501, "batches_not_supported")
+
+
+@app.get("/v1/batches/{batch_id}")
+async def retrieve_batch(batch_id: str, request: Request):
+    """Reject batch retrieval because no asynchronous job store exists."""
+    _authorize(request)
+    if not batch_id:
+        raise HTTPException(400, "Batch ID is required")
+    raise HTTPException(501, "batches_not_supported")
+
+
+@app.post("/v1/batches/{batch_id}/cancel")
+async def cancel_batch(batch_id: str, request: Request):
+    """Reject batch cancellation because no asynchronous job store exists."""
+    _authorize(request)
+    if not batch_id:
+        raise HTTPException(400, "Batch ID is required")
+    raise HTTPException(501, "batches_not_supported")
 
 
 @app.websocket("/v1/realtime")
