@@ -150,7 +150,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "opencode.json"
             config.write_text("{}")
-            completed = SimpleNamespace(returncode=0, stdout=json.dumps({"status": "ok", "provider": "ignored", "model": "ignored"}), stderr="INFO provider=wmadapter model=deepseek-chat")
+            completed = SimpleNamespace(returncode=0, stdout=json.dumps({"type": "step_finish", "part": {"reason": "stop"}}), stderr="INFO providerID=wmadapter modelID=deepseek-chat")
             with patch.dict(os.environ, {"WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "compat-harness", "--print-logs", "--log-level", "INFO"]), "WMADAPTER_OPENCODE_CONFIG": str(config)}), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)) as run:
                 status, detail = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, case.payload("deepseek-chat"))
                 self.assertEqual(status, "PASS")
@@ -164,8 +164,8 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             prompt = case.payload("deepseek-chat")["messages"][0]["content"]
             completed = SimpleNamespace(
                 returncode=0,
-                stdout='{"type":"step_start"}\n' + json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}) + "\n",
-                stderr="INFO provider=wmadapter model=deepseek-chat",
+                stdout='{"type":"step_start"}\n' + json.dumps({"type": "step_finish", "part": {"reason": "stop"}}) + "\n",
+                stderr="INFO providerID=wmadapter modelID=deepseek-chat",
             )
             with patch.dict(
                 os.environ,
@@ -195,7 +195,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             completed = SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}),
-                stderr="INFO provider=wmadapter model=deepseek-chat",
+                stderr="INFO providerID=wmadapter modelID=deepseek-chat",
             )
             with patch.dict(
                 os.environ,
@@ -256,7 +256,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                 return SimpleNamespace(
                     returncode=0,
                     stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}),
-                    stderr="INFO provider=wmadapter model=deepseek-chat",
+                    stderr="INFO providerID=wmadapter modelID=deepseek-chat",
                 )
 
             with patch.dict(
@@ -287,7 +287,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                 "import sys,time; "
                 f"print({json.dumps(evidence)!r}, flush=True); "
                 f"print({json.dumps(terminal)!r}, flush=True); "
-                "print('INFO provider=wmadapter model=deepseek-chat', file=sys.stderr, flush=True); "
+                "print('INFO providerID=wmadapter modelID=deepseek-chat', file=sys.stderr, flush=True); "
                 "time.sleep(30)"
             )
             with patch.dict(

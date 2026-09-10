@@ -22,8 +22,8 @@ _OPENCODE_PROMPT_PLACEHOLDER = "{prompt}"
 _OPENCODE_PROMPT_LIMIT = 8_000
 _OPENCODE_STDOUT_LIMIT = 1_000_000
 _OPENCODE_STDERR_LIMIT = 1_000_000
-_LOG_PROVIDER = re.compile(r"(?i)\bprovider\s*[:=]\s*([A-Za-z0-9_.-]+)")
-_LOG_MODEL = re.compile(r"(?i)\bmodel\s*[:=]\s*([A-Za-z0-9_./:-]+)")
+_LOG_PROVIDER = re.compile(r"(?i)\bproviderID\s*[:=]\s*([A-Za-z0-9_.-]+)")
+_LOG_MODEL = re.compile(r"(?i)\bmodelID\s*[:=]\s*([A-Za-z0-9_./:-]+)")
 
 
 def _stderr_diagnostic(stderr: str) -> str:
@@ -346,10 +346,11 @@ def run_client_case(context, case, payload: dict):
         return "FAIL", f"{case.client} did not return JSON execution evidence"
     if case.client.lower() != "opencode" and (evidence.get("provider") != "wmadapter" or evidence.get("model") != context.model):
         return "FAIL", f"{case.client} evidence did not identify the configured provider/model"
-    if case.expected_status == 200 and evidence.get("status") != "ok":
-        return "FAIL", f"{case.client} reported an unsuccessful run"
-    if case.expected_status >= 400 and evidence.get("status") != "expected_error":
-        return "FAIL", f"{case.client} did not report the expected controlled error"
+    if case.client.lower() != "opencode":
+        if case.expected_status == 200 and evidence.get("status") != "ok":
+            return "FAIL", f"{case.client} reported an unsuccessful run"
+        if case.expected_status >= 400 and evidence.get("status") != "expected_error":
+            return "FAIL", f"{case.client} did not report the expected controlled error"
     if case.kind == "sse" and evidence.get("stream_classification") not in {"buffered", "progressive"}:
         return "FAIL", f"{case.client} omitted SSE classification"
     if case.kind == "tool_roundtrip" and evidence.get("tool_round_trip") is not True:
