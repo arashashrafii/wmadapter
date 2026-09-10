@@ -112,8 +112,7 @@ def _build_all():
             cid = f"T{next_id:02d}"
             if kind == "image":
                 prompt = (
-                    "What color is the single pixel in the fixture image? Reply exactly: "
-                    "WMADAPTER_LIVE_T54_RED."
+                    "Inspect the attached fixture image. Reply with the single pixel's color name only."
                     if client == "opencode" else "What color is the fixture image?"
                 )
                 builder = _builder(cid, messages=[{"role": "user", "content": [

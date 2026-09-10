@@ -148,7 +148,8 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
     def test_opencode_t54_uses_valid_image_and_image_dependent_prompt(self):
         case = next(case for case in CASES if case.case_id == "T54")
         content = case.payload("deepseek-chat")["messages"][0]["content"]
-        self.assertIn("WMADAPTER_LIVE_T54_RED", content[0]["text"])
+        self.assertEqual(content[0]["text"], "Inspect the attached fixture image. Reply with the single pixel's color name only.")
+        self.assertNotIn("WMADAPTER_LIVE_T54_RED", content[0]["text"])
         self.assertTrue(content[1]["image_url"]["url"].startswith("data:image/png;base64,"))
         self.assertTrue(base64.b64decode(content[1]["image_url"]["url"].split(",", 1)[1], validate=True).startswith(b"\x89PNG\r\n\x1a\n"))
 
@@ -165,7 +166,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                 self.assertTrue(image_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
                 return SimpleNamespace(
                     returncode=0,
-                    stdout='{"type":"text","text":"WMADAPTER_LIVE_T54_RED"}\n{"type":"step_finish","part":{"reason":"stop"}}',
+                    stdout='{"type":"text","text":"red"}\n{"type":"step_finish","part":{"reason":"stop"}}',
                     stderr="INFO providerID=wmadapter modelID=deepseek-chat",
                 ), True
 
@@ -179,14 +180,14 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         image_path = Path(observed["args"][observed["args"].index("--file") + 1])
         self.assertFalse(image_path.exists())
 
-    def test_opencode_t54_text_only_red_answer_does_not_claim_vision(self):
+    def test_opencode_t54_without_image_dependent_color_does_not_claim_vision(self):
         case = next(case for case in CASES if case.case_id == "T54")
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "opencode.json"
             config.write_text("{}")
             completed = SimpleNamespace(
                 returncode=0,
-                stdout='{"type":"text","text":"The pixel is red"}\n{"type":"step_finish","part":{"reason":"stop"}}',
+                stdout='{"type":"text","text":"I cannot inspect the attached image"}\n{"type":"step_finish","part":{"reason":"stop"}}',
                 stderr="INFO providerID=wmadapter modelID=deepseek-chat",
             )
             with patch.dict(os.environ, {

@@ -26,7 +26,7 @@ _OPENCODE_STDOUT_LIMIT = 1_000_000
 _OPENCODE_STDERR_LIMIT = 1_000_000
 _LOG_PROVIDER = re.compile(r"(?i)\bproviderID\s*[:=]\s*([A-Za-z0-9_.-]+)")
 _LOG_MODEL = re.compile(r"(?i)\bmodelID\s*[:=]\s*([A-Za-z0-9_./:-]+)")
-_OPENCODE_IMAGE_MARKER = "WMADAPTER_LIVE_T54_RED"
+_OPENCODE_IMAGE_COLOR = "red"
 
 
 def _stderr_diagnostic(stderr: str) -> str:
@@ -116,8 +116,10 @@ def _opencode_image_evidence(stdout: str) -> bool:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(event, dict) and _OPENCODE_IMAGE_MARKER in json.dumps(event, ensure_ascii=False):
-            return True
+        if isinstance(event, dict):
+            text = event.get("text")
+            if isinstance(text, str) and text.strip().casefold() == _OPENCODE_IMAGE_COLOR:
+                return True
     return False
 
 
