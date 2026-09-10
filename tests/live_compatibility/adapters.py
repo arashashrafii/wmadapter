@@ -153,17 +153,19 @@ def run_client_case(context, case, payload: dict):
         client_env = os.environ.copy()
         client_env["XDG_DATA_HOME"] = data_home
         client_env["XDG_RUNTIME_DIR"] = runtime_home
+        run_options = {
+            "input": client_input,
+            "text": True,
+            "capture_output": True,
+            "timeout": context.timeout,
+            "check": False,
+            "shell": False,
+            "env": client_env,
+        }
+        if case.client.lower() == "opencode":
+            run_options["stdin"] = subprocess.DEVNULL
         try:
-            completed = subprocess.run(
-                client_args,
-                input=client_input,
-                text=True,
-                capture_output=True,
-                timeout=context.timeout,
-                check=False,
-                shell=False,
-                env=client_env,
-            )
+            completed = subprocess.run(client_args, **run_options)
         except (OSError, subprocess.TimeoutExpired) as error:
             return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
     if completed.returncode != 0:

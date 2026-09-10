@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 import sys
@@ -179,6 +180,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertIn("provider/model", detail)
         self.assertEqual(run.call_args.args[0], ["opencode", "run", "--format", "json", prompt])
         self.assertIsNone(run.call_args.kwargs["input"])
+        self.assertIs(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
         self.assertEqual(run.call_args.kwargs["shell"], False)
 
     def test_opencode_prompt_placeholder_is_replaced_as_one_argument(self):
