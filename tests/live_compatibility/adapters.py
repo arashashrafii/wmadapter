@@ -145,6 +145,9 @@ def _opencode_terminal_event(event: dict, pending_tool_calls: set[str]) -> bool:
     if event_type in {"tool_result", "tool_end", "tool_finish"} or part_type in {"tool_result", "tool-result"}:
         if call_id:
             pending_tool_calls.discard(str(call_id))
+    state = part.get("state") if isinstance(part, dict) else None
+    if call_id and isinstance(state, dict) and state.get("status") in {"completed", "success"}:
+        pending_tool_calls.discard(str(call_id))
     reason = event.get("reason")
     if isinstance(part, dict):
         reason = part.get("reason", reason)

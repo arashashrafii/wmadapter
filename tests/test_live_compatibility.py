@@ -15,7 +15,7 @@ from live_compatibility.report import new_report, redact, write_report
 from live_compatibility.runner import require_live_confirmation
 from live_compatibility.runner import LiveContext, run_suite
 from live_compatibility.runner import resolve_url
-from live_compatibility.adapters import run_openai_sdk, run_openclaw, run_client_case
+from live_compatibility.adapters import _opencode_terminal_event, run_openai_sdk, run_openclaw, run_client_case
 from live_compatibility.transport import FixtureTransport, SSEParser, TransportResponse
 
 
@@ -424,6 +424,29 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertEqual(status, "PASS")
         self.assertIn("client tool loop", detail)
         self.assertNotIn("gateway", detail)
+
+    def test_completed_tool_use_event_clears_pending_call_for_terminal_stop(self):
+        active = set()
+        self.assertFalse(_opencode_terminal_event({
+            "type": "tool_use",
+            "part": {"type": "tool", "tool": "bash", "callID": "call_active", "state": {"status": "running"}},
+        }, active))
+        self.assertEqual(active, {"call_active"})
+        pending = set()
+        self.assertFalse(_opencode_terminal_event({
+            "type": "tool_use",
+            "part": {
+                "type": "tool",
+                "tool": "bash",
+                "callID": "call_pwd",
+                "state": {"status": "completed", "output": "/tmp"},
+            },
+        }, pending))
+        self.assertEqual(pending, set())
+        self.assertTrue(_opencode_terminal_event({
+            "type": "step_finish",
+            "part": {"reason": "stop"},
+        }, pending))
 
     def test_client_case_harness_requires_explicit_configuration(self):
         case = next(case for case in CASES if case.client == "openclaw" and case.kind == "image")
