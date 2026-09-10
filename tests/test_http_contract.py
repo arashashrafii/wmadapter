@@ -53,6 +53,7 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(models[0]['capabilities']['streaming'], 'buffered')
         self.assertFalse(models[0]['capabilities']['image_input'])
         self.assertFalse(models[0]['capabilities']['embeddings'])
+        self.assertFalse(models[0]['capabilities']['image_generation'])
         self.assertIsNone(models[0]['capabilities']['context_window'])
 
     def test_completion(self):
@@ -79,6 +80,27 @@ class HTTPContractTests(unittest.TestCase):
         ):
             with self.subTest(body=body):
                 response = self.client.post('/v1/embeddings', json=body)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
+
+    def test_images_are_explicitly_unsupported_without_fake_data(self):
+        response = self.client.post('/v1/images', json={
+            'model': 'deepseek-chat', 'prompt': 'a harmless fixture',
+        })
+        self.assertEqual(response.status_code, 501)
+        body = response.json()
+        self.assertEqual(body['error']['code'], 'image_generation_not_supported')
+        self.assertNotIn('data', body)
+        self.provider.complete.assert_not_called()
+
+    def test_images_validate_prompt_and_fields_before_unsupported_response(self):
+        for body, message in (
+            ({'model': 'deepseek-chat', 'prompt': ''}, 'non-empty string'),
+            ({'model': 'deepseek-chat', 'prompt': 'hello', 'size': '1024x1024'}, 'Unsupported image generation field'),
+        ):
+            with self.subTest(body=body):
+                response = self.client.post('/v1/images', json=body)
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.json()['error']['message'])
         self.provider.complete.assert_not_called()

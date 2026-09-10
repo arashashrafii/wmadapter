@@ -338,12 +338,20 @@ class EmbeddingsRequest(BaseModel):
     input: Any
 
 
+class ImagesRequest(BaseModel):
+    """OpenAI-compatible image generation shape, validated but not implemented."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "deepseek-chat"
+    prompt: Any
+
+
 
 class ModelCapabilities(BaseModel):
     tool_calling: Literal["none", "emulated", "native"] = "emulated"
     streaming: Literal["buffered"] = "buffered"
     image_input: bool = False
     embeddings: bool = False
+    image_generation: bool = False
     context_window: int | None = None
     max_output_tokens: int | None = None
     sampling_controls: bool = False

@@ -26,6 +26,7 @@ from .providers.contract import (
     Message,
     ChatRequest,
     EmbeddingsRequest,
+    ImagesRequest,
     LegacyCompletionRequest,
     ProviderRequest,
     ProviderResult,
@@ -197,8 +198,13 @@ async def http_error(request, exc):
         return JSONResponse(_error("Provider request timed out", "provider_error", "provider_timeout"),
                             status_code=504)
     if exc.status_code == 501:
-        return JSONResponse(_error("Embeddings are not supported by the configured web providers",
-                                   "invalid_request_error", "embeddings_not_supported"), status_code=501)
+        code = str(exc.detail)
+        messages = {
+            "embeddings_not_supported": "Embeddings are not supported by the configured web providers",
+            "image_generation_not_supported": "Image generation is not supported by the configured web providers",
+        }
+        return JSONResponse(_error(messages.get(code, "Requested capability is not supported by the configured web providers"),
+                                   "invalid_request_error", code), status_code=501)
     if exc.status_code == 503:
         messages = {
             "provider_login_required": ("Provider login is required", "provider_login_required"),
@@ -484,6 +490,19 @@ async def embeddings(payload: EmbeddingsRequest, request: Request):
     if not provider.capabilities.embeddings:
         raise HTTPException(501, "embeddings_not_supported")
     raise HTTPException(501, "embeddings_not_supported")
+
+
+@app.post("/v1/images")
+async def images(payload: ImagesRequest, request: Request):
+    """Validate the image-generation contract without fabricating images."""
+    _authorize(request)
+    unsupported = sorted(payload.model_extra or {})
+    if unsupported:
+        raise HTTPException(400, f"Unsupported image generation field: {unsupported[0]}")
+    if not isinstance(payload.prompt, str) or not payload.prompt.strip():
+        raise HTTPException(400, "Image generation prompt must be a non-empty string")
+    _model_provider(payload.model)
+    raise HTTPException(501, "image_generation_not_supported")
 
 
 @app.post("/v1/opencode/chat/completions")
