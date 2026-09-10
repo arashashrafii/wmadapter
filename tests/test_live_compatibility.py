@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import subprocess
@@ -143,6 +144,58 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
     def test_opencode_t53_uses_harmless_builtin_tool_prompt(self):
         case = next(case for case in CASES if case.case_id == "T53")
         self.assertEqual(case.payload("deepseek-chat")["messages"], [{"role": "user", "content": "Use the bash tool to run exactly: pwd. After receiving the tool result, reply exactly: WMADAPTER_OPENCODE_TOOL_OK"}])
+
+    def test_opencode_t54_uses_valid_image_and_image_dependent_prompt(self):
+        case = next(case for case in CASES if case.case_id == "T54")
+        content = case.payload("deepseek-chat")["messages"][0]["content"]
+        self.assertIn("WMADAPTER_LIVE_T54_RED", content[0]["text"])
+        self.assertTrue(content[1]["image_url"]["url"].startswith("data:image/png;base64,"))
+        self.assertTrue(base64.b64decode(content[1]["image_url"]["url"].split(",", 1)[1], validate=True).startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_opencode_t54_materializes_image_file_and_requires_marker(self):
+        case = next(case for case in CASES if case.case_id == "T54")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            observed = {}
+
+            def run_image(args, **kwargs):
+                observed["args"] = args
+                image_path = Path(args[args.index("--file") + 1])
+                self.assertTrue(image_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout='{"type":"text","text":"WMADAPTER_LIVE_T54_RED"}\n{"type":"step_finish","part":{"reason":"stop"}}',
+                    stderr="INFO providerID=wmadapter modelID=deepseek-chat",
+                ), True
+
+            with patch.dict(os.environ, {
+                "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "--print-logs", "--log-level", "INFO"]),
+                "WMADAPTER_OPENCODE_CONFIG": str(config),
+            }), patch("live_compatibility.adapters._run_opencode", side_effect=run_image):
+                status, _ = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, case.payload("deepseek-chat"))
+
+        self.assertEqual(status, "PASS")
+        image_path = Path(observed["args"][observed["args"].index("--file") + 1])
+        self.assertFalse(image_path.exists())
+
+    def test_opencode_t54_text_only_red_answer_does_not_claim_vision(self):
+        case = next(case for case in CASES if case.case_id == "T54")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout='{"type":"text","text":"The pixel is red"}\n{"type":"step_finish","part":{"reason":"stop"}}',
+                stderr="INFO providerID=wmadapter modelID=deepseek-chat",
+            )
+            with patch.dict(os.environ, {
+                "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "--print-logs", "--log-level", "INFO"]),
+                "WMADAPTER_OPENCODE_CONFIG": str(config),
+            }), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)):
+                status, detail = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, case.payload("deepseek-chat"))
+        self.assertEqual(status, "FAIL")
+        self.assertIn("image-dependent", detail)
 
     def test_opencode_stream_completion_does_not_claim_raw_sse_classification(self):
         case = next(case for case in CASES if case.case_id == "T52")

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import importlib.util
 import shutil
 import json
@@ -24,6 +26,7 @@ _OPENCODE_STDOUT_LIMIT = 1_000_000
 _OPENCODE_STDERR_LIMIT = 1_000_000
 _LOG_PROVIDER = re.compile(r"(?i)\bproviderID\s*[:=]\s*([A-Za-z0-9_.-]+)")
 _LOG_MODEL = re.compile(r"(?i)\bmodelID\s*[:=]\s*([A-Za-z0-9_./:-]+)")
+_OPENCODE_IMAGE_MARKER = "WMADAPTER_LIVE_T54_RED"
 
 
 def _stderr_diagnostic(stderr: str) -> str:
@@ -73,6 +76,49 @@ def _opencode_args(args: list[str], payload: dict) -> tuple[list[str] | None, st
     if placeholder_count == 1:
         return [prompt if item == _OPENCODE_PROMPT_PLACEHOLDER else item for item in args], None
     return [*args, prompt], None
+
+
+def _opencode_image_file(payload: dict, directory: str) -> tuple[str | None, str | None]:
+    """Materialize the validated T54 image only inside the isolated client directory."""
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return None, "OpenCode image payload has no usable messages"
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            return None, "OpenCode image payload has no image part"
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "image_url":
+                continue
+            image_url = item.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else None
+            prefix = "data:image/png;base64,"
+            if not isinstance(url, str) or not url.startswith(prefix):
+                return None, "OpenCode image must be a base64 PNG data URL"
+            try:
+                image = base64.b64decode(url[len(prefix):], validate=True)
+            except (ValueError, binascii.Error):
+                return None, "OpenCode image data URL is not valid base64"
+            if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+                return None, "OpenCode image data URL is not a valid PNG"
+            path = Path(directory) / "wmadapter-t54.png"
+            path.write_bytes(image)
+            return str(path), None
+        return None, "OpenCode image payload has no image part"
+    return None, "OpenCode image payload has no user message"
+
+
+def _opencode_image_evidence(stdout: str) -> bool:
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict) and _OPENCODE_IMAGE_MARKER in json.dumps(event, ensure_ascii=False):
+            return True
+    return False
 
 
 def _client_evidence(stdout: str) -> dict | None:
@@ -330,6 +376,12 @@ def run_client_case(context, case, payload: dict):
         client_env = os.environ.copy()
         client_env["XDG_DATA_HOME"] = data_home
         client_env["XDG_RUNTIME_DIR"] = runtime_home
+        if case.client.lower() == "opencode" and case.kind == "image":
+            image_path, image_error = _opencode_image_file(payload, data_home)
+            if image_error:
+                return "FAIL", image_error
+            assert image_path is not None
+            client_args = [*client_args, "--file", image_path]
         run_options = {
             "input": client_input,
             "text": True,
@@ -386,6 +438,8 @@ def run_client_case(context, case, payload: dict):
     if case.kind == "tool_roundtrip" and evidence.get("tool_round_trip") is not True:
         if case.client.lower() != "opencode" or _opencode_tool_loop(completed.stdout) != (True, True):
             return "FAIL", f"{case.client} did not verify the tool round trip"
+    if case.client.lower() == "opencode" and case.kind == "image" and not _opencode_image_evidence(completed.stdout):
+        return "FAIL", f"{case.client} did not provide image-dependent output evidence"
     if case.client.lower() == "opencode" and case.kind == "tool_roundtrip":
         return "PASS", f"{case.client} completed client tool loop with terminal provider/model evidence"
     if case.client.lower() == "opencode" and case.kind == "sse":

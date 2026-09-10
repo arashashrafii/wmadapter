@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 TOOLS = [{"type": "function", "function": {"name": "lookup", "description": "fixture lookup", "parameters": {"type": "object", "properties": {"q": {"type": "string"}}}}}]
+T54_IMAGE_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
 
 
 @dataclass(frozen=True)
@@ -110,9 +111,14 @@ def _build_all():
         for title, kind, status, stream in client_cases:
             cid = f"T{next_id:02d}"
             if kind == "image":
+                prompt = (
+                    "What color is the single pixel in the fixture image? Reply exactly: "
+                    "WMADAPTER_LIVE_T54_RED."
+                    if client == "opencode" else "What color is the fixture image?"
+                )
                 builder = _builder(cid, messages=[{"role": "user", "content": [
-                    {"type": "text", "text": "What color is the fixture image?"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGVsbG8="}},
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": T54_IMAGE_DATA_URL}},
                 ]}])
             elif kind == "unsupported_media":
                 builder = _builder(cid, messages=[{"role": "user", "content": [
