@@ -21,6 +21,9 @@ _STDERR_DIAGNOSTIC_LIMIT = 500
 _OPENCODE_PROMPT_PLACEHOLDER = "{prompt}"
 _OPENCODE_PROMPT_LIMIT = 8_000
 _OPENCODE_STDOUT_LIMIT = 1_000_000
+_OPENCODE_STDERR_LIMIT = 1_000_000
+_LOG_PROVIDER = re.compile(r"(?i)\bprovider\s*[:=]\s*([A-Za-z0-9_.-]+)")
+_LOG_MODEL = re.compile(r"(?i)\bmodel\s*[:=]\s*([A-Za-z0-9_./:-]+)")
 
 
 def _stderr_diagnostic(stderr: str) -> str:
@@ -89,6 +92,19 @@ def _client_evidence(stdout: str) -> dict | None:
             events[-1] if events else None,
         )
     return evidence if isinstance(evidence, dict) else None
+
+
+def _opencode_log_evidence(stderr: str) -> tuple[str, str] | None:
+    provider = model = None
+    for line in stderr.splitlines():
+        safe_line = _STDERR_SENSITIVE_VALUE.sub(r"\1[REDACTED]", line)
+        provider_match = _LOG_PROVIDER.search(safe_line)
+        model_match = _LOG_MODEL.search(safe_line)
+        if provider_match:
+            provider = provider_match.group(1)
+        if model_match:
+            model = model_match.group(1)
+    return (provider, model) if provider and model else None
 
 
 def _opencode_terminal_event(event: dict, pending_tool_calls: set[str]) -> bool:
@@ -185,19 +201,33 @@ def _run_opencode(args: list[str], *, env: dict[str, str], cwd: str, timeout: fl
                 if terminal:
                     _terminate_process(process)
                     break
-            else:
-                diagnostics.append(line)
+            elif sum(map(len, diagnostics)) < _OPENCODE_STDERR_LIMIT:
+                diagnostics.append(line[: _OPENCODE_STDERR_LIMIT - sum(map(len, diagnostics))])
         else:
             _terminate_process(process)
             raise subprocess.TimeoutExpired(args, timeout, output="".join(events), stderr="".join(diagnostics))
     finally:
         if not terminal and process.poll() is None:
             _terminate_process(process)
+        for thread in threads:
+            thread.join(timeout=0.5)
+        while True:
+            try:
+                name, line = messages.get_nowait()
+            except queue.Empty:
+                break
+            if line is None:
+                continue
+            if name == "stdout":
+                if captured_stdout < _OPENCODE_STDOUT_LIMIT:
+                    retained = line[: _OPENCODE_STDOUT_LIMIT - captured_stdout]
+                    events.append(retained)
+                    captured_stdout += len(retained)
+            elif sum(map(len, diagnostics)) < _OPENCODE_STDERR_LIMIT:
+                diagnostics.append(line[: _OPENCODE_STDERR_LIMIT - sum(map(len, diagnostics))])
         for stream in (process.stdout, process.stderr):
             if stream is not None:
                 stream.close()
-        for thread in threads:
-            thread.join(timeout=1)
     return subprocess.CompletedProcess(args, 0 if terminal else process.returncode, "".join(events), "".join(diagnostics)), terminal
 
 
@@ -301,6 +331,11 @@ def run_client_case(context, case, payload: dict):
     if case.client.lower() == "opencode":
         if not terminal:
             return "FAIL", f"{case.client} did not emit a terminal step_finish event"
+        if "--print-logs" not in client_args:
+            return "FAIL", f"{case.client} requires --print-logs for provider/model evidence"
+        log_evidence = _opencode_log_evidence(completed.stderr)
+        if log_evidence != ("wmadapter", context.model):
+            return "FAIL", f"{case.client} logs did not identify the configured provider/model"
         evidence = _client_evidence(completed.stdout)
     else:
         try:
@@ -309,7 +344,7 @@ def run_client_case(context, case, payload: dict):
             evidence = None
     if evidence is None:
         return "FAIL", f"{case.client} did not return JSON execution evidence"
-    if evidence.get("provider") != "wmadapter" or evidence.get("model") != context.model:
+    if case.client.lower() != "opencode" and (evidence.get("provider") != "wmadapter" or evidence.get("model") != context.model):
         return "FAIL", f"{case.client} evidence did not identify the configured provider/model"
     if case.expected_status == 200 and evidence.get("status") != "ok":
         return "FAIL", f"{case.client} reported an unsuccessful run"
