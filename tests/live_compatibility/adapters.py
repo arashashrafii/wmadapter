@@ -413,6 +413,14 @@ def run_client_case(context, case, payload: dict):
         diagnostic = _stderr_diagnostic(completed.stderr)
         return "FAIL", f"{case.client} exited {completed.returncode} (stderr: {diagnostic})"
     if case.client.lower() == "opencode":
+        if case.expected_status >= 400:
+            evidence = _client_evidence(completed.stdout)
+            if evidence is None or evidence.get("status") != "expected_error":
+                return "FAIL", f"{case.client} did not expose the captured expected error"
+            observed_status = evidence.get("http_status", evidence.get("status_code"))
+            if observed_status is not None and observed_status != case.expected_status:
+                return "FAIL", f"{case.client} reported HTTP {observed_status}, expected HTTP {case.expected_status}"
+            return "PASS", f"{case.client} propagated the captured HTTP {case.expected_status} error"
         if not terminal:
             return "FAIL", f"{case.client} did not emit a terminal step_finish event"
         if "--print-logs" not in client_args:

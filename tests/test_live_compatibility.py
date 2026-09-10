@@ -6,11 +6,12 @@ import tempfile
 import time
 import unittest
 import sys
+from dataclasses import replace
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
-from live_compatibility.assertions import assert_completion_semantics, assert_safe_error, assert_sse_semantics
+from live_compatibility.assertions import assert_completion_semantics, assert_gateway_error, assert_safe_error, assert_sse_semantics
 from live_compatibility.cases import CASES, GROUPS
 from live_compatibility.report import new_report, redact, write_report
 from live_compatibility.runner import require_live_confirmation
@@ -87,7 +88,57 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}):
             report = run_suite(context=LiveContext("fixture://offline", "deepseek-chat"), confirm_live=True, transport=FixtureTransport())
         self.assertEqual(len(report["results"]), 62)
-        self.assertTrue(all(item["status"] == "PASS" for item in report["results"]))
+        self.assertTrue(all(item["status"] == ("BLOCKED" if item["case_id"] == "T54" else "PASS") for item in report["results"]))
+        self.assertEqual(report["results"][53]["applicability"], "not_applicable")
+
+    def test_negative_cases_use_gateway_transport_and_documented_statuses(self):
+        for case_id, kind, status in (("T55", "unsupported_media", 400), ("T56", "provider_not_ready", 503)):
+            case = next(case for case in CASES if case.case_id == case_id)
+            self.assertEqual(case.execution, "gateway")
+            self.assertEqual(case.expected_status, status)
+            self.assertEqual(case.kind, kind)
+
+        assert_gateway_error(
+            '{"error":{"type":"invalid_request_error","code":"unsupported_feature","message":"unsupported"}}',
+            400, "unsupported_feature",
+        )
+        assert_gateway_error(
+            '{"error":{"type":"provider_error","code":"provider_not_ready","message":"not ready"}}',
+            503, "provider_not_ready",
+        )
+
+    def test_negative_runner_asserts_actual_gateway_status_and_code(self):
+        class Gateway:
+            def __init__(self, response): self.response, self.requests = response, []
+            def ready(self): return TransportResponse(200, "application/json", "{}")
+            def request(self, case, payload):
+                self.requests.append(case.case_id)
+                return self.response
+
+        gateway = Gateway(TransportResponse(400, "application/json", '{"error":{"type":"invalid_request_error","code":"unsupported_feature"}}'))
+        with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}, clear=True):
+            report = run_suite(context=LiveContext("http://127.0.0.1:11556/v1", "deepseek-chat"), confirm_live=True, transport=gateway, case_ids=["T55"])
+        self.assertEqual(report["results"][0]["status"], "PASS")
+        self.assertEqual(gateway.requests, ["T55"])
+
+        gateway = Gateway(TransportResponse(400, "application/json", '{"error":{"type":"invalid_request_error","code":"unsupported_feature"}}'))
+        with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}, clear=True):
+            report = run_suite(context=LiveContext("http://127.0.0.1:11556/v1", "deepseek-chat"), confirm_live=True, transport=gateway, case_ids=["T56"])
+        self.assertEqual(report["results"][0]["status"], "FAIL")
+
+    def test_client_error_evidence_does_not_require_terminal_step(self):
+        case = replace(next(case for case in CASES if case.case_id == "T51"), expected_status=400)
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            completed = SimpleNamespace(returncode=0, stdout='{"status":"expected_error","http_status":400}', stderr="")
+            with patch.dict(os.environ, {
+                "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run"]),
+                "WMADAPTER_OPENCODE_CONFIG": str(config),
+            }), patch("live_compatibility.adapters._run_opencode", return_value=(completed, False)):
+                status, detail = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, case.payload("deepseek-chat"))
+        self.assertEqual(status, "PASS")
+        self.assertIn("captured HTTP 400", detail)
 
     def test_malformed_messages_case_preserves_empty_message_list(self):
         case = next(case for case in CASES if case.case_id == "T45")
@@ -100,6 +151,18 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}):
             report = run_suite(context=LiveContext("fixture://offline", "deepseek-chat"), confirm_live=True, transport=Down())
         self.assertTrue(all(item["status"] == "BLOCKED" for item in report["results"]))
+
+    def test_live_openclaw_configuration_is_a_structured_preflight_block(self):
+        class Ready:
+            def ready(self): return TransportResponse(200, "application/json", "{}")
+            def request(self, case, payload): raise AssertionError("OpenClaw preflight should stop the suite")
+
+        with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}, clear=True):
+            report = run_suite(context=LiveContext("http://127.0.0.1:11556/v1", "deepseek-chat"), confirm_live=True, transport=Ready(), groups=["golden"])
+        self.assertEqual(report["preflight"]["status"], "BLOCKED")
+        self.assertIn("WMADAPTER_OPENCLAW_COMMAND", report["preflight"]["actual"])
+        openclaw_results = [item for item in report["results"] if int(item["case_id"][1:]) >= 57 and item["execution"] == "client"]
+        self.assertTrue(all(item["status"] == "BLOCKED" for item in openclaw_results))
 
     def test_connection_refused_preflight_returns_structured_blocked_report(self):
         class Refused:

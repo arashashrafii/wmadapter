@@ -2,6 +2,8 @@
 
 The canonical suite is `tests/live_compatibility`. It contains 62 executable
 case specs, T01–T62, with distinct payload builders and semantic expectations.
+Evidence schema version 2 records each case's `execution` mode (`client` or
+`gateway`) and `applicability` (`applicable` or `not_applicable`).
 It is opt-in and is never imported by the default test suite or CI.
 
 ## Safety and prerequisites
@@ -45,18 +47,24 @@ identity/isolation, SSE reconstruction, and SDK/agent deserialization; they do
 not compare nondeterministic model text with a reference model.
 
 `SSEParser` is incremental and handles LF, CRLF, CR, and chunk boundaries.
-`FixtureTransport` exercises all 62 cases offline. T51–T56 are separate
-OpenCode cases and T57–T62 are separate OpenClaw cases. Each client set covers
-baseline text, SSE ordering plus buffered/progressive classification, one
-fixture tool round trip, image input, unsupported audio, and provider-not-ready.
+`FixtureTransport` exercises all 62 cases offline; T54 is recorded as
+`BLOCKED`/`not_applicable` because `image_input` is disabled. T51–T56 are
+OpenCode cases and T57–T62 are OpenClaw cases. Client-success cases cover
+baseline text, SSE ordering, and one fixture tool round trip. Negative media
+and readiness cases run as direct gateway checks: T55 must observe HTTP 400
+with `unsupported_feature`, and T56 must observe HTTP 503 with
+`provider_not_ready`. A mismatched status or code is `FAIL`, never an accepted
+alternative.
 Client harnesses are opt-in and require explicit JSON argv/config paths through
 `WMADAPTER_OPENCODE_COMMAND`, `WMADAPTER_OPENCODE_CONFIG`,
 `WMADAPTER_OPENCLAW_COMMAND`, and `WMADAPTER_OPENCLAW_CONFIG`; no CLI flags are
 guessed and no shell is used. OpenAI and OpenClaw adapters
 report `BLOCKED` when the official client or configured executable is absent.
-Only an exact expected fixture error is a passing negative case; an unexpected
-live provider error is a failure or blocked prerequisite according to the
-status rules above.
+Only the exact documented gateway status and error code is a passing negative
+case. Optional client error propagation may pass from captured error evidence
+without a `step_finish` event, but it must inspect the captured HTTP status.
+Missing OpenClaw command/config is a structured preflight `BLOCKED` result.
+No image case is evidence of vision while `image_input` is disabled.
 
 Run offline validation with:
 

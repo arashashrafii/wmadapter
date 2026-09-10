@@ -20,7 +20,7 @@ def redact(value):
 
 
 def new_report(cases) -> dict:
-    return {"schema_version": 1, "suite": "wmadapter-live-compatibility", "started_at": datetime.now(timezone.utc).isoformat(), "results": [redact(case) for case in cases]}
+    return {"schema_version": 2, "suite": "wmadapter-live-compatibility", "started_at": datetime.now(timezone.utc).isoformat(), "results": [redact(case) for case in cases]}
 
 
 def write_report(report: dict, path: Path, fmt: str) -> None:

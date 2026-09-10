@@ -58,3 +58,14 @@ def assert_safe_error(response: dict, status: int) -> None:
     assert isinstance(error.get("code"), str) and error["code"]
     assert "password" not in json.dumps(response).lower()
     assert "token" not in json.dumps(response).lower()
+
+
+def assert_gateway_error(body: str, status: int, code: str) -> None:
+    response = json.loads(body)
+    error = response.get("error") or {}
+    assert error.get("code") == code
+    assert error.get("type") in {"provider_error", "invalid_request_error"}
+    assert status in {400, 503}
+    assert "password" not in body.lower()
+    assert "authorization" not in body.lower()
+    assert "token" not in body.lower()

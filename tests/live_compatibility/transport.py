@@ -39,7 +39,7 @@ class SSEParser:
 class FixtureTransport:
     def request(self, case, payload: dict) -> TransportResponse:
         if case.expected_status != 200:
-            code = {400: "invalid_request", 404: "model_not_found"}.get(case.expected_status, "provider_error")
+            code = {400: "unsupported_feature", 404: "model_not_found", 503: "provider_not_ready"}.get(case.expected_status, "provider_error")
             return TransportResponse(case.expected_status, "application/json", json.dumps({"error": {"type": "invalid_request_error", "code": code, "message": "fixture error"}}))
         if case.stream:
             body = (

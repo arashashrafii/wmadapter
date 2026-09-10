@@ -21,6 +21,8 @@ class Case:
     stream: bool = False
     client: str = "gateway"
     kind: str = "completion"
+    execution: str = "client"
+    applicability: str = "applicable"
 
     def payload(self, model: str) -> dict:
         return self.payload_builder(model)
@@ -44,8 +46,8 @@ def _tool_builder(case_id: str, choice=None, messages=None, **extra):
     return _builder(case_id, messages=messages, **values)
 
 
-def _make(case_id, group, title, builder, expected_status=200, stream=False, *, client="gateway", kind="completion"):
-    return Case(case_id, group, title, f"Verify {title} using protocol semantics only.", "Configured local endpoint and isolated provider profile; live readiness is required only for live execution.", f"Build and send the case-specific {case_id} payload, then apply semantic assertions.", "The documented semantic result or exact controlled error is observed.", builder, expected_status, stream, client, kind)
+def _make(case_id, group, title, builder, expected_status=200, stream=False, *, client="gateway", kind="completion", execution="client", applicability="applicable"):
+    return Case(case_id, group, title, f"Verify {title} using protocol semantics only.", "Configured local endpoint and isolated provider profile; live readiness is required only for live execution.", f"Build and send the case-specific {case_id} payload, then apply semantic assertions.", "The documented semantic result or exact controlled error is observed.", builder, expected_status, stream, client, kind, execution, applicability)
 
 
 _SPECS = [
@@ -104,7 +106,7 @@ def _build_all():
         ("SSE chunk ordering and buffered-vs-progressive classification", "sse", 200, True),
         ("one harmless function/tool round trip", "tool_roundtrip", 200, False),
         ("image input", "image", 200, False),
-        ("unsupported media", "unsupported_media", 415, False),
+        ("unsupported media", "unsupported_media", 400, False),
         ("provider-not-ready", "provider_not_ready", 503, False),
     ]
     for client in ("opencode", "openclaw"):
@@ -135,7 +137,10 @@ def _build_all():
             else:
                 marker = "Reply exactly WMADAPTER_LIVE_T51" if client == "opencode" else f"{client} compatibility marker {cid}"
                 builder = _builder(cid, messages=[{"role": "user", "content": marker}])
-            result.append(_make(cid, "golden", f"{client.title()} {title}", builder, status, stream, client=client, kind=kind))
+            execution = "gateway" if kind in {"image", "unsupported_media", "provider_not_ready"} else "client"
+            applicability = "not_applicable" if cid == "T54" else "applicable"
+            if kind in {"image", "unsupported_media"} and cid != "T54": status = 400
+            result.append(_make(cid, "golden", f"{client.title()} {title}", builder, status, stream, client=client, kind=kind, execution=execution, applicability=applicability))
             next_id += 1
     assert len(result) == 62
     return tuple(result)
