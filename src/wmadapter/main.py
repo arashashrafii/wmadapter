@@ -32,6 +32,13 @@ from .providers.contract import (
     validate_structured_output,
 )
 from .providers.state import ConversationStateConflict, GatewayState, UnknownResponseId
+from .providers.errors import (
+    ContextLimitError,
+    ProviderInternalError,
+    ProviderRateLimitError,
+    ProviderUnavailableError,
+)
+from .providers.submit import PreSubmitError, UncertainSubmitError
 from .providers.protocol import (
     _content_text,
     _image_attachments,
@@ -117,21 +124,53 @@ def _error(message, kind="invalid_request_error", code=None):
 def _provider_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, PageCapacityError):
         return HTTPException(503, "provider_capacity")
-    return HTTPException(502, "Web provider failed to produce a valid completion")
+    if isinstance(exc, ProviderRateLimitError):
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None
+        return HTTPException(429, "provider_rate_limited", headers=headers)
+    if isinstance(exc, TimeoutError):
+        return HTTPException(504, "provider_timeout")
+    if isinstance(exc, ContextLimitError):
+        return HTTPException(400, "context_length_exceeded")
+    if isinstance(exc, ProviderUnavailableError):
+        return HTTPException(503, "provider_unavailable")
+    if isinstance(exc, UncertainSubmitError):
+        return HTTPException(502, "provider_submission_uncertain")
+    if isinstance(exc, PreSubmitError):
+        return HTTPException(503, "provider_unavailable")
+    message = str(exc).lower()
+    if any(marker in message for marker in ("rate limit", "rate_limited", "too many requests", "40029")):
+        return HTTPException(429, "provider_rate_limited")
+    return HTTPException(502, "provider_internal_error")
 
 
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request, exc):
+    if exc.status_code == 429:
+        message = "Provider rate limit reached"
+        return JSONResponse(_error(message, "rate_limit_error", "provider_rate_limited"),
+                            status_code=429, headers=exc.headers)
+    if exc.status_code == 504:
+        return JSONResponse(_error("Provider request timed out", "provider_error", "provider_timeout"),
+                            status_code=504)
     if exc.status_code == 503:
         messages = {
             "provider_login_required": ("Provider login is required", "provider_login_required"),
             "provider_not_ready": ("Provider is not ready; complete login or challenge verification and retry", "provider_not_ready"),
             "provider_capacity": ("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_capacity"),
+            "provider_unavailable": ("Provider is temporarily unavailable", "provider_unavailable"),
         }
         message, code = messages.get(str(exc.detail), (str(exc.detail), "provider_error"))
         return JSONResponse(_error(message, "provider_error", code), status_code=503)
     kind = "provider_error" if exc.status_code >= 500 else "invalid_request_error"
     code = "model_not_found" if exc.status_code == 404 and "model" in str(exc.detail).lower() else kind
+    if exc.status_code == 400 and str(exc.detail) == "context_length_exceeded":
+        code = "context_length_exceeded"
+    elif exc.status_code == 502 and str(exc.detail) == "provider_submission_uncertain":
+        code = "provider_submission_uncertain"
+    elif exc.status_code == 502 and str(exc.detail) == "provider_internal_error":
+        code = "provider_internal_error"
+    if exc.status_code == 400 and "unsupported" in str(exc.detail).lower():
+        code = "unsupported_feature"
     return JSONResponse(_error(str(exc.detail), kind, code), status_code=exc.status_code)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 import json
 from typing import Any, Literal, NewType, TypeAlias
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .policy import ClientPolicy
 
 # These identifiers are intentionally opaque at the provider-contract boundary.
@@ -353,3 +353,11 @@ class ProviderResult(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     finish_reason: Literal["stop", "tool_calls", "length", "content_filter"] = "stop"
     usage: dict[str, int] | None = None
+
+    @model_validator(mode="after")
+    def validate_finish_semantics(self):
+        if self.tool_calls and self.finish_reason != "tool_calls":
+            raise ValueError("tool_calls require finish_reason=tool_calls")
+        if self.finish_reason == "tool_calls" and not self.tool_calls:
+            raise ValueError("finish_reason=tool_calls requires tool_calls")
+        return self

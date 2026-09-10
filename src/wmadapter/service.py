@@ -17,6 +17,7 @@ from .providers.qwen.chat import QwenChat
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
 from .providers.submit import PreSubmitError, UncertainSubmitError
+from .providers.errors import ProviderRateLimitError
 from .config import provider_profile_dir
 
 logger = logging.getLogger(__name__)
@@ -365,6 +366,7 @@ class DeepSeekService(ChatProvider):
         return any(marker in message for marker in (
             "challenge_visible", "sign_in_visible", "unknown_ui", "session_pending",
             "provider_login_required", "no_visible_editable_chat_input", "account_suspended",
+            "rate_limited", "rate limit", "too many requests", "40029",
         ))
 
     async def _authenticate(self, page=None) -> None:
