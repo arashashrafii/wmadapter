@@ -465,6 +465,14 @@ class HTTPContractTests(unittest.TestCase):
         self.assertNotIn('secret internal detail', response.text)
         self.assertTrue(response.text.endswith('data: [DONE]\n\n'))
 
+    def test_stream_protocol_recovery_failure_has_distinct_safe_code_and_one_done(self):
+        self.provider.complete = AsyncMock(return_value='')
+        response = self.post(stream=True)
+        self.assertIn('"code":"protocol_recovery_failed"', response.text)
+        self.assertNotIn('Web model failed to produce a valid response', response.text)
+        self.assertEqual(response.text.count('data: [DONE]\n\n'), 1)
+        self.assertEqual(self.provider.complete.await_count, 2)
+
     def test_named_and_required_choice(self):
         self.provider.complete = AsyncMock(return_value='ordinary answer')
         self.assertEqual(self.post(tools=TOOLS, tool_choice='required').status_code, 502)

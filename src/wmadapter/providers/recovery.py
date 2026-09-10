@@ -1,9 +1,38 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import hashlib
+import logging
 from typing import Any
 
 from .normalizer import ToolProtocolNormalizer
+
+logger = logging.getLogger(__name__)
+_REPAIR_CONTEXT_LIMIT = 12000
+
+
+class ProtocolRecoveryError(ValueError):
+    """Fail-closed error after the single protocol repair attempt."""
+
+    code = "protocol_recovery_failed"
+
+
+def _fingerprint(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8", "replace")).hexdigest()
+
+
+def _diagnostic(reason: str, value: str, outcome: str) -> None:
+    logger.info(
+        "protocol_recovery reason=%s length=%d sha256=%s outcome=%s",
+        reason, len(value), _fingerprint(value), outcome,
+    )
+
+
+def _compact_context(prompt: str) -> str:
+    if len(prompt) <= _REPAIR_CONTEXT_LIMIT:
+        return prompt
+    half = (_REPAIR_CONTEXT_LIMIT - 80) // 2
+    return prompt[:half] + "\n[REPAIR CONTEXT COMPACTED]\n" + prompt[-half:]
 
 
 class ToolCallRecovery:
@@ -29,6 +58,7 @@ class ToolCallRecovery:
         normalizer = ToolProtocolNormalizer()
         call, visible = normalizer.normalize(answer, tools)
         if call is not None and self.validate_call(call):
+            _diagnostic("initial_valid", answer, "bypass")
             return call, visible
 
         # Ordinary content is already a complete provider response. Only ask
@@ -36,10 +66,16 @@ class ToolCallRecovery:
         # empty turn; this avoids changing normal answers.
         needs_repair = not visible.strip() or (tools and "<tool_call>" in answer)
         if not needs_repair:
+            _diagnostic("initial_complete", answer, "bypass")
             return None, visible
 
+        if not visible.strip():
+            _diagnostic("initial_empty", answer, "repair_requested")
+        else:
+            _diagnostic("initial_unresolved_marker", answer, "repair_requested")
+
         repair_prompt = (
-            prompt
+            _compact_context(prompt)
             + "\n\nPROTOCOL REPAIR: Return either one valid <tool_call> marker using only "
             "the listed tools, or a final answer. Do not narrate an action."
         )
@@ -48,7 +84,16 @@ class ToolCallRecovery:
         )
         call, visible = normalizer.normalize(repaired, tools)
         if call is not None and not self.validate_call(call):
+            _diagnostic("repair_invalid_tool_call", repaired, "fail_closed")
             call, visible = None, ""
+        elif call is not None:
+            _diagnostic("repair_valid_tool_call", repaired, "repaired_tool")
+        elif not visible.strip():
+            _diagnostic("repair_empty", repaired, "fail_closed")
+        elif tools and "<tool_call>" in repaired:
+            _diagnostic("repair_unresolved_marker", repaired, "fail_closed")
+        else:
+            _diagnostic("repair_complete", repaired, "repaired_final")
         if call is None and (not visible.strip() or (tools and "<tool_call>" in repaired)):
-            raise ValueError("Web model failed to produce a valid response after one repair")
+            raise ProtocolRecoveryError("Web model failed to produce a valid response after one repair")
         return call, visible

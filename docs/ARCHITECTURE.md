@@ -158,6 +158,16 @@ Persistent failure returns a provider error, never fabricated success. Normal
 answers are not retried. This is protocol recovery, not proof that model claims
 are correct; policy text and unit tests cannot guarantee autonomous task success.
 
+Recovery diagnostics are bounded and redacted: they contain only a fixed reason
+code, response length, SHA-256 fingerprint, and outcome. Reasons distinguish
+`initial_empty`, `initial_unresolved_marker`, `repair_empty`,
+`repair_unresolved_marker`, and `repair_invalid_tool_call` (plus successful
+bypass/repair outcomes); prompts, responses, credentials, and PII are never
+logged. One oversized repair context is compacted before the single repair
+request. Streamed provider completion failures/timeouts retain their provider
+error codes, while a failed protocol repair emits `protocol_recovery_failed`
+and still terminates with exactly one `[DONE]`.
+
 Recovery also catches a third identical non-process tool call after two identical
 results in the current user turn. It asks the model for a different approach once,
 then fails explicitly if repetition persists. Process polling is exempt. This

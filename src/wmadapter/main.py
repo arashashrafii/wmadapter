@@ -20,6 +20,7 @@ from .logging import configure_logging
 from .providers.router import ProviderRouter
 from .security import redact
 from .service import DeepSeekService, PageCapacityError, QwenService
+from .providers.recovery import ProtocolRecoveryError
 
 from .providers.contract import (
     ConversationId,
@@ -172,6 +173,8 @@ def _error(message, kind="invalid_request_error", code=None):
 
 
 def _provider_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ProtocolRecoveryError):
+        return HTTPException(502, "protocol_recovery_failed")
     if isinstance(exc, PageCapacityError):
         return HTTPException(503, "provider_capacity")
     if isinstance(exc, ProviderRateLimitError):
@@ -448,6 +451,8 @@ async def chat_completion(payload: ChatRequest, request: Request):
                 yield _sse(_error("Provider request timed out", "provider_error", "provider_timeout"))
             except PageCapacityError:
                 yield _sse(_error("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_error", "provider_capacity"))
+            except ProtocolRecoveryError:
+                yield _sse(_error("Provider response could not be recovered safely", "provider_error", "protocol_recovery_failed"))
             except Exception:
                 logger.exception("Streaming chat completion failed")
                 yield _sse(_error("Web provider failed to produce a valid completion", "provider_error", "provider_error"))

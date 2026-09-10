@@ -255,6 +255,10 @@ Treat live media cases as capability checks, not vision evidence. Do not
 commit reports containing credentials, browser session data, prompts, or
 provider transcripts.
 
+Recovery is fail-closed and bounded to one repair request. Its diagnostics are
+redacted to reason codes, lengths, hashes, and outcomes; streamed provider
+failures remain distinct from `protocol_recovery_failed`.
+
 106 unit/contract tests and real client SDK transport checks passed against a
 fixture provider. Current live WebChat behavior and full agent runs remain
 unverified by this migration. No MCP dependency or GPT/OX placeholder was added.

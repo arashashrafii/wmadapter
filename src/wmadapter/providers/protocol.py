@@ -284,6 +284,8 @@ def _fallback_after_tool(messages: list[Message], answer: str) -> str:
 
 async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversation_id, prompt):
     """Repair a failed model response once; OpenClaw alone executes tools."""
+    from .recovery import ProtocolRecoveryError, _compact_context, _diagnostic
+
     call, visible = _extract_tool_call(answer, tools)
     def violates_explicit_gui_constraint(candidate):
         if not candidate or not tools:
@@ -355,9 +357,13 @@ async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversa
     if forbidden_gui_call:
         call = None
         visible = ""
-    if repeated(call) or forbidden_gui_call or (not call and (needs_repair(answer) or is_narrated_plan(answer))):
+    needs_protocol_repair = repeated(call) or forbidden_gui_call or (not call and (needs_repair(answer) or is_narrated_plan(answer)))
+    if not needs_protocol_repair:
+        _diagnostic("initial_valid" if call else "initial_complete", answer, "bypass")
+    else:
+        _diagnostic("initial_empty" if not visible.strip() else "initial_unresolved_marker", answer, "repair_requested")
         repair_prompt = (
-            prompt + "\n\nPROTOCOL REPAIR: Your previous response was empty or contained an "
+            _compact_context(prompt) + "\n\nPROTOCOL REPAIR: Your previous response was empty or contained an "
             "unresolved tool instruction. No tool was executed from that response. Reconsider the "
             "current request using the tool results above. Return one valid listed tool call if "
             "another step is needed, or a supported final answer or precise approval request. "
@@ -371,8 +377,19 @@ async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversa
         )
         answer = await provider.complete(repair_prompt, conversation_id=conversation_id)
         call, visible = _extract_tool_call(answer, tools)
-        if repeated(call) or (not call and needs_repair(answer)):
-            raise ValueError("Web model failed to produce a valid response after one repair; completion is unverified")
+        if repeated(call):
+            _diagnostic("repair_invalid_tool_call", answer, "fail_closed")
+            raise ProtocolRecoveryError("Web model failed to produce a valid response after one repair; completion is unverified")
+        if call:
+            _diagnostic("repair_valid_tool_call", answer, "repaired_tool")
+        elif not visible.strip():
+            _diagnostic("repair_empty", answer, "fail_closed")
+        elif needs_repair(answer):
+            _diagnostic("repair_unresolved_marker", answer, "fail_closed")
+        else:
+            _diagnostic("repair_complete", answer, "repaired_final")
+        if not call and needs_repair(answer):
+            raise ProtocolRecoveryError("Web model failed to produce a valid response after one repair; completion is unverified")
     if not call:
         visible = _clean_renderer_artifacts(visible)
     return call, visible
