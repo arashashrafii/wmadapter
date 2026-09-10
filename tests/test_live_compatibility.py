@@ -140,6 +140,33 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertTrue(case.stream)
         self.assertEqual(case.payload("deepseek-chat")["messages"], [{"role": "user", "content": "Reply exactly WMADAPTER_LIVE_T52"}])
 
+    def test_opencode_stream_completion_does_not_claim_raw_sse_classification(self):
+        case = next(case for case in CASES if case.case_id == "T52")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"type": "step_finish", "part": {"reason": "stop"}}),
+                stderr="INFO providerID=wmadapter modelID=deepseek-chat",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "--format", "json", "--print-logs", "--log-level", "INFO"]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                },
+            ), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)):
+                status, detail = run_client_case(
+                    LiveContext("http://localhost:11556/v1", "deepseek-chat"),
+                    case,
+                    case.payload("deepseek-chat"),
+                )
+
+        self.assertEqual(status, "PASS")
+        self.assertIn("completed stream", detail)
+        self.assertNotIn("classification", detail)
+
     def test_sse_assertion_classifies_progressive_and_buffered_streams(self):
         from live_compatibility.assertions import assert_sse_semantics
         progressive = ('data: {"object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n\n'
