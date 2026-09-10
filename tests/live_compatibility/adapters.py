@@ -15,6 +15,8 @@ _STDERR_SENSITIVE_VALUE = re.compile(
     r"(?:api[_-]?key|token|secret|password|credential)\s*[:=]\s*)([^\s,;]+)"
 )
 _STDERR_DIAGNOSTIC_LIMIT = 500
+_OPENCODE_PROMPT_PLACEHOLDER = "{prompt}"
+_OPENCODE_PROMPT_LIMIT = 8_000
 
 
 def _stderr_diagnostic(stderr: str) -> str:
@@ -26,6 +28,60 @@ def _stderr_diagnostic(stderr: str) -> str:
     if len(sanitized) > _STDERR_DIAGNOSTIC_LIMIT:
         return sanitized[:_STDERR_DIAGNOSTIC_LIMIT] + "…"
     return sanitized
+
+
+def _opencode_prompt(payload: dict) -> tuple[str | None, str | None]:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return None, "OpenCode payload has no usable messages"
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            prompt = content
+        elif isinstance(content, list):
+            text_parts = [
+                item.get("text", "")
+                for item in content
+                if isinstance(item, dict) and isinstance(item.get("text"), str)
+            ]
+            prompt = "\n".join(text_parts)
+        else:
+            return None, "OpenCode user message content is not text-compatible"
+        if len(prompt) > _OPENCODE_PROMPT_LIMIT:
+            return None, f"OpenCode prompt exceeds {_OPENCODE_PROMPT_LIMIT} characters"
+        return prompt, None
+    return None, "OpenCode payload has no user message"
+
+
+def _opencode_args(args: list[str], payload: dict) -> tuple[list[str] | None, str | None]:
+    prompt, error = _opencode_prompt(payload)
+    if error:
+        return None, error
+    assert prompt is not None
+    placeholder_count = args.count(_OPENCODE_PROMPT_PLACEHOLDER)
+    if placeholder_count > 1:
+        return None, "OpenCode command may contain at most one {prompt} placeholder"
+    if placeholder_count == 1:
+        return [prompt if item == _OPENCODE_PROMPT_PLACEHOLDER else item for item in args], None
+    return [*args, prompt], None
+
+
+def _client_evidence(stdout: str) -> dict | None:
+    try:
+        evidence = json.loads(stdout)
+    except json.JSONDecodeError:
+        events = []
+        for line in stdout.splitlines():
+            if not line.strip():
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                return None
+        evidence = events[-1] if events else None
+    return evidence if isinstance(evidence, dict) else None
 
 
 def run_openai_sdk(context, payload):
@@ -83,6 +139,13 @@ def run_client_case(context, case, payload: dict):
     if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
         return "BLOCKED", f"{case.client} command must be a JSON string argument list"
     request = json.dumps({"case_id": case.case_id, "kind": case.kind, "payload": payload}, ensure_ascii=False)
+    client_args = args
+    client_input = request
+    if case.client.lower() == "opencode":
+        client_args, argument_error = _opencode_args(args, payload)
+        if argument_error:
+            return "BLOCKED", argument_error
+        client_input = None
     with tempfile.TemporaryDirectory(prefix=f"wmadapter-{prefix.lower()}-data-") as data_home, tempfile.TemporaryDirectory(
         prefix=f"wmadapter-{prefix.lower()}-runtime-"
     ) as runtime_home:
@@ -92,8 +155,8 @@ def run_client_case(context, case, payload: dict):
         client_env["XDG_RUNTIME_DIR"] = runtime_home
         try:
             completed = subprocess.run(
-                args,
-                input=request,
+                client_args,
+                input=client_input,
                 text=True,
                 capture_output=True,
                 timeout=context.timeout,
@@ -106,9 +169,14 @@ def run_client_case(context, case, payload: dict):
     if completed.returncode != 0:
         diagnostic = _stderr_diagnostic(completed.stderr)
         return "FAIL", f"{case.client} exited {completed.returncode} (stderr: {diagnostic})"
-    try:
-        evidence = json.loads(completed.stdout)
-    except json.JSONDecodeError:
+    if case.client.lower() == "opencode":
+        evidence = _client_evidence(completed.stdout)
+    else:
+        try:
+            evidence = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            evidence = None
+    if evidence is None:
         return "FAIL", f"{case.client} did not return JSON execution evidence"
     if evidence.get("provider") != "wmadapter" or evidence.get("model") != context.model:
         return "FAIL", f"{case.client} evidence did not identify the configured provider/model"

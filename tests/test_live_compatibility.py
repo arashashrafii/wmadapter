@@ -151,6 +151,61 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                 self.assertIn("opencode", detail)
                 self.assertEqual(run.call_args.kwargs["shell"], False)
 
+    def test_opencode_receives_bounded_prompt_argument_and_json_events(self):
+        case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            prompt = case.payload("deepseek-chat")["messages"][0]["content"]
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout='{"type":"step_start"}\n' + json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}) + "\n",
+                stderr="",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "--format", "json"]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                },
+            ), patch("subprocess.run", return_value=completed) as run:
+                status, detail = run_client_case(
+                    LiveContext("http://localhost:11556/v1", "deepseek-chat"),
+                    case,
+                    case.payload("deepseek-chat"),
+                )
+
+        self.assertEqual(status, "PASS")
+        self.assertIn("provider/model", detail)
+        self.assertEqual(run.call_args.args[0], ["opencode", "run", "--format", "json", prompt])
+        self.assertIsNone(run.call_args.kwargs["input"])
+        self.assertEqual(run.call_args.kwargs["shell"], False)
+
+    def test_opencode_prompt_placeholder_is_replaced_as_one_argument(self):
+        case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            payload = case.payload("deepseek-chat")
+            payload["messages"][0]["content"] = "prompt; $(touch /tmp/should-not-run)"
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}),
+                stderr="",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "{prompt}"]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                },
+            ), patch("subprocess.run", return_value=completed) as run:
+                status, _ = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, payload)
+
+        self.assertEqual(status, "PASS")
+        self.assertEqual(run.call_args.args[0][-1], "prompt; $(touch /tmp/should-not-run)")
+        self.assertIsNone(run.call_args.kwargs["input"])
+
     def test_client_case_failure_includes_bounded_redacted_stderr(self):
         case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
         with tempfile.TemporaryDirectory() as directory:
