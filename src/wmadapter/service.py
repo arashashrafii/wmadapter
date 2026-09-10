@@ -560,10 +560,16 @@ class QwenService(ChatProvider):
                         self._set_auth_state("HANDOFF", "chat_ready")
                         if not self.browser.headless:
                             async def auth_probe(candidate) -> bool:
-                                return await QwenChat(candidate).probe_auth() == CHAT_READY
+                                probe = QwenChat(candidate)
+                                first = await probe.probe_auth()
+                                if first in {CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, UNKNOWN_UI}:
+                                    return False
+                                return await probe.probe_auth() == CHAT_READY
                             await self.browser.handoff_to_headless(auth_probe=auth_probe)
                         self._set_auth_state("VERIFYING_SESSION", "session_probe")
-                        if await QwenChat(await self.browser.page()).probe_auth() == CHAT_READY:
+                        probe = QwenChat(await self.browser.page())
+                        await probe.probe_auth()
+                        if await probe.probe_auth() == CHAT_READY:
                             self.ready = True
                             self._set_auth_state("READY", "authenticated")
                             return
@@ -729,13 +735,10 @@ class QwenService(ChatProvider):
         chat = QwenChat(page, timeout_ms=self.timeout_ms)
         # Keep the provider API compatibility hook; QwenChat implements it via
         # the structured probe and it performs no navigation.
-        if await chat.is_authenticated():
-            self.ready = True
-            self._set_auth_state("READY", "authenticated")
-            self.last_error = None
-            return
         state = await chat.probe_auth()
-        if state == CHAT_READY and await chat.probe_auth() == CHAT_READY:
+        if state != CHAT_READY:
+            state = await chat.probe_auth()
+        if state == CHAT_READY:
             self.ready = True
             self._set_auth_state("READY", "authenticated")
             self.last_error = None

@@ -62,6 +62,11 @@ observable vision support. Capabilities are metadata extensions; unknown token
 limits/usage remain null. See
 MIGRATION_V2.md for behavior corrections and unsupported sampling controls.
 
+Only providers listed in `providers.enabled` are started at application launch;
+an enabled-provider startup failure leaves the application running with that
+provider not ready while other enabled providers are still attempted. Qwen's
+observable contract is text-only; multimodal support is not advertised.
+
 No MCP server is needed for this boundary. A client may itself expose MCP
 functions as model tools; Web Model Adapter simply preserves their schema and results.
 The OpenClaw plugin is optional session cleanup, not the model transport.

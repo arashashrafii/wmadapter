@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 STREAM_HEARTBEAT_SECONDS = 5.0
 STREAM_WATCHDOG_SECONDS = 90.0
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
-router = ProviderRouter(providers, config["providers"]["default"])
+router = ProviderRouter(providers, config["providers"]["default"], config["providers"].get("enabled"))
 default_system_prompt = config["deepseek"].get("system_prompt", "")
 gateway_api_key = config["server"].get("api_key")
 response_state = GatewayState()
@@ -113,7 +113,6 @@ async def lifespan(app: FastAPI):
     try:
         await router.start()
     except Exception as exc:
-        providers["deepseek"].last_error = str(exc)
         logger.warning("Startup provider readiness check failed: %s", exc)
     yield
     await router.stop()

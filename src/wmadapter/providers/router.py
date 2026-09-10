@@ -4,11 +4,18 @@ from .base import ChatProvider
 
 
 class ProviderRouter:
-    def __init__(self, providers: dict[str, ChatProvider], default_provider: str):
+    def __init__(self, providers: dict[str, ChatProvider], default_provider: str,
+                 enabled_providers: list[str] | tuple[str, ...] | None = None):
         if default_provider not in providers:
             raise RuntimeError(f"Default provider {default_provider!r} is not configured")
         self.providers = providers
         self.default_provider = default_provider
+        self.enabled_providers = tuple(
+            (default_provider,) if enabled_providers is None else enabled_providers
+        )
+        unknown = set(self.enabled_providers) - set(providers)
+        if unknown:
+            raise RuntimeError(f"Enabled provider is not configured: {sorted(unknown)[0]!r}")
 
     def provider_for_model(self, model: str | None) -> ChatProvider:
         if not model:
@@ -34,11 +41,21 @@ class ProviderRouter:
         raise RuntimeError(f"Unknown model {model!r}")
 
     async def start(self) -> None:
-        await self.providers[self.default_provider].start()
+        failures = []
+        for name in self.enabled_providers:
+            provider = self.providers[name]
+            try:
+                await provider.start()
+            except Exception:
+                provider.ready = False
+                provider.last_error = "provider_startup_failed"
+                failures.append(name)
+        if failures:
+            raise RuntimeError("Enabled provider startup failed")
 
     async def stop(self) -> None:
-        for provider in self.providers.values():
-            await provider.stop()
+        for name in self.enabled_providers:
+            await self.providers[name].stop()
 
     async def status(self) -> dict:
         return {name: await provider.status() for name, provider in self.providers.items()}

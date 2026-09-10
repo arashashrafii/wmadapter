@@ -65,7 +65,7 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         provider = QwenService(load_config('/nonexistent'))
         page = AsyncMock()
         provider._page_for_conversation = AsyncMock(return_value=page)
-        with patch('wmadapter.service.QwenChat.is_authenticated', new=AsyncMock(return_value=True)):
+        with patch('wmadapter.service.QwenChat.probe_auth', new=AsyncMock(return_value='CHAT_READY')):
             await provider._authenticate('session')
         page.goto.assert_not_called()
         self.assertTrue(provider.ready)

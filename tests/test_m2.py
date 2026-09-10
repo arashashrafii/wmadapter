@@ -15,7 +15,7 @@ from wmadapter.ports import find_free_port
 from wmadapter.manual_auth import AUTH_TARGETS, _close_external_browser, _probe_context_auth, _stable_auth_probe, _wait_for_auth, run_manual_auth
 from wmadapter.providers.base import ChatProvider
 from wmadapter.providers.deepseek.chat import DeepSeekChat
-from wmadapter.providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, RATE_LIMITED, SIGN_IN_VISIBLE, DeepSeekLogin
+from wmadapter.providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, RATE_LIMITED, SESSION_PENDING, SIGN_IN_VISIBLE, DeepSeekLogin
 from wmadapter.browser.manager import BrowserManager
 from wmadapter.service import AUTH_STATES, DeepSeekService, QwenService
 
@@ -37,6 +37,31 @@ class FakeProvider(ChatProvider):
 
 
 class Milestone2Tests(unittest.TestCase):
+    def test_router_starts_all_enabled_providers_and_skips_disabled(self):
+        deepseek = FakeProvider()
+        qwen = FakeProvider()
+        deepseek.name = "deepseek"
+        qwen.name = "qwen"
+        deepseek.start = AsyncMock()
+        qwen.start = AsyncMock()
+        router = ProviderRouter({"deepseek": deepseek, "qwen": qwen}, "deepseek", ["deepseek"])
+        asyncio.run(router.start())
+        deepseek.start.assert_awaited_once()
+        qwen.start.assert_not_awaited()
+
+    def test_router_continues_enabled_provider_startup_after_one_failure(self):
+        deepseek = FakeProvider()
+        qwen = FakeProvider()
+        deepseek.name = "deepseek"
+        qwen.name = "qwen"
+        deepseek.start = AsyncMock(side_effect=RuntimeError("provider detail"))
+        qwen.start = AsyncMock()
+        router = ProviderRouter({"deepseek": deepseek, "qwen": qwen}, "deepseek", ["deepseek", "qwen"])
+        with self.assertRaisesRegex(RuntimeError, "Enabled provider startup failed"):
+            asyncio.run(router.start())
+        qwen.start.assert_awaited_once()
+        self.assertEqual(deepseek.last_error, "provider_startup_failed")
+
     def test_external_auth_probes_google_popup_and_chat_pages(self):
         context = Mock()
         login_page = Mock()
@@ -346,6 +371,18 @@ class Milestone2Tests(unittest.TestCase):
         asyncio.run(service.retry_login())
         service.start.assert_awaited_once()
         self.assertEqual(service.auth_state, "STARTING")
+
+    def test_qwen_authentication_reuses_probe_instance_for_warmup(self):
+        service = QwenService(load_config())
+        page = Mock()
+        service._page_for_conversation = AsyncMock(return_value=page)
+        probe = Mock()
+        probe.probe_auth = AsyncMock(side_effect=[SESSION_PENDING, CHAT_READY])
+        with patch("wmadapter.service.QwenChat", return_value=probe) as qwen_chat:
+            asyncio.run(service._authenticate("qwen-session"))
+        qwen_chat.assert_called_once_with(page, timeout_ms=service.timeout_ms)
+        self.assertEqual(probe.probe_auth.await_count, 2)
+        self.assertTrue(service.ready)
 
     def test_closed_login_page_stops_auth_watcher(self):
         page = Mock()

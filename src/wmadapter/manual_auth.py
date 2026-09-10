@@ -43,6 +43,7 @@ AUTH_TARGETS = {
 }
 _AUTH_TASKS: dict[int, asyncio.Task] = {}
 _DEEPSEEK_PROBES: dict[int, DeepSeekLogin] = {}
+_QWEN_PROBES: dict[int, QwenChat] = {}
 _PROFILE_LOCK_FILES = ("SingletonLock", "SingletonCookie", "SingletonSocket")
 
 
@@ -64,7 +65,11 @@ async def _authenticated(provider: str, page, target: AuthTarget) -> bool:
 
 async def _stable_auth_probe(provider: str, page, target: AuthTarget) -> bool:
     """Require two ready observations after a fresh page's warm-up probe."""
-    states = [await _probe_auth(provider, page, target) for _ in range(3)]
+    if provider == "qwen":
+        probe = QwenChat(page)
+        states = [await probe.probe_auth() for _ in range(3)]
+    else:
+        states = [await _probe_auth(provider, page, target) for _ in range(3)]
     return all(state == CHAT_READY for state in states[-2:])
 
 
@@ -75,7 +80,11 @@ async def _probe_auth(provider: str, page, target: AuthTarget) -> str:
             probe = DeepSeekLogin(page, target.url)
             _DEEPSEEK_PROBES[id(page)] = probe
         return await probe.probe_auth()
-    return await QwenChat(page).probe_auth()
+    probe = _QWEN_PROBES.get(id(page))
+    if probe is None:
+        probe = QwenChat(page)
+        _QWEN_PROBES[id(page)] = probe
+    return await probe.probe_auth()
 
 
 async def _probe_context_auth(provider: str, context, target: AuthTarget) -> tuple[str | None, object | None]:
@@ -166,6 +175,7 @@ async def _wait_for_auth(
         if _AUTH_TASKS.get(key) is task:
             _AUTH_TASKS.pop(key, None)
         _DEEPSEEK_PROBES.pop(key, None)
+        _QWEN_PROBES.pop(key, None)
 
 
 async def _wait_for_auth_once(
