@@ -59,10 +59,21 @@ def require_live_confirmation(confirm_live):
 def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=None):
     require_live_confirmation(confirm_live)
     transport = transport or LiveTransport(context)
-    report = new_report([]); report["metadata"] = context.public(); preflight = transport.ready() if hasattr(transport, "ready") else None
+    report = new_report([]); report["metadata"] = context.public()
+    preflight_error = None
+    try:
+        preflight = transport.ready() if hasattr(transport, "ready") else None
+    except (ConnectionRefusedError, TimeoutError, urllib.error.URLError, OSError) as error:
+        # Readiness is a prerequisite. A network failure blocks the suite and
+        # must still produce the structured report; clients are never invoked.
+        preflight = TransportResponse(503, "application/json", "{}")
+        preflight_error = error
     is_live = isinstance(transport, LiveTransport)
     selected = [case for case in CASES if (not groups or case.group in groups) and (not case_ids or case.case_id in case_ids)]
-    if preflight is not None and preflight.status != 200: report["preflight"] = {"status": "BLOCKED", "actual": f"HTTP {preflight.status}; provider readiness unavailable"}
+    if preflight_error is not None:
+        report["preflight"] = {"status": "BLOCKED", "actual": f"live readiness unavailable: {type(preflight_error).__name__}"}
+    elif preflight is not None and preflight.status != 200:
+        report["preflight"] = {"status": "BLOCKED", "actual": f"HTTP {preflight.status}; provider readiness unavailable"}
     for case in selected:
         result = {"case_id": case.case_id, "group": case.group, "title": case.title, "goal": case.goal, "preconditions": case.preconditions, "method": case.method, "expected": case.expected, "started_at": datetime.now(timezone.utc).isoformat()}
         if preflight is not None and preflight.status != 200:

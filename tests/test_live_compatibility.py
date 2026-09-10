@@ -98,6 +98,22 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             report = run_suite(context=LiveContext("fixture://offline", "deepseek-chat"), confirm_live=True, transport=Down())
         self.assertTrue(all(item["status"] == "BLOCKED" for item in report["results"]))
 
+    def test_connection_refused_preflight_returns_structured_blocked_report(self):
+        class Refused:
+            def __init__(self): self.called = False
+            def ready(self): raise ConnectionRefusedError("connection refused")
+            def request(self, case, payload):
+                self.called = True
+                raise AssertionError("must not request after refused preflight")
+
+        transport = Refused()
+        with patch.dict(os.environ, {"WMADAPTER_LIVE_COMPAT": "1"}):
+            report = run_suite(context=LiveContext("http://127.0.0.1:11556/v1", "deepseek-chat"), confirm_live=True, transport=transport)
+        self.assertEqual(report["preflight"]["status"], "BLOCKED")
+        self.assertIn("ConnectionRefusedError", report["preflight"]["actual"])
+        self.assertTrue(all(item["status"] == "BLOCKED" for item in report["results"]))
+        self.assertFalse(transport.called)
+
     def test_reports_support_json_and_markdown(self):
         report = new_report([{"case_id": "T01", "group": "contract", "status": "PASS", "actual": "HTTP 200"}])
         with tempfile.TemporaryDirectory() as directory:
