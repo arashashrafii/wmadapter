@@ -1,7 +1,7 @@
 # Live OpenAI Compatibility Test Plan
 
-The canonical suite is `tests/live_compatibility`. It contains 50 executable
-case specs, T01–T50, with distinct payload builders and semantic expectations.
+The canonical suite is `tests/live_compatibility`. It contains 62 executable
+case specs, T01–T62, with distinct payload builders and semantic expectations.
 It is opt-in and is never imported by the default test suite or CI.
 
 ## Safety and prerequisites
@@ -45,7 +45,14 @@ identity/isolation, SSE reconstruction, and SDK/agent deserialization; they do
 not compare nondeterministic model text with a reference model.
 
 `SSEParser` is incremental and handles LF, CRLF, CR, and chunk boundaries.
-`FixtureTransport` exercises all 50 cases offline. OpenAI and OpenClaw adapters
+`FixtureTransport` exercises all 62 cases offline. T51–T56 are separate
+OpenCode cases and T57–T62 are separate OpenClaw cases. Each client set covers
+baseline text, SSE ordering plus buffered/progressive classification, one
+fixture tool round trip, image input, unsupported audio, and provider-not-ready.
+Client harnesses are opt-in and require explicit JSON argv/config paths through
+`WMADAPTER_OPENCODE_COMMAND`, `WMADAPTER_OPENCODE_CONFIG`,
+`WMADAPTER_OPENCLAW_COMMAND`, and `WMADAPTER_OPENCLAW_CONFIG`; no CLI flags are
+guessed and no shell is used. OpenAI and OpenClaw adapters
 report `BLOCKED` when the official client or configured executable is absent.
 Only an exact expected fixture error is a passing negative case; an unexpected
 live provider error is a failure or blocked prerequisite according to the

@@ -18,6 +18,8 @@ class Case:
     payload_builder: Callable[[str], dict]
     expected_status: int = 200
     stream: bool = False
+    client: str = "gateway"
+    kind: str = "completion"
 
     def payload(self, model: str) -> dict:
         return self.payload_builder(model)
@@ -41,8 +43,8 @@ def _tool_builder(case_id: str, choice=None, messages=None, **extra):
     return _builder(case_id, messages=messages, **values)
 
 
-def _make(case_id, group, title, builder, expected_status=200, stream=False):
-    return Case(case_id, group, title, f"Verify {title} using protocol semantics only.", "Configured local endpoint and isolated provider profile; live readiness is required only for live execution.", f"Build and send the case-specific {case_id} payload, then apply semantic assertions.", "The documented semantic result or exact controlled error is observed.", builder, expected_status, stream)
+def _make(case_id, group, title, builder, expected_status=200, stream=False, *, client="gateway", kind="completion"):
+    return Case(case_id, group, title, f"Verify {title} using protocol semantics only.", "Configured local endpoint and isolated provider profile; live readiness is required only for live execution.", f"Build and send the case-specific {case_id} payload, then apply semantic assertions.", "The documented semantic result or exact controlled error is observed.", builder, expected_status, stream, client, kind)
 
 
 _SPECS = [
@@ -95,7 +97,38 @@ def _build_all():
                 builder = _builder(cid, tools=duplicate_tools)
                 status = 400
             result.append(_make(cid, group, title, builder, status, stream)); number += 1
-    assert len(result) == 50
+    next_id = 51
+    client_cases = [
+        ("baseline text", "completion", 200, False),
+        ("SSE chunk ordering and buffered-vs-progressive classification", "sse", 200, True),
+        ("one harmless function/tool round trip", "tool_roundtrip", 200, False),
+        ("image input", "image", 200, False),
+        ("unsupported media", "unsupported_media", 415, False),
+        ("provider-not-ready", "provider_not_ready", 503, False),
+    ]
+    for client in ("opencode", "openclaw"):
+        for title, kind, status, stream in client_cases:
+            cid = f"T{next_id:02d}"
+            if kind == "image":
+                builder = _builder(cid, messages=[{"role": "user", "content": [
+                    {"type": "text", "text": "What color is the fixture image?"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGVsbG8="}},
+                ]}])
+            elif kind == "unsupported_media":
+                builder = _builder(cid, messages=[{"role": "user", "content": [
+                    {"type": "input_audio", "input_audio": {"data": "ZmFrZQ==", "format": "wav"}},
+                ]}])
+            elif kind == "tool_roundtrip":
+                builder = _tool_builder(cid, messages=[{"role": "user", "content": "Look up the fixture nonce."}])
+            elif kind == "provider_not_ready":
+                builder = _builder(cid, messages=[{"role": "user", "content": "bounded readiness probe"}])
+            elif kind == "sse":
+                builder = _builder(cid, messages=[{"role": "user", "content": "stream the compatibility marker"}], stream=True)
+            else:
+                builder = _builder(cid, messages=[{"role": "user", "content": f"{client} compatibility marker {cid}"}])
+            result.append(_make(cid, "golden", f"{client.title()} {title}", builder, status, stream, client=client, kind=kind))
+            next_id += 1
+    assert len(result) == 62
     return tuple(result)
 
 

@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .assertions import assert_completion_semantics, assert_safe_error, assert_sse_semantics
-from .adapters import run_openai_sdk, run_openclaw
+from .assertions import assert_completion_semantics, assert_safe_error, assert_sse_semantics, assert_tool_roundtrip
+from .adapters import run_openai_sdk, run_openclaw, run_client_case
 from .cases import CASES, GROUPS
 from .report import new_report, write_report
 from .transport import FixtureTransport, TransportResponse
@@ -76,6 +76,9 @@ def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=No
                 except _json.JSONDecodeError: status, detail = "BLOCKED", "WMADAPTER_OPENCLAW_TOOL_ARGS must be a JSON argument list"
                 else: status, detail = run_openclaw(context, "Run the configured compatibility tool-loop and report its result.", include_tools=True)
             result.update(status=status, actual=detail); report["results"].append(result); continue
+        if is_live and case.client in {"opencode", "openclaw"}:
+            status, detail = run_client_case(context, case, case.payload(context.model))
+            result.update(status=status, actual=detail); report["results"].append(result); continue
         try:
             response = transport.request(case, case.payload(context.model))
             if response.status != case.expected_status:
@@ -84,7 +87,18 @@ def run_suite(*, context, confirm_live, groups=None, case_ids=None, transport=No
             elif response.status >= 400:
                 assert_safe_error(json.loads(response.body), response.status); result.update(status="PASS", actual=f"HTTP {response.status}; exact expected fixture error")
             elif case.stream:
-                assert_sse_semantics(response.body); result.update(status="PASS", actual="SSE semantics valid")
+                classification = assert_sse_semantics(response.body)
+                result.update(status="PASS", actual=f"SSE semantics valid; classification={classification}")
+            elif case.kind == "tool_roundtrip":
+                call_id = assert_tool_roundtrip(json.loads(response.body), context.model)
+                continuation = dict(case.payload(context.model))
+                continuation["messages"] = continuation["messages"] + [
+                    {"role": "assistant", "content": None, "tool_calls": json.loads(response.body)["choices"][0]["message"]["tool_calls"]},
+                    {"role": "tool", "tool_call_id": call_id, "content": "fixture-nonce"},
+                ]
+                follow_up = transport.request(case, continuation)
+                assert_completion_semantics(json.loads(follow_up.body), context.model)
+                result.update(status="PASS", actual="tool call and tool result continuation semantics valid")
             else:
                 assert_completion_semantics(json.loads(response.body), context.model); result.update(status="PASS", actual="completion semantics valid")
         except (AssertionError, ValueError) as error: result.update(status="FAIL", actual=str(error)[:300])

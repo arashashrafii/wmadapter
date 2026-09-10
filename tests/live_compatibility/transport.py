@@ -42,6 +42,24 @@ class FixtureTransport:
             code = {400: "invalid_request", 404: "model_not_found"}.get(case.expected_status, "provider_error")
             return TransportResponse(case.expected_status, "application/json", json.dumps({"error": {"type": "invalid_request_error", "code": code, "message": "fixture error"}}))
         if case.stream:
-            return TransportResponse(200, "text/event-stream", "data: {\"object\":\"chat.completion.chunk\",\"choices\":[]}\r\n\r\ndata: [DONE]\r\n\r\n")
+            body = (
+                'data: {"object":"chat.completion.chunk","id":"chatcmpl-fixture",'
+                '"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}\n\n'
+                'data: {"object":"chat.completion.chunk","id":"chatcmpl-fixture",'
+                '"choices":[{"index":0,"delta":{"content":"fixture"},"finish_reason":null}]}\n\n'
+                'data: {"object":"chat.completion.chunk","id":"chatcmpl-fixture",'
+                '"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+                'data: [DONE]\n\n'
+            )
+            return TransportResponse(200, "text/event-stream", body)
+        if getattr(case, "kind", "") == "tool_roundtrip":
+            if any(message.get("role") == "tool" for message in payload.get("messages", [])):
+                body = {"id": f"chatcmpl-{case.case_id.lower()}-final", "object": "chat.completion", "created": 1,
+                        "model": payload["model"], "choices": [{"index": 0, "message": {"role": "assistant", "content": "fixture-nonce confirmed"}, "finish_reason": "stop"}], "usage": None}
+                return TransportResponse(200, "application/json", json.dumps(body))
+            body = {"id": f"chatcmpl-{case.case_id.lower()}", "object": "chat.completion", "created": 1,
+                    "model": payload["model"], "choices": [{"index": 0, "message": {"role": "assistant", "content": None,
+                    "tool_calls": [{"id": "call_fixture_nonce", "type": "function", "function": {"name": "lookup", "arguments": "{\"q\":\"fixture-nonce\"}"}}]}, "finish_reason": "tool_calls"}], "usage": None}
+            return TransportResponse(200, "application/json", json.dumps(body))
         body = {"id": f"chatcmpl-{case.case_id.lower()}", "object": "chat.completion", "created": 1, "model": payload["model"], "choices": [{"index": 0, "message": {"role": "assistant", "content": "fixture"}, "finish_reason": "stop"}], "usage": None}
         return TransportResponse(200, "application/json", json.dumps(body))

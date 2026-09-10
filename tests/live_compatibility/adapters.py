@@ -47,6 +47,45 @@ def run_openclaw(context, message: str, include_tools: bool = False):
     return "PASS", "OpenClaw completed with verified provider/model execution evidence"
 
 
+def run_client_case(context, case, payload: dict):
+    """Run an explicitly configured client harness; never guesses CLI flags."""
+    prefix = case.client.upper()
+    command = os.environ.get(f"WMADAPTER_{prefix}_COMMAND")
+    config = os.environ.get(f"WMADAPTER_{prefix}_CONFIG")
+    if not command or not config:
+        return "BLOCKED", f"WMADAPTER_{prefix}_COMMAND and WMADAPTER_{prefix}_CONFIG are required"
+    if not Path(config).is_file():
+        return "BLOCKED", f"configured {case.client} config file is unavailable"
+    try:
+        args = json.loads(command)
+    except json.JSONDecodeError:
+        return "BLOCKED", f"{case.client} command configuration must be a JSON argument list"
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        return "BLOCKED", f"{case.client} command must be a JSON string argument list"
+    request = json.dumps({"case_id": case.case_id, "kind": case.kind, "payload": payload}, ensure_ascii=False)
+    try:
+        completed = subprocess.run(args, input=request, text=True, capture_output=True, timeout=context.timeout, check=False, shell=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
+    if completed.returncode != 0:
+        return "FAIL", f"{case.client} exited {completed.returncode}"
+    try:
+        evidence = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return "FAIL", f"{case.client} did not return JSON execution evidence"
+    if evidence.get("provider") != "wmadapter" or evidence.get("model") != context.model:
+        return "FAIL", f"{case.client} evidence did not identify the configured provider/model"
+    if case.expected_status == 200 and evidence.get("status") != "ok":
+        return "FAIL", f"{case.client} reported an unsuccessful run"
+    if case.expected_status >= 400 and evidence.get("status") != "expected_error":
+        return "FAIL", f"{case.client} did not report the expected controlled error"
+    if case.kind == "sse" and evidence.get("stream_classification") not in {"buffered", "progressive"}:
+        return "FAIL", f"{case.client} omitted SSE classification"
+    if case.kind == "tool_roundtrip" and evidence.get("tool_round_trip") is not True:
+        return "FAIL", f"{case.client} did not verify the tool round trip"
+    return "PASS", f"{case.client} completed {case.kind} with provider/model evidence"
+
+
 def adapter_status(name: str) -> tuple[str, str]:
     available = importlib.util.find_spec("openai") is not None if name == "openai" else shutil.which("openclaw") is not None
     if not available:
