@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, NewType
 from pydantic import BaseModel, ConfigDict, Field
 from .policy import ClientPolicy
+
+# These identifiers are intentionally opaque at the provider-contract boundary.
+# Their values are owned by the caller/gateway and must not be parsed as provider
+# URLs, credentials, or transcript data.
+ResponseId = NewType("ResponseId", str)
+ConversationId = NewType("ConversationId", str)
+
 
 class Message(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -33,7 +40,7 @@ class CanonicalRequest(BaseModel):
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = None
-    conversation_id: str | None = None
+    conversation_id: ConversationId | None = None
 
 
 def canonicalize(request: ChatRequest) -> CanonicalRequest:
@@ -85,12 +92,14 @@ class ModelCapabilities(BaseModel):
 class ProviderRequest(BaseModel):
     chat: ChatRequest
     canonical: CanonicalRequest | None = None
-    conversation_id: str | None = None
+    conversation_id: ConversationId | None = None
     system_prompt: str = ""
     client_policy: ClientPolicy = ClientPolicy.GENERIC
 
 
 class ProviderResult(BaseModel):
+    response_id: ResponseId | None = None
+    conversation_id: ConversationId | None = None
     content: str | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     finish_reason: Literal["stop", "tool_calls", "length", "content_filter"] = "stop"
