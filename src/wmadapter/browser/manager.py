@@ -485,13 +485,25 @@ class BrowserManager:
         self,
         auth_probe: Callable[[Page], Awaitable[bool]] | None = None,
     ) -> BrowserContext:
-        """Close headed managed login and reopen the same profile headlessly."""
+        """Verify authentication and hand off to the configured service runtime.
+
+        Under Xvfb the service intentionally runs headed Chrome on a hidden
+        display.  Reopening the profile as true headless Chrome is both
+        unnecessary and provider-visible, so that runtime stays in place.
+        """
         if self.mode == "cdp":
             raise RuntimeError("CDP mode does not support managed browser handoff")
         if self.headless:
             raise RuntimeError("Browser handoff requires a headed managed context")
         if not await self.check_liveness():
             raise RuntimeError("Headed browser is no longer running")
+        if os.getenv("WMADAPTER_XVFB") == "1":
+            page = await self.page()
+            if auth_probe is not None and not await auth_probe(page):
+                raise RuntimeError("hidden headed authentication probe returned false")
+            if self.context is None:  # pragma: no cover - guarded by page()
+                raise RuntimeError("hidden headed browser context is unavailable")
+            return self.context
         try:
             await self._stop_for_cleanup("handoff")
         except BaseException as exc:

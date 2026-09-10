@@ -1321,6 +1321,36 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             manager = BrowserManager(profile_path="/tmp/wmadapter-xvfb", headless=True)
         self.assertFalse(manager.headless)
 
+    async def test_xvfb_handoff_probes_current_page_without_true_headless_relaunch(self):
+        page = Mock(url="https://chat.deepseek.com/")
+        page.is_closed.return_value = False
+        context = Mock(pages=[page], browser=None)
+        context.close = AsyncMock()
+        chromium = Mock()
+        chromium.launch_persistent_context = AsyncMock(return_value=context)
+        playwright = Mock(chromium=chromium)
+        playwright.stop = AsyncMock()
+        starter = Mock(start=AsyncMock(return_value=playwright))
+        auth_probe = AsyncMock(return_value=True)
+
+        with patch.dict(os.environ, {"WMADAPTER_XVFB": "1"}, clear=False), \
+                patch("wmadapter.browser.manager.async_playwright", return_value=starter):
+            manager = BrowserManager(
+                profile_path=f"/tmp/wmadapter-xvfb-handoff-{id(context)}",
+                headless=True,
+                launch_url="https://chat.deepseek.com/",
+            )
+            await manager.start()
+            result = await manager.handoff_to_headless(auth_probe=auth_probe)
+
+        self.assertIs(result, context)
+        self.assertFalse(manager.headless)
+        auth_probe.assert_awaited_once_with(page)
+        chromium.launch_persistent_context.assert_awaited_once()
+        context.close.assert_not_awaited()
+        playwright.stop.assert_not_awaited()
+        await manager.stop()
+
     async def test_handoff_auth_probe_failure_restores_headed_session(self):
         headed = Mock(pages=[])
         headed.browser = None
