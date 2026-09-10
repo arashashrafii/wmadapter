@@ -128,6 +128,7 @@ class HTTPContractTests(unittest.TestCase):
             self.provider.complete = AsyncMock(return_value=answer)
             response = self.post(stream=True, tools=TOOLS, stream_options={'include_usage': True})
             self.assertTrue(response.headers['content-type'].startswith('text/event-stream'))
+            self.assertEqual(response.headers['connection'], 'close')
             frames = [line[6:] for line in response.text.splitlines() if line.startswith('data: ')]
             self.assertEqual(frames[-1], '[DONE]')
             chunks = [json.loads(line) for line in frames[:-1]]

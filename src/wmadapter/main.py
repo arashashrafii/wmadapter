@@ -342,7 +342,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
                 yield _sse(_error("Web provider failed to produce a valid completion", "provider_error", "provider_error"))
             yield _sse("[DONE]")
         return StreamingResponse(events(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                                 headers={"Cache-Control": "no-cache", "Connection": "close", "X-Accel-Buffering": "no"})
     try:
         result = await infer()
     except PageCapacityError as exc:
