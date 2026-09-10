@@ -125,7 +125,8 @@ def _build_all():
             elif kind == "sse":
                 builder = _builder(cid, messages=[{"role": "user", "content": "stream the compatibility marker"}], stream=True)
             else:
-                builder = _builder(cid, messages=[{"role": "user", "content": f"{client} compatibility marker {cid}"}])
+                marker = "Reply exactly WMADAPTER_LIVE_T51" if client == "opencode" else f"{client} compatibility marker {cid}"
+                builder = _builder(cid, messages=[{"role": "user", "content": marker}])
             result.append(_make(cid, "golden", f"{client.title()} {title}", builder, status, stream, client=client, kind=kind))
             next_id += 1
     assert len(result) == 62

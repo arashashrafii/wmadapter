@@ -131,6 +131,10 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             cases = [case for case in CASES if case.client == client]
             self.assertEqual([case.kind for case in cases], ["completion", "sse", "tool_roundtrip", "image", "unsupported_media", "provider_not_ready"])
 
+    def test_opencode_t51_uses_deterministic_bounded_prompt(self):
+        case = next(case for case in CASES if case.case_id == "T51")
+        self.assertEqual(case.payload("deepseek-chat")["messages"], [{"role": "user", "content": "Reply exactly WMADAPTER_LIVE_T51"}])
+
     def test_sse_assertion_classifies_progressive_and_buffered_streams(self):
         from live_compatibility.assertions import assert_sse_semantics
         progressive = ('data: {"object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n\n'
@@ -186,7 +190,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "opencode.json"
             config.write_text("{}")
-            payload = case.payload("deepseek-chat")
+            payload = json.loads(json.dumps(case.payload("deepseek-chat")))
             payload["messages"][0]["content"] = "prompt; $(touch /tmp/should-not-run)"
             completed = SimpleNamespace(
                 returncode=0,
