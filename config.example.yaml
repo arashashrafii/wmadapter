@@ -34,6 +34,11 @@ providers:
   enabled:
     - deepseek
 
+limits:
+  # Measurable gateway safeguards; upstream token limits remain unknown.
+  max_input_chars:
+  max_output_chars:
+
 logging:
   level: INFO
   file: wmadapter.log

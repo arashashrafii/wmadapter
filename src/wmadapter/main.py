@@ -160,6 +160,19 @@ def _model_catalog():
             for model in provider.model_ids}
 
 
+def _public_capabilities(provider):
+    capabilities = provider.capabilities.model_dump()
+    limits = config.get("limits", {})
+    capabilities["gateway_max_input_chars"] = limits.get("max_input_chars")
+    capabilities["gateway_max_output_chars"] = limits.get("max_output_chars")
+    return capabilities
+
+
+def _enforce_output_limit(content: str, max_output_chars: int | None) -> None:
+    if max_output_chars is not None and len(content) > max_output_chars:
+        raise HTTPException(502, "gateway_output_limit")
+
+
 def _model_provider(model):
     # OpenClaw commonly prefixes the public model with the local gateway name.
     normalized_model = model.split("/", 1)[-1]
@@ -184,7 +197,7 @@ async def props(model: str, autoload: bool = False):
     provider = _model_provider(model)
     await _require_provider_ready(provider)
     return {"model": model, "context_length": provider.capabilities.context_window,
-            "supports_chat": True, "capabilities": provider.capabilities.model_dump()}
+            "supports_chat": True, "capabilities": _public_capabilities(provider)}
 
 
 @app.get("/v1/models")
@@ -192,7 +205,7 @@ async def models(request: Request):
     _authorize(request)
     return {"object": "list", "data": [
         {"id": model, "object": "model", "created": 0, "owned_by": name + "-web",
-         "capabilities": router.providers[name].capabilities.model_dump()}
+         "capabilities": _public_capabilities(router.providers[name])}
         for model, name in _model_catalog().items() if name in router.providers
     ]}
 
@@ -202,7 +215,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
     _authorize(request)
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
-    validate_chat(payload, provider)
+    validate_chat(payload, provider, config.get("limits", {}).get("max_input_chars"))
     await _require_provider_ready(provider)
     conversation_id = payload.conversation_id or payload.user
     if conversation_id is None:
@@ -231,6 +244,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
             yield _sse(chunk({"role": "assistant", "content": ""}))
             try:
                 result = await infer()
+                _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
                 delta = {"content": result.content or ""}
                 if result.tool_calls:
                     delta = {"tool_calls": [{"index": i, **call} for i, call in enumerate(result.tool_calls)]}
@@ -256,6 +270,7 @@ async def chat_completion(payload: ChatRequest, request: Request):
     except Exception as exc:
         logger.exception("Chat completion failed")
         raise _provider_http_error(exc) from exc
+    _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
     response = _completion_response(request_id, payload.model, result.content or "", result.tool_calls)
     response["choices"][0]["finish_reason"] = result.finish_reason
     response["usage"] = result.usage
@@ -281,7 +296,7 @@ async def responses(payload: ResponsesRequest, request: Request):
         conversation_id=payload.conversation_id,
         previous_response_id=payload.previous_response_id,
     )
-    validate_chat(chat, provider)
+    validate_chat(chat, provider, config.get("limits", {}).get("max_input_chars"))
     await _require_provider_ready(provider)
     try:
         conversation_id = response_state.resolve(
@@ -309,6 +324,7 @@ async def responses(payload: ResponsesRequest, request: Request):
     except Exception as exc:
         raise _provider_http_error(exc) from exc
 
+    _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
     response_id = ResponseId(f"resp_{uuid.uuid4().hex}")
     response_state.remember(response_id, conversation_id)
     text = result.content or ""

@@ -1,9 +1,24 @@
 """Validate the supported Chat Completions subset before browser side effects."""
+import json
 from fastapi import HTTPException
 from ..providers.contract import ChatRequest, normalize_tool_calls
 
 
-def validate_chat(chat: ChatRequest, provider) -> None:
+def validate_input_limit(chat: ChatRequest, max_input_chars: int | None) -> None:
+    """Reject oversized input; never truncate content to fit a gateway limit."""
+    if max_input_chars is None:
+        return
+    total = 0
+    for message in chat.messages:
+        if isinstance(message.content, str):
+            total += len(message.content)
+        elif isinstance(message.content, list):
+            total += len(json.dumps(message.content, ensure_ascii=False, separators=(",", ":")))
+    if total > max_input_chars:
+        raise HTTPException(400, "Gateway input character limit exceeded")
+
+
+def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = None) -> None:
     def invalid(message):
         raise HTTPException(400, message)
 
@@ -71,3 +86,4 @@ def validate_chat(chat: ChatRequest, provider) -> None:
         invalid('required tool_choice needs tools')
     if getattr(chat, 'n', 1) != 1:
         invalid('Only n=1 is supported')
+    validate_input_limit(chat, max_input_chars)

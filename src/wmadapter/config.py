@@ -68,6 +68,13 @@ class ProviderConfig(BaseModel):
     enabled: list[str] = Field(default_factory=lambda: ["deepseek"])
 
 
+class GatewayLimits(BaseModel):
+    """Optional measurable gateway limits; upstream token limits remain unknown."""
+
+    max_input_chars: int | None = Field(default=None, ge=1)
+    max_output_chars: int | None = Field(default=None, ge=1)
+
+
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     file: str | None = "wmadapter.log"
@@ -81,6 +88,7 @@ class AppConfig(BaseModel):
     deepseek: DeepSeekConfig = Field(default_factory=DeepSeekConfig)
     qwen: QwenConfig = Field(default_factory=QwenConfig)
     providers: ProviderConfig = Field(default_factory=ProviderConfig)
+    limits: GatewayLimits = Field(default_factory=GatewayLimits)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     def as_legacy_dict(self) -> dict[str, Any]:
