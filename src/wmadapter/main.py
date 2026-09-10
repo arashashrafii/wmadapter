@@ -565,6 +565,15 @@ def _reject_responses_sampling_controls(payload: ResponsesRequest) -> None:
             raise HTTPException(400, f"Unsupported Responses sampling control: {field}")
 
 
+def _reject_responses_tools(payload: ResponsesRequest) -> None:
+    if payload.tools is not None:
+        raise HTTPException(400, "Responses tools are not supported by the web adapter")
+    if payload.tool_choice is not None:
+        raise HTTPException(400, "Responses tool_choice is not supported by the web adapter")
+    if payload.parallel_tool_calls is not None:
+        raise HTTPException(400, "Responses parallel_tool_calls is not supported by the web adapter")
+
+
 @app.post("/v1/audio/speech")
 async def audio_speech(payload: AudioSpeechRequest, request: Request):
     """Validate speech synthesis input without fabricating audio."""
@@ -693,6 +702,7 @@ async def responses(payload: ResponsesRequest, request: Request):
     if unsupported:
         raise HTTPException(400, f"Responses feature is not supported: {unsupported[0]}")
     _reject_responses_sampling_controls(payload)
+    _reject_responses_tools(payload)
     if payload.stream:
         raise HTTPException(400, "Responses streaming is not supported yet")
     if not isinstance(payload.input, str):

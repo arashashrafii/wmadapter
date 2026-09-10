@@ -433,6 +433,10 @@ class HTTPContractTests(unittest.TestCase):
             {'messages':[{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:image/png;base64,aGVsbG8='}}]}]},
             {'n':2}, {'stream_options': 'invalid'},
             {'tool_choice': {'type':'function','function':{'name':[]}}},
+            {'parallel_tool_calls': True},
+            {'tools':[{'type':'custom','custom':{'name':'lookup'}}]},
+            {'tools':[{'type':'function','function':{'name':'bad.name'}}]},
+            {'messages':[{'role':'assistant','tool_calls':[{'id':'c1','type':'function','function':{'name':'lookup','arguments':'not-json'}}]}]},
         ]:
             with self.subTest(overrides=overrides):
                 response = self.post(**overrides)
@@ -467,6 +471,19 @@ class HTTPContractTests(unittest.TestCase):
         self.provider.complete = AsyncMock(return_value='<tool_call>{"name":"lookup","arguments":{}}</tool_call>')
         response = self.post(tools=TOOLS, tool_choice={'type':'function','function':{'name':'lookup'}})
         self.assertEqual(response.json()['choices'][0]['finish_reason'], 'tool_calls')
+
+    def test_function_tool_metadata_is_preserved_and_parallel_is_explicit(self):
+        tool = {'type': 'function', 'function': {
+            'name': 'lookup', 'description': 'Look up a value',
+            'parameters': {'type': 'object'}, 'strict': True,
+        }}
+        self.provider.complete = AsyncMock(return_value='ordinary answer')
+        response = self.post(tools=[tool], tool_choice='auto', parallel_tool_calls=False)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Look up a value', self.provider.complete.call_args.args[0])
+        response = self.post(tools=[tool], parallel_tool_calls=True)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('parallel_tool_calls', response.text)
 
     def test_none_disables_tool_calls(self):
         self.provider.complete = AsyncMock(return_value='<tool_call>{"name":"lookup","arguments":{}}</tool_call>')

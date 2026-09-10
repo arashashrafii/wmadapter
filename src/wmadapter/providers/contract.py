@@ -229,6 +229,12 @@ def normalize_tool_calls(calls: Sequence[Mapping[str, Any]]) -> list[dict[str, A
             raise ValueError("Tool calls require a nonempty function name")
         if not isinstance(item.function.get("arguments"), str):
             raise ValueError("Tool calls require string arguments")
+        try:
+            arguments = json.loads(item.function["arguments"])
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("Tool calls require valid JSON arguments") from exc
+        if not isinstance(arguments, dict):
+            raise ValueError("Tool call arguments must be a JSON object")
         seen.add(item.id)
         normalized.append(item.model_dump())
     return normalized
@@ -265,6 +271,7 @@ class CanonicalRequest(BaseModel):
     messages: list[CanonicalMessage]
     tools: list[CanonicalTool] = Field(default_factory=list)
     tool_choice: Any = None
+    parallel_tool_calls: bool = False
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = None
@@ -279,6 +286,7 @@ def canonicalize(request: ChatRequest) -> CanonicalRequest:
         messages=[CanonicalMessage.model_validate(message.model_dump()) for message in request.messages],
         tools=[CanonicalTool.model_validate(tool) for tool in request.tools or []],
         tool_choice=request.tool_choice,
+        parallel_tool_calls=request.parallel_tool_calls,
         stream=request.stream,
         temperature=request.temperature,
         max_tokens=request.max_tokens,
@@ -303,6 +311,7 @@ class ChatRequest(BaseModel):
     previous_response_id: str | None = None
     tools: list[dict[str, Any]] | None = None
     tool_choice: Any = None
+    parallel_tool_calls: bool = False
     response_format: dict[str, Any] | None = None
     stop: str | list[str] | None = None
     presence_penalty: float | None = Field(default=None, ge=-2, le=2)
@@ -331,6 +340,9 @@ class ResponsesRequest(BaseModel):
     previous_response_id: ResponseId | None = None
     stream: bool = False
     text: dict[str, Any] | None = None
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: Any = None
+    parallel_tool_calls: bool | None = None
     temperature: float | None = Field(default=None, ge=0, le=2)
     top_p: float | None = Field(default=None, gt=0, le=1)
     max_tokens: int | None = Field(default=None, gt=0)

@@ -35,6 +35,8 @@ Verified capabilities:
   provider context/output limits and usage remain unknown unless observed.
 - Chat Completions and Responses return usage only when the provider supplies a
   complete, internally consistent token record; otherwise usage is `null`.
+- Chat tools support validated function definitions and serial emulated calls;
+  custom tools, parallel calls, and Responses tools are rejected explicitly.
 - Managed browser sessions with headed login, canonical profile ownership,
   headed-to-headless handoff, session probing, profile locking, page ownership,
   configurable page caps, idle cleanup, and protected in-flight pages.

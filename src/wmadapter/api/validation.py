@@ -34,6 +34,8 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
             invalid(f'Unsupported sampling control: {field}')
     if chat.n != 1:
         invalid('Only n=1 is supported')
+    if chat.parallel_tool_calls:
+        invalid('parallel_tool_calls=true is not supported by the web adapter')
     if isinstance(chat.stop, list) and (not chat.stop or not all(isinstance(item, str) and item for item in chat.stop)):
         invalid('stop must be a non-empty string or array of non-empty strings')
     if chat.stream_options:
@@ -90,19 +92,34 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
         invalid('Missing tool results for assistant calls')
     names = set()
     for tool in chat.tools or []:
+        if not isinstance(tool, dict):
+            invalid('Tool definitions must be objects')
+        if tool.get('type') == 'custom':
+            invalid('Custom tools are not supported by the web adapter')
         function = tool.get('function')
         if tool.get('type') != 'function' or not isinstance(function, dict):
             invalid('Only function tools are supported')
+        unsupported = sorted(set(function) - {'name', 'description', 'parameters', 'strict'})
+        if unsupported:
+            invalid(f'Unsupported function tool field: {unsupported[0]}')
         name = function.get('name')
-        if not isinstance(name, str) or not name or name in names:
-            invalid('Tool names must be nonempty and unique')
+        if not isinstance(name, str) or not name or len(name) > 64 or name in names:
+            invalid('Tool names must be nonempty, at most 64 characters, and unique')
+        if not all(character.isalnum() or character in {'_', '-'} for character in name):
+            invalid('Tool names may contain only letters, numbers, underscores, and hyphens')
+        if 'description' in function and not isinstance(function['description'], str):
+            invalid('Tool description must be a string')
         if not isinstance(function.get('parameters', {}), dict):
             invalid('Tool parameters must be a JSON schema object')
+        if 'strict' in function and not isinstance(function['strict'], bool):
+            invalid('Tool strict must be boolean')
         names.add(name)
     choice = chat.tool_choice
     if isinstance(choice, dict):
         function = choice.get('function')
-        if choice.get('type') != 'function' or not isinstance(function, dict) or not isinstance(function.get('name'), str) or function.get('name') not in names:
+        if (set(choice) != {'type', 'function'} or choice.get('type') != 'function'
+                or not isinstance(function, dict) or set(function) != {'name'}
+                or not isinstance(function.get('name'), str) or function.get('name') not in names):
             invalid('tool_choice must name a supplied function')
     elif choice not in (None, 'auto', 'none', 'required'):
         invalid('Unsupported tool_choice')

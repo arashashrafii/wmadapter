@@ -101,6 +101,16 @@ class ResponsesEndpointTests(unittest.TestCase):
                 self.assertIn("not supported", response.text.lower())
         self.provider.infer.assert_not_called()
 
+    def test_tool_forms_and_choice_are_explicitly_unsupported(self):
+        for field, value in (
+            ('tools', []), ('tool_choice', 'auto'), ('parallel_tool_calls', False),
+        ):
+            with self.subTest(field=field):
+                response = self.post(**{field: value})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('tool', response.text.lower())
+        self.provider.infer.assert_not_called()
+
     def test_sampling_controls_are_explicitly_rejected(self):
         for field, value in (
             ('temperature', 0.2), ('top_p', 0.9), ('max_output_tokens', 20),

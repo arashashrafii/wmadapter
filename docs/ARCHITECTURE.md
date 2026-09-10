@@ -87,6 +87,15 @@ integers, and internally consistent; otherwise they return `usage: null`.
 When streamed usage is requested, the final empty-choice chunk is emitted with
 that same observed usage or `null`, and contains no provider-private fields.
 
+Tool schemas are normalized at the Chat Completions boundary. The supported
+form is an OpenAI function tool with a bounded name, optional string
+description/boolean strict flag, and object JSON-schema parameters. Custom tool
+forms and parallel execution are rejected because the web adapters only
+provide serial, emulated function-call recovery. `auto`, `none`, `required`,
+and a specific supplied function are validated; malformed calls and invalid
+JSON arguments are rejected. Responses tool fields remain explicitly
+unsupported, and no tool is executed by the gateway.
+
 The images route validates a non-empty text prompt and model selection but
 returns `501 image_generation_not_supported`; current web providers expose no
 verified image-generation path, and the gateway never fabricates image data.
