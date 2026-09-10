@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -82,10 +83,26 @@ def run_client_case(context, case, payload: dict):
     if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
         return "BLOCKED", f"{case.client} command must be a JSON string argument list"
     request = json.dumps({"case_id": case.case_id, "kind": case.kind, "payload": payload}, ensure_ascii=False)
-    try:
-        completed = subprocess.run(args, input=request, text=True, capture_output=True, timeout=context.timeout, check=False, shell=False)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
+    with tempfile.TemporaryDirectory(prefix=f"wmadapter-{prefix.lower()}-data-") as data_home, tempfile.TemporaryDirectory(
+        prefix=f"wmadapter-{prefix.lower()}-runtime-"
+    ) as runtime_home:
+        os.chmod(runtime_home, 0o700)
+        client_env = os.environ.copy()
+        client_env["XDG_DATA_HOME"] = data_home
+        client_env["XDG_RUNTIME_DIR"] = runtime_home
+        try:
+            completed = subprocess.run(
+                args,
+                input=request,
+                text=True,
+                capture_output=True,
+                timeout=context.timeout,
+                check=False,
+                shell=False,
+                env=client_env,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
     if completed.returncode != 0:
         diagnostic = _stderr_diagnostic(completed.stderr)
         return "FAIL", f"{case.client} exited {completed.returncode} (stderr: {diagnostic})"

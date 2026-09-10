@@ -182,6 +182,43 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertLessEqual(len(detail), 600)
         self.assertEqual(run.call_args.kwargs["shell"], False)
 
+    def test_client_case_uses_temporary_xdg_data_and_runtime_without_changing_config(self):
+        case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            observed = {}
+
+            def run_isolated(*args, **kwargs):
+                observed.update(kwargs["env"])
+                self.assertTrue(Path(observed["XDG_DATA_HOME"]).is_dir())
+                self.assertTrue(Path(observed["XDG_RUNTIME_DIR"]).is_dir())
+                self.assertEqual(observed["WMADAPTER_OPENCODE_CONFIG"], str(config))
+                self.assertEqual(kwargs["timeout"], 7)
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}),
+                    stderr="",
+                )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "compat-harness"]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                    "XDG_DATA_HOME": "/caller/data",
+                    "XDG_RUNTIME_DIR": "/caller/runtime",
+                },
+            ), patch("subprocess.run", side_effect=run_isolated) as run:
+                status, _ = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat", timeout=7), case, case.payload("deepseek-chat"))
+
+        self.assertEqual(status, "PASS")
+        self.assertNotEqual(observed["XDG_DATA_HOME"], "/caller/data")
+        self.assertNotEqual(observed["XDG_RUNTIME_DIR"], "/caller/runtime")
+        self.assertFalse(Path(observed["XDG_DATA_HOME"]).exists())
+        self.assertFalse(Path(observed["XDG_RUNTIME_DIR"]).exists())
+        self.assertEqual(run.call_args.kwargs["shell"], False)
+
     def test_client_case_harness_requires_explicit_configuration(self):
         case = next(case for case in CASES if case.client == "openclaw" and case.kind == "image")
         with patch.dict(os.environ, {}, clear=True):
