@@ -54,13 +54,19 @@ The client agent owns tool execution and sends the result on its next request.
 
 ## Contract scope
 
-POST /v1/chat/completions and GET /v1/models support text messages, system/user/
+POST /v1/chat/completions, POST /v1/completions, and GET /v1/models support text messages, system/user/
 assistant/tool roles, emulated function calls, tool_choice, finish_reason and
 buffered SSE. DeepSeek retains bounded data-URL upload code for verified use,
 but image input is not advertised until live model/UI verification establishes
 observable vision support. Capabilities are metadata extensions; unknown token
 limits/usage remain null. See
 MIGRATION_V2.md for behavior corrections and unsupported sampling controls.
+
+The legacy `/v1/completions` route accepts a string `prompt`, model, user, and
+stream flag, translates the prompt to one canonical user message, and returns
+the legacy text-completion envelope. Unsupported legacy fields and non-string
+prompts are rejected explicitly; token arrays, logprobs, echo, suffix, and
+other provider-specific options are not silently emulated.
 
 Only providers listed in `providers.enabled` are started at application launch;
 an enabled-provider startup failure leaves the application running with that

@@ -62,6 +62,47 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(body['choices'][0]['finish_reason'], 'stop')
         self.assertIsNone(body['usage'])
 
+    def test_legacy_completion_uses_canonical_chat_contract_and_shape(self):
+        response = self.client.post('/v1/completions', json={
+            'model': 'deepseek-chat', 'prompt': 'legacy hello', 'user': 'compat-user',
+        })
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['object'], 'text_completion')
+        self.assertTrue(body['id'].startswith('cmpl-'))
+        self.assertEqual(body['choices'][0]['text'], 'hello')
+        self.assertIsNone(body['choices'][0]['logprobs'])
+        self.assertEqual(self.provider.complete.call_args.kwargs['conversation_id'], 'compat-user')
+
+    def test_legacy_completion_rejects_unsupported_fields_before_provider(self):
+        response = self.client.post('/v1/completions', json={
+            'model': 'deepseek-chat', 'prompt': 'hello', 'echo': True,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['code'], 'unsupported_feature')
+        self.assertIn('echo', response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
+
+    def test_legacy_completion_rejects_non_string_prompt(self):
+        response = self.client.post('/v1/completions', json={
+            'model': 'deepseek-chat', 'prompt': ['hello', 'world'],
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('prompt must be a string', response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
+
+    def test_legacy_completion_stream_translates_canonical_sse_shape(self):
+        response = self.client.post('/v1/completions', json={
+            'model': 'deepseek-chat', 'prompt': 'legacy stream', 'stream': True,
+        })
+        self.assertEqual(response.status_code, 200)
+        frames = [line[6:] for line in response.text.splitlines() if line.startswith('data: ')]
+        self.assertEqual(frames[-1], '[DONE]')
+        first = json.loads(frames[0])
+        self.assertEqual(first['object'], 'text_completion')
+        self.assertEqual(first['choices'][0]['text'], '')
+        self.assertEqual(json.loads(frames[-2])['choices'][0]['finish_reason'], 'stop')
+
     def test_not_ready_is_a_stable_safe_provider_error(self):
         self.provider.ready = False
         response = self.post()

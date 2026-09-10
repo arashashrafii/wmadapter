@@ -25,6 +25,7 @@ from .providers.contract import (
     ConversationId,
     Message,
     ChatRequest,
+    LegacyCompletionRequest,
     ProviderRequest,
     ProviderResult,
     ResponseId,
@@ -101,6 +102,43 @@ def _completion_response(request_id: str, model: str, answer: str, tool_calls: l
         ],
         "usage": None,
     }
+
+
+def _legacy_completion_request(payload: LegacyCompletionRequest) -> ChatRequest:
+    unsupported = sorted(payload.model_extra or {})
+    if unsupported:
+        raise HTTPException(400, f"Unsupported legacy completions field: {unsupported[0]}")
+    if not isinstance(payload.prompt, str):
+        raise HTTPException(400, "Legacy completions prompt must be a string")
+    return ChatRequest(
+        model=payload.model,
+        messages=[Message(role="user", content=payload.prompt)],
+        stream=payload.stream,
+        user=payload.user,
+    )
+
+
+def _legacy_stream_event(data: str) -> str:
+    if data == "[DONE]":
+        return "data: [DONE]\n\n"
+    try:
+        event = json.loads(data)
+    except json.JSONDecodeError:
+        return f"data: {data}\n\n"
+    choices = event.get("choices") or []
+    if choices:
+        choice = choices[0]
+        delta = choice.get("delta") or {}
+        event["object"] = "text_completion"
+        event["choices"] = [{
+            "text": delta.get("content") or "",
+            "index": choice.get("index", 0),
+            "logprobs": None,
+            "finish_reason": choice.get("finish_reason"),
+        }]
+    else:
+        event["object"] = "text_completion"
+    return "data: " + json.dumps(event, separators=(",", ":")) + "\n\n"
 
 
 def _sse(data: dict[str, Any] | str) -> str:
@@ -383,6 +421,44 @@ async def chat_completion(payload: ChatRequest, request: Request):
     response["choices"][0]["finish_reason"] = result.finish_reason
     response["usage"] = result.usage
     return response
+
+
+@app.post("/v1/completions")
+async def legacy_completions(request: Request):
+    """Compatibility subset for clients using the legacy text API."""
+    _authorize(request)
+    try:
+        payload = LegacyCompletionRequest.model_validate(await request.json())
+        chat = _legacy_completion_request(payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, "Invalid legacy completions request") from exc
+
+    result = await chat_completion(chat, request)
+    if not chat.stream:
+        result["id"] = result["id"].replace("chatcmpl-", "cmpl-", 1)
+        result["object"] = "text_completion"
+        choice = result["choices"][0]
+        result["choices"] = [{
+            "text": (choice.get("message") or {}).get("content") or "",
+            "index": choice.get("index", 0),
+            "logprobs": None,
+            "finish_reason": choice.get("finish_reason"),
+        }]
+        return result
+
+    async def events():
+        async for chunk in result.body_iterator:
+            text = chunk.decode() if isinstance(chunk, bytes) else chunk
+            for line in text.splitlines():
+                if line.startswith("data: "):
+                    yield _legacy_stream_event(line[6:])
+                elif line.startswith(":"):
+                    yield line + "\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "Connection": "close"})
 
 
 @app.post("/v1/opencode/chat/completions")

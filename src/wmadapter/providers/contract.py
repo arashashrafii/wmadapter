@@ -310,6 +310,15 @@ class ChatRequest(BaseModel):
     reasoning_effort: str | None = None
 
 
+class LegacyCompletionRequest(BaseModel):
+    """Supported subset of the legacy text completions request shape."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "deepseek-chat"
+    prompt: Any
+    stream: bool = False
+    user: str | None = None
+
+
 class ResponsesRequest(BaseModel):
     """Minimal text-only request contract for the Responses compatibility path."""
 
