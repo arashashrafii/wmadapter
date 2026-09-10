@@ -30,6 +30,7 @@ from .providers.contract import (
     AudioSpeechRequest,
     ImagesRequest,
     RealtimeRequest,
+    FilesRequest,
     LegacyCompletionRequest,
     ProviderRequest,
     ProviderResult,
@@ -207,6 +208,7 @@ async def http_error(request, exc):
             "image_generation_not_supported": "Image generation is not supported by the configured web providers",
             "audio_not_supported": "Audio input and output are not supported by the configured web providers",
             "realtime_not_supported": "Realtime sessions are not supported by the configured web providers",
+            "files_not_supported": "File and PDF inputs are not supported by the configured web providers",
         }
         return JSONResponse(_error(messages.get(code, "Requested capability is not supported by the configured web providers"),
                                    "invalid_request_error", code), status_code=501)
@@ -555,6 +557,35 @@ async def realtime(payload: RealtimeRequest, request: Request):
     _authorize(request)
     _unsupported_request_fields(payload, "realtime")
     raise HTTPException(501, "realtime_not_supported")
+
+
+@app.post("/v1/files")
+async def files(payload: FilesRequest, request: Request):
+    """Validate file metadata without accepting, storing, or parsing files."""
+    _authorize(request)
+    _unsupported_request_fields(payload, "files")
+    _require_nonempty_text(payload.purpose, "File purpose must be a non-empty string")
+    if payload.file is None:
+        raise HTTPException(400, "File content is required")
+    raise HTTPException(501, "files_not_supported")
+
+
+@app.get("/v1/files/{file_id}")
+async def file_metadata(file_id: str, request: Request):
+    """Reject file metadata lookup because no file store exists."""
+    _authorize(request)
+    if not file_id:
+        raise HTTPException(400, "File ID is required")
+    raise HTTPException(501, "files_not_supported")
+
+
+@app.delete("/v1/files/{file_id}")
+async def delete_file(file_id: str, request: Request):
+    """Reject file deletion because no file store exists."""
+    _authorize(request)
+    if not file_id:
+        raise HTTPException(400, "File ID is required")
+    raise HTTPException(501, "files_not_supported")
 
 
 @app.websocket("/v1/realtime")

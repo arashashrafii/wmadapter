@@ -82,6 +82,11 @@ request shapes but return `501` (`audio_not_supported` or
 providers expose no verified audio or realtime browser path; no audio,
 transcript, vectors, or session data is fabricated or retained.
 
+Video/media parts and Files/PDF routes are similarly explicit: capability flags
+are false, unsupported content parts return safe validation errors, and file
+metadata/upload/delete routes return `501 files_not_supported`. No file store,
+PDF parser, or provider-understanding claim is introduced.
+
 Only providers listed in `providers.enabled` are started at application launch;
 an enabled-provider startup failure leaves the application running with that
 provider not ready while other enabled providers are still attempted. Qwen's

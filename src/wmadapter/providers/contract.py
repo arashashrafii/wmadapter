@@ -371,6 +371,13 @@ class RealtimeRequest(BaseModel):
     instructions: str | None = None
 
 
+class FilesRequest(BaseModel):
+    """OpenAI-compatible file metadata shape, validated but not stored."""
+    model_config = ConfigDict(extra="allow")
+    purpose: Any
+    file: Any = None
+
+
 
 class ModelCapabilities(BaseModel):
     tool_calling: Literal["none", "emulated", "native"] = "emulated"
@@ -381,6 +388,9 @@ class ModelCapabilities(BaseModel):
     audio_input: bool = False
     audio_output: bool = False
     realtime: bool = False
+    video_input: bool = False
+    file_input: bool = False
+    pdf_input: bool = False
     context_window: int | None = None
     max_output_tokens: int | None = None
     sampling_controls: bool = False

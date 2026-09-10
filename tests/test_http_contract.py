@@ -58,6 +58,9 @@ class HTTPContractTests(unittest.TestCase):
         self.assertFalse(models[0]['capabilities']['audio_input'])
         self.assertFalse(models[0]['capabilities']['audio_output'])
         self.assertFalse(models[0]['capabilities']['realtime'])
+        self.assertFalse(models[0]['capabilities']['video_input'])
+        self.assertFalse(models[0]['capabilities']['file_input'])
+        self.assertFalse(models[0]['capabilities']['pdf_input'])
         self.assertIsNone(models[0]['capabilities']['context_window'])
 
     def test_completion(self):
@@ -140,6 +143,32 @@ class HTTPContractTests(unittest.TestCase):
             with self.client.websocket_connect('/v1/realtime'):
                 pass
         self.assertEqual(raised.exception.code, 1008)
+
+    def test_video_and_file_media_parts_are_rejected_before_provider(self):
+        for part in (
+            {'type': 'video_url', 'video_url': {'url': 'data:video/mp4;base64,AA==' }},
+            {'type': 'input_file', 'file': {'file_id': 'file-fixture'}},
+        ):
+            with self.subTest(part=part):
+                response = self.post(messages=[{'role': 'user', 'content': [part]}])
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()['error']['code'], 'unsupported_feature')
+        self.provider.complete.assert_not_called()
+
+    def test_files_contract_rejects_or_reports_unsupported_without_storage(self):
+        valid = self.client.post('/v1/files', json={
+            'purpose': 'assistants', 'file': 'fixture.pdf',
+        })
+        self.assertEqual(valid.status_code, 501)
+        self.assertEqual(valid.json()['error']['code'], 'files_not_supported')
+        missing = self.client.post('/v1/files', json={'purpose': 'assistants'})
+        self.assertEqual(missing.status_code, 400)
+        self.assertIn('content is required', missing.json()['error']['message'])
+        metadata = self.client.get('/v1/files/file-fixture')
+        self.assertEqual(metadata.status_code, 501)
+        deleted = self.client.delete('/v1/files/file-fixture')
+        self.assertEqual(deleted.status_code, 501)
+        self.provider.complete.assert_not_called()
 
     def test_legacy_completion_uses_canonical_chat_contract_and_shape(self):
         response = self.client.post('/v1/completions', json={

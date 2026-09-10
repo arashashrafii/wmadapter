@@ -63,6 +63,10 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
                         continue
                     if not provider.capabilities.image_input:
                         invalid('Image input is not currently supported by this provider')
+                if part.get('type') in {'video_url', 'input_video', 'video'}:
+                    invalid('Unsupported video input')
+                if part.get('type') in {'file', 'file_url', 'input_file'}:
+                    invalid('Unsupported file or PDF input')
                 invalid('Unsupported content part or image URL')
     if pending:
         invalid('Missing tool results for assistant calls')
