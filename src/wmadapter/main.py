@@ -4,6 +4,8 @@ import json
 import logging
 import time
 import uuid
+import asyncio
+from contextlib import suppress
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -57,6 +59,9 @@ from .providers.protocol import (
 config = load_config()
 configure_logging(config["logging"])
 logger = logging.getLogger(__name__)
+
+STREAM_HEARTBEAT_SECONDS = 5.0
+STREAM_WATCHDOG_SECONDS = 90.0
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
 router = ProviderRouter(providers, config["providers"]["default"])
 default_system_prompt = config["deepseek"].get("system_prompt", "")
@@ -323,8 +328,24 @@ async def chat_completion(payload: ChatRequest, request: Request):
                         "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
             created = int(time.time())
             yield _sse(chunk({"role": "assistant", "content": ""}))
+            inference_task = asyncio.create_task(infer())
             try:
-                result = await infer()
+                deadline = asyncio.get_running_loop().time() + STREAM_WATCHDOG_SECONDS
+                while True:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError
+                    try:
+                        result = await asyncio.wait_for(
+                            asyncio.shield(inference_task),
+                            min(STREAM_HEARTBEAT_SECONDS, remaining),
+                        )
+                        break
+                    except asyncio.TimeoutError:
+                        if inference_task.done():
+                            result = inference_task.result()
+                            break
+                        yield ": keep-alive\n\n"
                 _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
                 delta = {"content": result.content or ""}
                 if result.tool_calls:
@@ -335,6 +356,11 @@ async def chat_completion(payload: ChatRequest, request: Request):
                     yield _sse({"id": request_id, "object": "chat.completion.chunk",
                                 "created": created, "model": payload.model,
                                 "choices": [], "usage": result.usage})
+            except (asyncio.TimeoutError, TimeoutError):
+                inference_task.cancel()
+                with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                    await asyncio.wait_for(inference_task, 0.1)
+                yield _sse(_error("Provider request timed out", "provider_error", "provider_timeout"))
             except PageCapacityError:
                 yield _sse(_error("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_error", "provider_capacity"))
             except Exception:

@@ -1,4 +1,5 @@
 import json
+import asyncio
 import logging
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -137,6 +138,37 @@ class HTTPContractTests(unittest.TestCase):
             self.assertEqual(chunks[-1]['choices'], [])
             if finish == 'tool_calls':
                 self.assertEqual(chunks[1]['choices'][0]['delta']['tool_calls'][0]['index'], 0)
+
+    def test_streaming_delayed_provider_emits_heartbeats_and_one_done(self):
+        self.provider.infer = AsyncMock()
+
+        async def delayed_result(_request):
+            await asyncio.sleep(0.03)
+            from wmadapter.providers.contract import ProviderResult
+            return ProviderResult(content='hello')
+
+        self.provider.infer.side_effect = delayed_result
+        with patch.object(main, 'STREAM_HEARTBEAT_SECONDS', 0.005), patch.object(main, 'STREAM_WATCHDOG_SECONDS', 0.2):
+            response = self.post(stream=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(': keep-alive\n\n', response.text)
+        self.assertEqual(response.text.count('data: [DONE]\n\n'), 1)
+        self.provider.infer.assert_awaited_once()
+
+    def test_streaming_watchdog_emits_safe_terminal_error_and_one_done(self):
+        self.provider.infer = AsyncMock()
+
+        async def stuck_result(_request):
+            await asyncio.sleep(10)
+
+        self.provider.infer.side_effect = stuck_result
+        with patch.object(main, 'STREAM_HEARTBEAT_SECONDS', 0.005), patch.object(main, 'STREAM_WATCHDOG_SECONDS', 0.02):
+            response = self.post(stream=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"code":"provider_timeout"', response.text)
+        self.assertEqual(response.text.count('data: [DONE]\n\n'), 1)
+        self.assertEqual(response.text.count('provider_timeout'), 1)
+        self.provider.infer.assert_awaited_once()
 
     def test_invalid_requests_do_not_reach_provider(self):
         for overrides in [
