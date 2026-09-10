@@ -74,6 +74,7 @@ class CanonicalRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     conversation_id: ConversationId | None = None
+    previous_response_id: ResponseId | None = None
 
 
 def canonicalize(request: ChatRequest) -> CanonicalRequest:
@@ -86,6 +87,7 @@ def canonicalize(request: ChatRequest) -> CanonicalRequest:
         temperature=request.temperature,
         max_tokens=request.max_tokens,
         conversation_id=request.conversation_id or request.user,
+        previous_response_id=request.previous_response_id,
     )
 
 
@@ -100,6 +102,7 @@ class ChatRequest(BaseModel):
     max_tokens: int | None = None
     user: str | None = None
     conversation_id: str | None = Field(default=None, alias="conversation_id")
+    previous_response_id: str | None = None
     tools: list[dict[str, Any]] | None = None
     tool_choice: Any = None
     response_format: dict[str, Any] | None = None
@@ -126,6 +129,7 @@ class ProviderRequest(BaseModel):
     chat: ChatRequest
     canonical: CanonicalRequest | None = None
     conversation_id: ConversationId | None = None
+    previous_response_id: ResponseId | None = None
     system_prompt: str = ""
     client_policy: ClientPolicy = ClientPolicy.GENERIC
 
