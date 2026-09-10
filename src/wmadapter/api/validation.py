@@ -18,7 +18,8 @@ def validate_input_limit(chat: ChatRequest, max_input_chars: int | None) -> None
         raise HTTPException(400, "Gateway input character limit exceeded")
 
 
-def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = None) -> None:
+def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = None,
+                  *, allow_max_tokens: bool = False) -> None:
     def invalid(message):
         raise HTTPException(400, message)
 
@@ -30,6 +31,8 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
         'temperature', 'top_p', 'max_tokens', 'max_completion_tokens',
         'presence_penalty', 'frequency_penalty', 'seed', 'stop',
     ):
+        if field == 'max_tokens' and allow_max_tokens:
+            continue
         if getattr(chat, field, None) is not None:
             invalid(f'Unsupported sampling control: {field}')
     if chat.n != 1:

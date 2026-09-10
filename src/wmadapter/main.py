@@ -376,11 +376,12 @@ async def models(request: Request):
 
 
 @app.post("/v1/chat/completions")
-async def chat_completion(payload: ChatRequest, request: Request):
+async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_tokens: bool = False):
     _authorize(request)
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
-    validate_chat(payload, provider, config.get("limits", {}).get("max_input_chars"))
+    validate_chat(payload, provider, config.get("limits", {}).get("max_input_chars"),
+                  allow_max_tokens=allow_max_tokens)
     try:
         structured_output = normalize_structured_output(payload.response_format)
     except ValueError as exc:
@@ -393,9 +394,13 @@ async def chat_completion(payload: ChatRequest, request: Request):
         # OpenClaw may omit both fields. Keep one local provider conversation
         # across stateless turns; explicit identifiers remain isolated.
         conversation_id = "auto:openclaw" if provider.name == "deepseek" else _fallback_conversation_id(payload.messages)
+    client_max_tokens = payload.max_tokens if allow_max_tokens else None
+    provider_payload = (payload.model_copy(update={"max_tokens": None})
+                        if allow_max_tokens else payload)
     inference = ProviderRequest(
-        chat=payload, canonical=canonicalize(payload), conversation_id=conversation_id,
+        chat=provider_payload, canonical=canonicalize(provider_payload), conversation_id=conversation_id,
         structured_output=structured_output,
+        client_max_tokens=client_max_tokens,
         system_prompt=("" if provider.name == "qwen" else default_system_prompt)
         + (("\n" + _structured_instruction(structured_output)) if structured_output else ""),
         # The public gateway contract is deliberately independent of the
@@ -698,7 +703,7 @@ async def opencode_chat_completion(request: Request):
         payload = translate_opencode_request(await request.json())
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return await chat_completion(payload, request)
+    return await chat_completion(payload, request, allow_max_tokens=True)
 
 
 @app.post("/v1/responses")

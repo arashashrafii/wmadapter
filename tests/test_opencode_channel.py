@@ -71,6 +71,42 @@ class OpenCodeChannelTests(unittest.TestCase):
         self.assertEqual(response.json()["object"], "chat.completion")
         self.assertEqual(self.provider.infer.await_count, 1)
 
+    def test_opencode_max_tokens_is_client_only_and_not_provider_facing(self):
+        response = self.client.post("/v1/opencode/chat/completions",
+                                    json=self.request(max_tokens=32000))
+
+        self.assertEqual(response.status_code, 200)
+        forwarded = self.provider.infer.call_args.args[0]
+        self.assertIsNone(forwarded.chat.max_tokens)
+        self.assertIsNone(forwarded.canonical.max_tokens)
+        self.assertEqual(forwarded.client_max_tokens, 32000)
+
+    def test_opencode_title_request_accepts_large_client_budget_without_provider_call(self):
+        response = self.client.post("/v1/opencode/chat/completions", json={
+            "model": "deepseek-chat",
+            "max_tokens": 32000,
+            "messages": [
+                {"role": "system", "content": "Generate a concise session title."},
+                {"role": "user", "content": "Discuss the release plan"},
+            ],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["choices"][0]["message"]["content"], "Discuss the release plan")
+        self.provider.infer.assert_not_called()
+
+    def test_opencode_max_tokens_rejects_invalid_values_and_conflicts(self):
+        for body in (
+            self.request(max_tokens=0),
+            self.request(max_tokens=-1),
+            self.request(max_tokens="32000"),
+            self.request(max_tokens=32000, max_completion_tokens=32000),
+        ):
+            with self.subTest(body=body):
+                response = self.client.post("/v1/opencode/chat/completions", json=body)
+                self.assertEqual(response.status_code, 400)
+        self.provider.infer.assert_not_called()
+
     def test_malformed_opencode_request_is_safe_and_does_not_reach_provider(self):
         response = self.client.post("/v1/opencode/chat/completions", json={"model": "deepseek-chat"})
 

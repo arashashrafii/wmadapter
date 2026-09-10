@@ -149,6 +149,13 @@ completed submissions are never replayed. Sanitized request metrics contain
 provider/model, counts, prompt length, a fingerprint, and the compaction flag;
 they never contain prompt text, credentials, or transcripts.
 
+The OpenCode route may accept a positive `max_tokens` as a client-requested
+budget for local context/headroom diagnostics. The value is removed before the
+canonical provider request is built and is never serialized or forwarded to a
+web provider. Shared Chat Completions and OpenClaw continue to reject sampling
+controls with HTTP 400; zero, negative, non-integer, or conflicting budgets are
+invalid. Unknown `max_output_tokens` remains metadata-only.
+
 `/health` reports gateway process health only. `/ready` reports authenticated
 provider readiness and may return 503; readiness failure is not conflated with
 gateway process failure.

@@ -105,6 +105,12 @@ class HTTPContractTests(unittest.TestCase):
                 self.assertIn('Unsupported sampling control', response.json()['error']['message'])
         self.provider.complete.assert_not_called()
 
+    def test_openclaw_shaped_route_keeps_max_tokens_unsupported(self):
+        response = self.post(max_tokens=32000, user="openclaw-agent")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Unsupported sampling control', response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
+
     def test_sampling_types_ranges_and_conflicts_are_validated(self):
         for body in (
             {'temperature': 2.1}, {'top_p': 0}, {'max_tokens': 0},

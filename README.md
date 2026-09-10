@@ -29,7 +29,10 @@ Verified capabilities:
 - DeepSeek/Qwen provider routing; Qwen is text-only and DeepSeek image input is
   not advertised until live model/UI verification establishes observable vision
   support.
-- Sampling controls are validated; only `n=1` and streamed
+- Sampling controls are validated; shared Chat Completions and OpenClaw reject
+  them, while OpenCode accepts positive `max_tokens` only as a client-requested
+  budget. It is used for local context/headroom diagnostics and is never sent
+  to or serialized for the web provider. Only `n=1` and streamed
   `stream_options.include_usage` are supported by the current web adapters.
 - `/v1/models` identifies the backing web provider and reports gateway limits;
   provider context/output limits and usage remain unknown unless observed.
@@ -263,8 +266,11 @@ Prompt budgets are configurable with `limits.context_budget_chars` and
 `limits.context_budget_profiles` (exact model or provider keys). Small prompts
 remain unchanged; oversized histories receive one pre-submit state-ledger and
 recent-window compaction, while an oversized current message is rejected with
-`context_length_exceeded`. No post-submit replay occurs. `/health` is process
-health; `/ready` is authenticated provider readiness and can return 503.
+`context_length_exceeded`. OpenCode's positive `max_tokens` is diagnostic-only;
+zero, negative, non-integer, and conflicting values remain 400 errors. Unknown
+`max_output_tokens` remains metadata-only when provider limits are unknown. No
+post-submit replay occurs. `/health` is process health; `/ready` is
+authenticated provider readiness and can return 503.
 
 106 unit/contract tests and real client SDK transport checks passed against a
 fixture provider. Current live WebChat behavior and full agent runs remain

@@ -114,8 +114,9 @@ HTTP uses infer for one complete normalized result.
 - Only one outgoing tool call is emulated per turn. Multiple tool results can
   be preserved in input; parallel generation is advertised false. Tools are
   never executed by the gateway. MCP is not needed here.
-- Sampling, max_tokens, stop, response_format and reasoning controls remain
-  accepted legacy fields but are not enforced by the Web adapters. Models
+- Shared sampling, max_tokens, stop, response_format and reasoning controls are
+  rejected by the Web adapters. The isolated OpenCode route accepts positive
+  max_tokens only as a local client budget; it is not provider input. Models
   expose sampling_controls=false and unknown token limits. deepseek-reasoner
   remains a legacy alias, not a guarantee of a selected reasoning mode.
 - Browser completion is still based on text stability and can stop too early

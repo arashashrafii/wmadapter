@@ -42,9 +42,10 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
         if len(prompt) > budget:
             raise ContextLimitError("context_length_exceeded")
     logger.info(
-        "provider_request_metrics provider=%s model=%s message_count=%d tool_count=%d prompt_length=%d prompt_sha256=%s compacted=%s",
+        "provider_request_metrics provider=%s model=%s message_count=%d tool_count=%d prompt_length=%d prompt_sha256=%s compacted=%s client_max_tokens=%s",
         provider.name, chat.model, len(messages), len(tools or []), len(prompt),
         hashlib.sha256(prompt.encode("utf-8", "replace")).hexdigest(), compacted,
+        request.client_max_tokens,
     )
     images = adapter.attachments(messages) if adapter else _image_attachments(messages)
     if images:

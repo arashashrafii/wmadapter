@@ -304,7 +304,7 @@ class ChatRequest(BaseModel):
     stream_options: dict[str, bool] | None = None
     temperature: float | None = Field(default=None, ge=0, le=2)
     top_p: float | None = Field(default=None, gt=0, le=1)
-    max_tokens: int | None = Field(default=None, gt=0)
+    max_tokens: int | None = Field(default=None, gt=0, strict=True)
     max_completion_tokens: int | None = Field(default=None, gt=0)
     user: str | None = None
     conversation_id: str | None = Field(default=None, alias="conversation_id")
@@ -442,6 +442,8 @@ class ProviderRequest(BaseModel):
     structured_output: StructuredOutputSpec | None = None
     system_prompt: str = ""
     client_policy: ClientPolicy = ClientPolicy.GENERIC
+    # OpenCode-only client budget; never included in the provider chat payload.
+    client_max_tokens: int | None = None
 
 
 class ProviderResult(BaseModel):
