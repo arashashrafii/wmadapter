@@ -125,6 +125,15 @@ No MCP server is needed for this boundary. A client may itself expose MCP
 functions as model tools; Web Model Adapter simply preserves their schema and results.
 The OpenClaw plugin is optional session cleanup, not the model transport.
 
+Compatibility summary: `/health`, `/ready`, `/props`, `/v1/models`, Chat
+Completions, the documented legacy Completions subset, text-only non-streaming
+Responses, and the OpenCode translation route are implemented. OpenClaw uses
+the standard Chat Completions route and executes returned tools client-side.
+Embeddings, image generation, audio, Realtime, Files/PDFs, and Batches are
+validated surfaces with explicit `501` unsupported responses; they do not
+create fake output, storage, or asynchronous jobs. Image, video, audio, file,
+and PDF input is rejected when no verified provider capability exists.
+
 The public gateway always uses the generic policy. It does not inspect message
 text to identify OpenClaw, OpenCode or Hermes. Historical OpenClaw workflow
 guidance remains available only to direct internal helper callers and is not

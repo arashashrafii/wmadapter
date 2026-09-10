@@ -204,11 +204,56 @@ the next-agent prompt, see `docs/HANDOFF.md`.
 See [architecture](docs/ARCHITECTURE.md), [audit and migration notes](docs/MIGRATION_V2.md)
 and [client verification/setup](docs/CLIENT_COMPATIBILITY.md). The original
 complete/stream_complete methods and session cleanup routes remain available.
-SSE is buffered; tools are emulated, not native. Context/output limits and usage
-are unknown. Legacy sampling, token-limit and structured-output request fields
-are accepted but not enforced by the browser. deepseek-reasoner is an alias,
+SSE is buffered; tools are emulated, not native. Provider context/output limits
+and usage are unknown unless observed from the provider. Unsupported sampling
+and token-limit controls are rejected; only `n=1` and streamed
+`stream_options.include_usage` are supported. `deepseek-reasoner` is an alias,
 not proof that the Web UI selected a reasoning model. Unknown HTTP model names
 now return 404 instead of silently falling back to the default provider.
+
+## Issue #52 compatibility matrix
+
+Supported and verified at the local contract level:
+
+- `GET /health`, `GET /ready`, `GET /props`, and `GET /v1/models` report
+  provider identity, capabilities, and known gateway limits without inventing
+  upstream limits.
+- `POST /v1/chat/completions` supports text, message/tool history, serial
+  emulated function tools, validated tool choice, ordinary responses, and
+  buffered SSE.
+- `POST /v1/completions` supports the documented legacy text subset and
+  `POST /v1/responses` supports non-streaming text responses.
+- `/v1/opencode/chat/completions` preserves OpenCode translation; OpenClaw
+  uses the standard route. Clients execute returned tools and send results back.
+
+Validated but explicitly unsupported by the current web providers:
+
+- `/v1/embeddings`, `/v1/images`, `/v1/audio/*`, `/v1/realtime`, `/v1/files`,
+  and `/v1/batches` return safe `501` capability errors after validation.
+- Custom tools, parallel execution, deterministic sampling/token controls,
+  audio/video/file/PDF input, and image input are rejected where applicable.
+  DeepSeek vision and Qwen multimodal support are not claimed without live
+  UI/model evidence.
+
+Deterministic OpenCode/OpenClaw acceptance coverage:
+
+```bash
+PYTHONPATH=src:tests .venv/bin/python -m unittest \
+  tests.test_opencode_channel tests.test_http_contract
+```
+
+The opt-in live suite requires manual authentication and never automates
+credentials:
+
+```bash
+WMADAPTER_LIVE_COMPAT=1 \
+PYTHONPATH=src:tests .venv/bin/python -m tests.live_compatibility \
+  --confirm-live --group golden --format markdown --output live-compatibility-report.md
+```
+
+Treat live media cases as capability checks, not vision evidence. Do not
+commit reports containing credentials, browser session data, prompts, or
+provider transcripts.
 
 106 unit/contract tests and real client SDK transport checks passed against a
 fixture provider. Current live WebChat behavior and full agent runs remain
