@@ -28,6 +28,8 @@ from .providers.contract import (
     ResponseId,
     ResponsesRequest,
     canonicalize,
+    normalize_structured_output,
+    validate_structured_output,
 )
 from .providers.state import ConversationStateConflict, GatewayState, UnknownResponseId
 from .providers.protocol import (
@@ -173,6 +175,36 @@ def _enforce_output_limit(content: str, max_output_chars: int | None) -> None:
         raise HTTPException(502, "gateway_output_limit")
 
 
+def _structured_instruction(spec) -> str:
+    if spec.type == "json_object":
+        return "Return only one valid JSON object. Do not include markdown fences or commentary."
+    return (
+        "Return only one valid JSON value matching this schema, without markdown fences or commentary: "
+        + json.dumps(spec.schema, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
+async def _infer_structured(provider, inference, spec):
+    result = await provider.infer(inference)
+    try:
+        validate_structured_output(result.content or "", spec)
+        return result
+    except ValueError as first_error:
+        original = result.content or ""
+        if len(original) > 4096:
+            raise HTTPException(502, "structured_output_invalid") from first_error
+        repair_prompt = (
+            "Repair the following provider output into valid JSON matching the requested format. "
+            "Return only the corrected JSON and no explanation.\n\n" + original
+        )
+        repaired = await provider.complete(repair_prompt, conversation_id=inference.conversation_id)
+        try:
+            validate_structured_output(repaired, spec)
+        except ValueError as second_error:
+            raise HTTPException(502, "structured_output_invalid") from second_error
+        return ProviderResult(content=repaired)
+
+
 def _model_provider(model):
     # OpenClaw commonly prefixes the public model with the local gateway name.
     normalized_model = model.split("/", 1)[-1]
@@ -216,6 +248,12 @@ async def chat_completion(payload: ChatRequest, request: Request):
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
     validate_chat(payload, provider, config.get("limits", {}).get("max_input_chars"))
+    try:
+        structured_output = normalize_structured_output(payload.response_format)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if structured_output is not None and payload.tools:
+        raise HTTPException(400, "Structured output with tools is not supported")
     await _require_provider_ready(provider)
     conversation_id = payload.conversation_id or payload.user
     if conversation_id is None:
@@ -224,7 +262,9 @@ async def chat_completion(payload: ChatRequest, request: Request):
         conversation_id = "auto:openclaw" if provider.name == "deepseek" else _fallback_conversation_id(payload.messages)
     inference = ProviderRequest(
         chat=payload, canonical=canonicalize(payload), conversation_id=conversation_id,
-        system_prompt="" if provider.name == "qwen" else default_system_prompt,
+        structured_output=structured_output,
+        system_prompt=("" if provider.name == "qwen" else default_system_prompt)
+        + (("\n" + _structured_instruction(structured_output)) if structured_output else ""),
         # The public gateway contract is deliberately independent of the
         # consuming agent (OpenClaw, Hermes, OpenCode, or another client).
     )
@@ -232,7 +272,8 @@ async def chat_completion(payload: ChatRequest, request: Request):
     async def infer():
         if _is_title_request(payload.messages):
             return ProviderResult(content=_local_title(payload.messages))
-        return await provider.infer(inference)
+        return await (_infer_structured(provider, inference, structured_output)
+                      if structured_output else provider.infer(inference))
 
     if payload.stream:
         async def events():
@@ -267,6 +308,8 @@ async def chat_completion(payload: ChatRequest, request: Request):
     except PageCapacityError as exc:
         logger.warning("Chat completion blocked by provider page capacity: %s", exc)
         raise _provider_http_error(exc) from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Chat completion failed")
         raise _provider_http_error(exc) from exc
@@ -290,6 +333,13 @@ async def responses(payload: ResponsesRequest, request: Request):
         raise HTTPException(400, "Multimodal or structured Responses input is not supported yet")
 
     provider = _model_provider(payload.model)
+    text_format = payload.text.get("format") if payload.text is not None else None
+    if payload.text is not None and text_format is None:
+        raise HTTPException(400, "Responses text.format is required")
+    try:
+        structured_output = normalize_structured_output(text_format=text_format)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     chat = ChatRequest(
         model=payload.model,
         messages=[Message(role="user", content=payload.input)],
@@ -315,12 +365,17 @@ async def responses(payload: ResponsesRequest, request: Request):
         canonical=canonicalize(chat),
         conversation_id=conversation_id,
         previous_response_id=payload.previous_response_id,
-        system_prompt="" if provider.name == "qwen" else default_system_prompt,
+        structured_output=structured_output,
+        system_prompt=("" if provider.name == "qwen" else default_system_prompt)
+        + (("\n" + _structured_instruction(structured_output)) if structured_output else ""),
     )
     try:
-        result = await provider.infer(inference)
+        result = await (_infer_structured(provider, inference, structured_output)
+                        if structured_output else provider.infer(inference))
     except PageCapacityError as exc:
         raise _provider_http_error(exc) from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         raise _provider_http_error(exc) from exc
 
