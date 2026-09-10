@@ -76,6 +76,12 @@ The images route validates a non-empty text prompt and model selection but
 returns `501 image_generation_not_supported`; current web providers expose no
 verified image-generation path, and the gateway never fabricates image data.
 
+Audio speech, transcription, translation, and Realtime routes validate their
+request shapes but return `501` (`audio_not_supported` or
+`realtime_not_supported`). Their capability flags are false because the web
+providers expose no verified audio or realtime browser path; no audio,
+transcript, vectors, or session data is fabricated or retained.
+
 Only providers listed in `providers.enabled` are started at application launch;
 an enabled-provider startup failure leaves the application running with that
 provider not ready while other enabled providers are still attempted. Qwen's

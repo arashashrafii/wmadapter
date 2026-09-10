@@ -345,6 +345,32 @@ class ImagesRequest(BaseModel):
     prompt: Any
 
 
+class AudioSpeechRequest(BaseModel):
+    """OpenAI-compatible speech shape, validated but not implemented."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "audio-generation"
+    input: Any
+    voice: Any
+    response_format: str | None = None
+    speed: float | None = None
+
+
+class AudioInputRequest(BaseModel):
+    """JSON validation shape for unsupported transcription/translation input."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "audio-transcription"
+    input: Any
+    language: str | None = None
+
+
+class RealtimeRequest(BaseModel):
+    """OpenAI-compatible realtime session shape, validated but not implemented."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "realtime"
+    modalities: list[str] | None = None
+    instructions: str | None = None
+
+
 
 class ModelCapabilities(BaseModel):
     tool_calling: Literal["none", "emulated", "native"] = "emulated"
@@ -352,6 +378,9 @@ class ModelCapabilities(BaseModel):
     image_input: bool = False
     embeddings: bool = False
     image_generation: bool = False
+    audio_input: bool = False
+    audio_output: bool = False
+    realtime: bool = False
     context_window: int | None = None
     max_output_tokens: int | None = None
     sampling_controls: bool = False

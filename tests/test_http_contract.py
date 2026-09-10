@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from wmadapter import main
 from wmadapter.api.server import app as alternate_app
 from wmadapter.providers.base import ChatProvider
@@ -54,6 +55,9 @@ class HTTPContractTests(unittest.TestCase):
         self.assertFalse(models[0]['capabilities']['image_input'])
         self.assertFalse(models[0]['capabilities']['embeddings'])
         self.assertFalse(models[0]['capabilities']['image_generation'])
+        self.assertFalse(models[0]['capabilities']['audio_input'])
+        self.assertFalse(models[0]['capabilities']['audio_output'])
+        self.assertFalse(models[0]['capabilities']['realtime'])
         self.assertIsNone(models[0]['capabilities']['context_window'])
 
     def test_completion(self):
@@ -104,6 +108,38 @@ class HTTPContractTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.json()['error']['message'])
         self.provider.complete.assert_not_called()
+
+    def test_audio_and_realtime_return_explicit_unsupported_errors(self):
+        requests = (
+            ('/v1/audio/speech', {'model': 'deepseek-chat', 'input': 'hello', 'voice': 'alloy'}),
+            ('/v1/audio/transcriptions', {'model': 'deepseek-chat', 'input': 'audio-bytes-not-read'}),
+            ('/v1/audio/translations', {'model': 'deepseek-chat', 'input': 'audio-bytes-not-read'}),
+            ('/v1/realtime', {'model': 'deepseek-chat'}),
+        )
+        for path, body in requests:
+            with self.subTest(path=path):
+                response = self.client.post(path, json=body)
+                self.assertEqual(response.status_code, 501)
+                self.assertIn(response.json()['error']['code'], {'audio_not_supported', 'realtime_not_supported'})
+        self.provider.complete.assert_not_called()
+
+    def test_audio_and_realtime_validate_before_unsupported_response(self):
+        for path, body, message in (
+            ('/v1/audio/speech', {'model': 'deepseek-chat', 'input': '', 'voice': 'alloy'}, 'non-empty string'),
+            ('/v1/audio/speech', {'model': 'deepseek-chat', 'input': 'hello', 'voice': 'alloy', 'format': 'mp3'}, 'Unsupported audio speech field'),
+            ('/v1/realtime', {'model': 'deepseek-chat', 'unknown': True}, 'Unsupported realtime field'),
+        ):
+            with self.subTest(path=path):
+                response = self.client.post(path, json=body)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
+
+    def test_realtime_websocket_is_rejected_without_opening_a_session(self):
+        with self.assertRaises(WebSocketDisconnect) as raised:
+            with self.client.websocket_connect('/v1/realtime'):
+                pass
+        self.assertEqual(raised.exception.code, 1008)
 
     def test_legacy_completion_uses_canonical_chat_contract_and_shape(self):
         response = self.client.post('/v1/completions', json={

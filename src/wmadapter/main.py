@@ -9,7 +9,7 @@ from contextlib import suppress
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -26,7 +26,10 @@ from .providers.contract import (
     Message,
     ChatRequest,
     EmbeddingsRequest,
+    AudioInputRequest,
+    AudioSpeechRequest,
     ImagesRequest,
+    RealtimeRequest,
     LegacyCompletionRequest,
     ProviderRequest,
     ProviderResult,
@@ -202,6 +205,8 @@ async def http_error(request, exc):
         messages = {
             "embeddings_not_supported": "Embeddings are not supported by the configured web providers",
             "image_generation_not_supported": "Image generation is not supported by the configured web providers",
+            "audio_not_supported": "Audio input and output are not supported by the configured web providers",
+            "realtime_not_supported": "Realtime sessions are not supported by the configured web providers",
         }
         return JSONResponse(_error(messages.get(code, "Requested capability is not supported by the configured web providers"),
                                    "invalid_request_error", code), status_code=501)
@@ -503,6 +508,59 @@ async def images(payload: ImagesRequest, request: Request):
         raise HTTPException(400, "Image generation prompt must be a non-empty string")
     _model_provider(payload.model)
     raise HTTPException(501, "image_generation_not_supported")
+
+
+def _unsupported_request_fields(payload: Any, label: str) -> None:
+    unsupported = sorted(payload.model_extra or {})
+    if unsupported:
+        raise HTTPException(400, f"Unsupported {label} field: {unsupported[0]}")
+
+
+def _require_nonempty_text(value: Any, message: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(400, message)
+
+
+@app.post("/v1/audio/speech")
+async def audio_speech(payload: AudioSpeechRequest, request: Request):
+    """Validate speech synthesis input without fabricating audio."""
+    _authorize(request)
+    _unsupported_request_fields(payload, "audio speech")
+    _require_nonempty_text(payload.input, "Audio speech input must be a non-empty string")
+    _require_nonempty_text(payload.voice, "Audio speech voice must be a non-empty string")
+    raise HTTPException(501, "audio_not_supported")
+
+
+@app.post("/v1/audio/transcriptions")
+async def audio_transcriptions(payload: AudioInputRequest, request: Request):
+    """Validate transcription input without reading or retaining audio."""
+    _authorize(request)
+    _unsupported_request_fields(payload, "audio transcription")
+    _require_nonempty_text(payload.input, "Audio transcription input must be a non-empty string")
+    raise HTTPException(501, "audio_not_supported")
+
+
+@app.post("/v1/audio/translations")
+async def audio_translations(payload: AudioInputRequest, request: Request):
+    """Validate translation input without reading or retaining audio."""
+    _authorize(request)
+    _unsupported_request_fields(payload, "audio translation")
+    _require_nonempty_text(payload.input, "Audio translation input must be a non-empty string")
+    raise HTTPException(501, "audio_not_supported")
+
+
+@app.post("/v1/realtime")
+async def realtime(payload: RealtimeRequest, request: Request):
+    """Validate a realtime session request without opening a fake session."""
+    _authorize(request)
+    _unsupported_request_fields(payload, "realtime")
+    raise HTTPException(501, "realtime_not_supported")
+
+
+@app.websocket("/v1/realtime")
+async def realtime_websocket(websocket: WebSocket):
+    """Reject websocket realtime sessions until a provider path is verified."""
+    await websocket.close(code=1008, reason="realtime_not_supported")
 
 
 @app.post("/v1/opencode/chat/completions")
