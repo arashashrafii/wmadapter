@@ -1,6 +1,6 @@
 """Validate the supported Chat Completions subset before browser side effects."""
 from fastapi import HTTPException
-from ..providers.contract import ChatRequest
+from ..providers.contract import ChatRequest, normalize_tool_calls
 
 
 def validate_chat(chat: ChatRequest, provider) -> None:
@@ -17,12 +17,11 @@ def validate_chat(chat: ChatRequest, provider) -> None:
         if calls:
             if message.role != 'assistant' or not isinstance(calls, list):
                 invalid('tool_calls must be an assistant array')
-            for call in calls:
-                if not isinstance(call, dict) or not isinstance(call.get('id'), str) or not call['id']:
-                    invalid('tool_calls require a nonempty id')
-                function = call.get('function')
-                if call.get('type') != 'function' or not isinstance(function, dict) or not isinstance(function.get('name'), str) or not isinstance(function.get('arguments'), str):
-                    invalid('Invalid assistant function call')
+            try:
+                normalized_calls = normalize_tool_calls(calls)
+            except ValueError as exc:
+                invalid(str(exc))
+            for call in normalized_calls:
                 if call['id'] in pending:
                     invalid('Duplicate pending tool call id')
                 pending.add(call['id'])

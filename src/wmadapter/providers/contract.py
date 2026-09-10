@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NewType, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field
 from .policy import ClientPolicy
@@ -63,6 +64,67 @@ class CanonicalMessage(BaseModel):
 class CanonicalTool(BaseModel):
     type: Literal["function"] = "function"
     function: dict[str, Any]
+
+
+class CanonicalToolCall(BaseModel):
+    """Normalized function call representation; calls remain data, never execution."""
+
+    id: str = Field(min_length=1)
+    type: Literal["function"] = "function"
+    function: dict[str, Any]
+
+
+class CanonicalToolResult(BaseModel):
+    """Normalized result associated with one previously declared tool call."""
+
+    tool_call_id: str = Field(min_length=1)
+    content: Any = ""
+
+
+def normalize_tool_calls(calls: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Validate and normalize calls while preserving their declared order."""
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for call in calls:
+        try:
+            item = CanonicalToolCall.model_validate(call)
+        except Exception as exc:
+            raise ValueError("Malformed tool call") from exc
+        if item.id in seen:
+            raise ValueError("Duplicate tool call id")
+        if not isinstance(item.function.get("name"), str) or not item.function["name"]:
+            raise ValueError("Tool calls require a nonempty function name")
+        if not isinstance(item.function.get("arguments"), str):
+            raise ValueError("Tool calls require string arguments")
+        seen.add(item.id)
+        normalized.append(item.model_dump())
+    return normalized
+
+
+def normalize_tool_results(
+    results: Sequence[Mapping[str, Any]], expected_ids: Sequence[str]
+) -> list[dict[str, Any]]:
+    """Validate results against call IDs, retaining the caller's result order."""
+    expected = list(expected_ids)
+    if len(set(expected)) != len(expected):
+        raise ValueError("Duplicate expected tool call id")
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for result in results:
+        try:
+            item = CanonicalToolResult.model_validate(result)
+        except Exception as exc:
+            raise ValueError("Malformed tool result") from exc
+        if item.tool_call_id in seen:
+            raise ValueError("Duplicate tool result id")
+        if item.tool_call_id not in expected:
+            raise ValueError("Unknown tool result id")
+        seen.add(item.tool_call_id)
+        normalized.append(item.model_dump())
+    missing = [call_id for call_id in expected if call_id not in seen]
+    if missing:
+        raise ValueError("Missing tool result")
+    return normalized
 
 
 class CanonicalRequest(BaseModel):
