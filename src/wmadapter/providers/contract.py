@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, NewType
+from typing import Any, Literal, NewType, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field
 from .policy import ClientPolicy
 
@@ -9,6 +9,39 @@ from .policy import ClientPolicy
 # URLs, credentials, or transcript data.
 ResponseId = NewType("ResponseId", str)
 ConversationId = NewType("ConversationId", str)
+
+OpenAIErrorType: TypeAlias = Literal[
+    "invalid_request_error",
+    "authentication_error",
+    "permission_error",
+    "not_found_error",
+    "rate_limit_error",
+    "server_error",
+    "api_error",
+]
+
+
+class OpenAIError(BaseModel):
+    """Provider-neutral error detail using the OpenAI-compatible wire shape."""
+
+    message: str
+    type: OpenAIErrorType = "invalid_request_error"
+    param: str | None = None
+    code: str | None = None
+
+
+class OpenAIErrorResponse(BaseModel):
+    """Top-level OpenAI-compatible error envelope."""
+
+    error: OpenAIError
+
+
+class ValidationIssue(BaseModel):
+    """Safe validation metadata that identifies a field without retaining input."""
+
+    loc: tuple[str | int, ...] = ()
+    message: str
+    type: str
 
 
 class Message(BaseModel):
