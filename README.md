@@ -29,6 +29,8 @@ Verified capabilities:
 - DeepSeek/Qwen provider routing; Qwen is text-only and DeepSeek image input is
   not advertised until live model/UI verification establishes observable vision
   support.
+- Sampling controls are validated; only `n=1` and streamed
+  `stream_options.include_usage` are supported by the current web adapters.
 - Managed browser sessions with headed login, canonical profile ownership,
   headed-to-headless handoff, session probing, profile locking, page ownership,
   configurable page caps, idle cleanup, and protected in-flight pages.

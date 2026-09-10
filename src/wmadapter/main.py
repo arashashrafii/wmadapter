@@ -525,6 +525,17 @@ def _require_nonempty_text(value: Any, message: str) -> None:
         raise HTTPException(400, message)
 
 
+def _reject_responses_sampling_controls(payload: ResponsesRequest) -> None:
+    if payload.max_tokens is not None and payload.max_completion_tokens is not None:
+        raise HTTPException(400, "Specify only one of max_tokens or max_completion_tokens")
+    for field in (
+        "temperature", "top_p", "max_tokens", "max_completion_tokens",
+        "max_output_tokens", "presence_penalty", "frequency_penalty", "seed", "stop",
+    ):
+        if getattr(payload, field, None) is not None:
+            raise HTTPException(400, f"Unsupported Responses sampling control: {field}")
+
+
 @app.post("/v1/audio/speech")
 async def audio_speech(payload: AudioSpeechRequest, request: Request):
     """Validate speech synthesis input without fabricating audio."""
@@ -652,6 +663,7 @@ async def responses(payload: ResponsesRequest, request: Request):
     unsupported = sorted(payload.model_extra or {})
     if unsupported:
         raise HTTPException(400, f"Responses feature is not supported: {unsupported[0]}")
+    _reject_responses_sampling_controls(payload)
     if payload.stream:
         raise HTTPException(400, "Responses streaming is not supported yet")
     if not isinstance(payload.input, str):

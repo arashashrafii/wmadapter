@@ -24,6 +24,24 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
 
     if not chat.messages:
         invalid('messages must not be empty')
+    if chat.max_tokens is not None and chat.max_completion_tokens is not None:
+        invalid('Specify only one of max_tokens or max_completion_tokens')
+    for field in (
+        'temperature', 'top_p', 'max_tokens', 'max_completion_tokens',
+        'presence_penalty', 'frequency_penalty', 'seed', 'stop',
+    ):
+        if getattr(chat, field, None) is not None:
+            invalid(f'Unsupported sampling control: {field}')
+    if chat.n != 1:
+        invalid('Only n=1 is supported')
+    if isinstance(chat.stop, list) and (not chat.stop or not all(isinstance(item, str) and item for item in chat.stop)):
+        invalid('stop must be a non-empty string or array of non-empty strings')
+    if chat.stream_options:
+        unsupported = sorted(set(chat.stream_options) - {'include_usage'})
+        if unsupported:
+            invalid(f'Unsupported stream_options field: {unsupported[0]}')
+        if not chat.stream:
+            invalid('stream_options requires stream=true')
     pending = set()
     for message in chat.messages:
         if message.role not in {'system', 'user', 'assistant', 'tool'}:
@@ -90,6 +108,4 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
         invalid('Unsupported tool_choice')
     if choice == 'required' and not names:
         invalid('required tool_choice needs tools')
-    if getattr(chat, 'n', 1) != 1:
-        invalid('Only n=1 is supported')
     validate_input_limit(chat, max_input_chars)

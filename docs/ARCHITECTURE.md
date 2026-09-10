@@ -72,6 +72,12 @@ The embeddings route validates string input and model selection but returns
 `501 embeddings_not_supported`; current web providers expose no verified
 embedding capability, and the gateway never fabricates deterministic vectors.
 
+Sampling and stop controls are type/range checked at the request boundary.
+Current web adapters do not expose deterministic control over temperature,
+top_p, token limits, penalties, seed, or stop sequences, so those values are
+rejected explicitly. `n=1` and streamed `stream_options.include_usage` are the
+only supported controls; Responses applies the same truthful rejection policy.
+
 The images route validates a non-empty text prompt and model selection but
 returns `501 image_generation_not_supported`; current web providers expose no
 verified image-generation path, and the gateway never fabricates image data.

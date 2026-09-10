@@ -294,9 +294,10 @@ class ChatRequest(BaseModel):
     messages: list[Message]
     stream: bool = False
     stream_options: dict[str, bool] | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    max_tokens: int | None = None
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    max_tokens: int | None = Field(default=None, gt=0)
+    max_completion_tokens: int | None = Field(default=None, gt=0)
     user: str | None = None
     conversation_id: str | None = Field(default=None, alias="conversation_id")
     previous_response_id: str | None = None
@@ -304,9 +305,10 @@ class ChatRequest(BaseModel):
     tool_choice: Any = None
     response_format: dict[str, Any] | None = None
     stop: str | list[str] | None = None
-    presence_penalty: float | None = None
-    frequency_penalty: float | None = None
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+    frequency_penalty: float | None = Field(default=None, ge=-2, le=2)
     seed: int | None = None
+    n: int = Field(default=1, ge=1)
     reasoning_effort: str | None = None
 
 
@@ -329,6 +331,15 @@ class ResponsesRequest(BaseModel):
     previous_response_id: ResponseId | None = None
     stream: bool = False
     text: dict[str, Any] | None = None
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    max_tokens: int | None = Field(default=None, gt=0)
+    max_completion_tokens: int | None = Field(default=None, gt=0)
+    max_output_tokens: int | None = Field(default=None, gt=0)
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+    frequency_penalty: float | None = Field(default=None, ge=-2, le=2)
+    seed: int | None = None
+    stop: str | list[str] | None = None
 
 
 class EmbeddingsRequest(BaseModel):

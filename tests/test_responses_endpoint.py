@@ -89,6 +89,18 @@ class ResponsesEndpointTests(unittest.TestCase):
                 self.assertIn("not supported", response.text.lower())
         self.provider.infer.assert_not_called()
 
+    def test_sampling_controls_are_explicitly_rejected(self):
+        for field, value in (
+            ('temperature', 0.2), ('top_p', 0.9), ('max_output_tokens', 20),
+            ('presence_penalty', 0.1), ('frequency_penalty', 0.1),
+            ('seed', 7), ('stop', 'END'),
+        ):
+            with self.subTest(field=field):
+                response = self.post(**{field: value})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('sampling control', response.text.lower())
+        self.provider.infer.assert_not_called()
+
     def test_state_is_cleared_for_restart(self):
         first = self.post().json()
         main.response_state.clear()

@@ -62,6 +62,7 @@ class HTTPContractTests(unittest.TestCase):
         self.assertFalse(models[0]['capabilities']['file_input'])
         self.assertFalse(models[0]['capabilities']['pdf_input'])
         self.assertFalse(models[0]['capabilities']['batching'])
+        self.assertFalse(models[0]['capabilities']['sampling_controls'])
         self.assertIsNone(models[0]['capabilities']['context_window'])
 
     def test_completion(self):
@@ -71,6 +72,42 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(body['choices'][0]['message']['content'], 'hello')
         self.assertEqual(body['choices'][0]['finish_reason'], 'stop')
         self.assertIsNone(body['usage'])
+
+    def test_unsupported_sampling_and_stop_controls_are_rejected_before_provider(self):
+        for field, value in (
+            ('temperature', 0.2), ('top_p', 0.9), ('max_tokens', 20),
+            ('max_completion_tokens', 20), ('presence_penalty', 0.1),
+            ('frequency_penalty', 0.1), ('seed', 7), ('stop', '\\n'),
+        ):
+            with self.subTest(field=field):
+                response = self.post(**{field: value})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('Unsupported sampling control', response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
+
+    def test_sampling_types_ranges_and_conflicts_are_validated(self):
+        for body in (
+            {'temperature': 2.1}, {'top_p': 0}, {'max_tokens': 0},
+            {'max_completion_tokens': -1}, {'presence_penalty': 3},
+            {'frequency_penalty': -3}, {'n': 0},
+        ):
+            with self.subTest(body=body):
+                response = self.post(**body)
+                self.assertEqual(response.status_code, 400)
+        response = self.post(max_tokens=2, max_completion_tokens=2)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('only one', response.json()['error']['message'])
+
+    def test_stream_options_only_supports_include_usage_on_streams(self):
+        for options, stream, message in (
+            ({'unknown': True}, True, 'Unsupported stream_options field'),
+            ({'include_usage': True}, False, 'requires stream=true'),
+        ):
+            with self.subTest(options=options):
+                response = self.post(stream=stream, stream_options=options)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
 
     def test_embeddings_are_explicitly_unsupported_without_fake_vectors(self):
         response = self.client.post('/v1/embeddings', json={
