@@ -13,6 +13,38 @@ from ...browser.elements import first_visible
 from .selectors import ATTACH_BUTTONS, CHAT_INPUTS, FILE_INPUTS, RESPONSE_BLOCKS, SEND_BUTTONS
 from ..submit import PreSubmitError, SubmitState, UncertainSubmitError
 
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+_IMAGE_SIGNATURES = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/webp": (b"RIFF",),
+}
+
+
+def _decode_image_data_url(data_url: str) -> tuple[bytes, str]:
+    """Decode one bounded image data URL without retaining request data."""
+    if not isinstance(data_url, str) or not data_url.startswith("data:") or "," not in data_url:
+        raise ValueError("Only base64 image data URLs are supported")
+    header, encoded = data_url.split(",", 1)
+    parts = header[5:].split(";")
+    mime = parts[0].lower() if parts else ""
+    if mime not in _IMAGE_SIGNATURES or "base64" not in {part.lower() for part in parts[1:]}:
+        raise ValueError("Only PNG, JPEG, GIF, and WebP image data URLs are supported")
+    if not encoded:
+        raise ValueError("Image data URL is empty")
+    try:
+        content = base64.b64decode(unquote(encoded), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Invalid image data URL") from exc
+    if not content or len(content) > _MAX_IMAGE_BYTES:
+        raise ValueError("Image attachment exceeds the supported size")
+    if not any(content.startswith(signature) for signature in _IMAGE_SIGNATURES[mime]):
+        raise ValueError("Image data does not match its declared type")
+    if mime == "image/webp" and content[8:12] != b"WEBP":
+        raise ValueError("Image data does not match its declared type")
+    return content, mime
+
 
 class DeepSeekChat:
     def __init__(self, page: Page, timeout_ms: int = 180000):
@@ -96,28 +128,25 @@ class DeepSeekChat:
 
     async def _attach_data_images(self, attachments: list[str], directory: str) -> None:
         for index, data_url in enumerate(attachments):
-            if not data_url.startswith("data:image/") or "," not in data_url:
-                raise ValueError("Only data:image attachments are supported")
-            header, encoded = data_url.split(",", 1)
-            mime = header[5:].split(";", 1)[0]
-            if not mime.startswith("image/"):
-                raise ValueError("Only image attachments are supported")
             try:
-                content = base64.b64decode(unquote(encoded), validate=True)
-            except (binascii.Error, ValueError) as exc:
-                raise ValueError("Invalid image data URL") from exc
+                content, mime = _decode_image_data_url(data_url)
+            except ValueError:
+                raise
             suffix = "." + mime.split("/", 1)[1].split("+", 1)[0]
             path = Path(directory) / f"attachment-{index}{suffix}"
-            path.write_bytes(content)
-            file_input = self.page.locator(FILE_INPUTS[0]).last
-            if await file_input.count():
-                await file_input.set_input_files(str(path), timeout=15000)
-            else:
-                button = await self._first_visible(ATTACH_BUTTONS)
-                async with self.page.expect_file_chooser() as chooser_info:
-                    await button.click()
-                chooser = await chooser_info.value
-                await chooser.set_files(str(path), timeout=15000)
+            try:
+                path.write_bytes(content)
+                file_input = self.page.locator(FILE_INPUTS[0]).last
+                if await file_input.count():
+                    await file_input.set_input_files(str(path), timeout=15000)
+                else:
+                    button = await self._first_visible(ATTACH_BUTTONS)
+                    async with self.page.expect_file_chooser() as chooser_info:
+                        await button.click()
+                    chooser = await chooser_info.value
+                    await chooser.set_files(str(path), timeout=15000)
+            except Exception as exc:
+                raise PreSubmitError("DeepSeek image upload control is unavailable") from exc
             # DeepSeek clears the input after consuming the change event;
             # the caller keeps directory alive until the response completes.
             await self.page.wait_for_timeout(1500)

@@ -20,7 +20,8 @@ Verified capabilities:
 - `/v1/chat/completions` (ordinary responses and buffered SSE)
 - OpenAI-compatible chat requests, buffered SSE, model capabilities, and
   preservation of tools and tool results through the provider contract.
-- DeepSeek data-URL image input and DeepSeek/Qwen provider routing.
+- DeepSeek/Qwen provider routing; DeepSeek image input is not advertised until
+  live model/UI verification establishes observable vision support.
 - Managed browser sessions with headed login, canonical profile ownership,
   headed-to-headless handoff, session probing, profile locking, page ownership,
   configurable page caps, idle cleanup, and protected in-flight pages.

@@ -42,7 +42,9 @@ class _PageRecord:
 class DeepSeekService(ChatProvider):
     name = "deepseek"
     model_ids = ("deepseek-chat", "deepseek-reasoner")
-    capabilities = ModelCapabilities(image_input=True)
+    # Image upload is implemented, but vision is not advertised until a live
+    # probe verifies the current DeepSeek model/UI behavior.
+    capabilities = ModelCapabilities(image_input=False)
     protocol = DeepSeekTextAdapter()
 
     def __init__(self, config: dict):

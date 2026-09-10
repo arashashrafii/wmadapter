@@ -51,6 +51,7 @@ class HTTPContractTests(unittest.TestCase):
         models = self.client.get('/v1/models').json()['data']
         self.assertEqual(len(models), 2)
         self.assertEqual(models[0]['capabilities']['streaming'], 'buffered')
+        self.assertFalse(models[0]['capabilities']['image_input'])
         self.assertIsNone(models[0]['capabilities']['context_window'])
 
     def test_completion(self):
@@ -177,6 +178,7 @@ class HTTPContractTests(unittest.TestCase):
             {'tools':[{'type':'function','function':{}}]},
             {'tool_choice':'required'}, {'tool_choice':{'type':'function','function':{'name':'missing'}}},
             {'messages':[{'role':'user','content':[{'type':'image_url','image_url':{'url':'https://example.com/a.png'}}]}]},
+            {'messages':[{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:image/png;base64,aGVsbG8='}}]}]},
             {'n':2}, {'stream_options': 'invalid'},
             {'tool_choice': {'type':'function','function':{'name':[]}}},
         ]:

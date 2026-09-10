@@ -1,7 +1,7 @@
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
-from wmadapter.providers.contract import ChatRequest, Message, ProviderRequest, canonicalize
+from wmadapter.providers.contract import ChatRequest, Message, ModelCapabilities, ProviderRequest, canonicalize
 from wmadapter.service import DeepSeekService, QwenService
 from wmadapter.config import load_config
 
@@ -9,6 +9,8 @@ TOOLS = [{"type": "function", "function": {"name": "lookup", "parameters": {"typ
 
 
 class ContractTests(unittest.IsolatedAsyncioTestCase):
+    IMAGE_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
+
     async def test_canonical_request_is_provider_independent(self):
         request = ChatRequest(model='deepseek-chat', messages=[
             Message(role='assistant', content=None, tool_calls=[{'id':'c1','type':'function','function':{'name':'x','arguments':'{}'}}]),
@@ -70,13 +72,40 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_deepseek_image_dispatch(self):
         provider = DeepSeekService(load_config('/nonexistent'))
+        provider.capabilities = ModelCapabilities(image_input=True)
         provider.complete_with_attachments = AsyncMock(return_value='image answer')
         request = ProviderRequest(chat=ChatRequest(messages=[Message(role='user', content=[
-            {'type':'image_url','image_url':{'url':'data:image/png;base64,aGVsbG8='}}
+            {'type':'image_url','image_url':{'url':self.IMAGE_DATA_URL}}
         ])]))
         result = await provider.infer(request)
         self.assertEqual(result.content, 'image answer')
-        self.assertEqual(provider.complete_with_attachments.call_args.kwargs['attachments'], ['data:image/png;base64,aGVsbG8='])
+        self.assertEqual(provider.complete_with_attachments.call_args.kwargs['attachments'], [self.IMAGE_DATA_URL])
+
+    async def test_deepseek_image_capability_is_not_advertised_without_live_verification(self):
+        provider = DeepSeekService(load_config('/nonexistent'))
+        self.assertFalse(provider.capabilities.image_input)
+
+    async def test_deepseek_rejects_malformed_image_bytes_before_browser_upload(self):
+        from wmadapter.providers.deepseek.chat import _decode_image_data_url
+
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            _decode_image_data_url('data:image/png;base64,aGVsbG8=')
+
+    async def test_deepseek_upload_control_failure_is_pre_submit_and_safe(self):
+        from tempfile import TemporaryDirectory
+        from wmadapter.providers.deepseek.chat import DeepSeekChat
+        from wmadapter.providers.submit import PreSubmitError
+
+        page = AsyncMock()
+        file_input = AsyncMock()
+        file_input.count.return_value = 1
+        file_input.set_input_files.side_effect = RuntimeError('browser detail')
+        page.locator = Mock(return_value=Mock(last=file_input))
+        chat = DeepSeekChat(page)
+        with TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(PreSubmitError, 'upload control is unavailable'):
+                await chat._attach_data_images([self.IMAGE_DATA_URL], directory)
+        file_input.set_input_files.assert_awaited_once()
 
     async def test_partial_qwen_timeout_is_not_success(self):
         from unittest.mock import patch, Mock

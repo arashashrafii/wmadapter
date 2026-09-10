@@ -61,6 +61,8 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
                     url = image.get('url') if isinstance(image, dict) else None
                     if provider.capabilities.image_input and isinstance(url, str) and url.startswith('data:image/'):
                         continue
+                    if not provider.capabilities.image_input:
+                        invalid('Image input is not currently supported by this provider')
                 invalid('Unsupported content part or image URL')
     if pending:
         invalid('Missing tool results for assistant calls')

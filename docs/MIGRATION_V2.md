@@ -12,8 +12,9 @@ Baseline: d34c7af, 2026-09-05. Clean checkout; 86 unittest tests passed.
   buffered stream_complete. Router dispatches names/prefixes and silently
   routes unknown names to the default. No structured provider contract.
 - service.py: DeepSeek and Qwen own browser lifecycle, locks, restart retry,
-  conversation pages and auth. DeepSeek supports data image uploads; Qwen
-  does not. Both return whole DOM text. DeepSeek-reasoner is only an alias:
+  conversation pages and auth. DeepSeek has bounded data image upload code, but
+  image input is not advertised without live model/UI verification; Qwen does
+  not support it. Both return whole DOM text. DeepSeek-reasoner is only an alias:
   no explicit model/reasoning selector is wired.
 - BrowserManager uses persistent Playwright profiles. Provider chat/login and
   selector modules correctly isolate DOM differences. Duplicate browser.py,

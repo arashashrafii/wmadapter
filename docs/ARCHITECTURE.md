@@ -56,8 +56,10 @@ The client agent owns tool execution and sends the result on its next request.
 
 POST /v1/chat/completions and GET /v1/models support text messages, system/user/
 assistant/tool roles, emulated function calls, tool_choice, finish_reason and
-buffered SSE. DeepSeek additionally dispatches data URL images. Capabilities
-are metadata extensions; unknown token limits/usage remain null. See
+buffered SSE. DeepSeek retains bounded data-URL upload code for verified use,
+but image input is not advertised until live model/UI verification establishes
+observable vision support. Capabilities are metadata extensions; unknown token
+limits/usage remain null. See
 MIGRATION_V2.md for behavior corrections and unsupported sampling controls.
 
 No MCP server is needed for this boundary. A client may itself expose MCP
