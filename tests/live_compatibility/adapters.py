@@ -4,9 +4,12 @@ import importlib.util
 import shutil
 import json
 import os
+import queue
 import re
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 
@@ -17,6 +20,7 @@ _STDERR_SENSITIVE_VALUE = re.compile(
 _STDERR_DIAGNOSTIC_LIMIT = 500
 _OPENCODE_PROMPT_PLACEHOLDER = "{prompt}"
 _OPENCODE_PROMPT_LIMIT = 8_000
+_OPENCODE_STDOUT_LIMIT = 1_000_000
 
 
 def _stderr_diagnostic(stderr: str) -> str:
@@ -80,8 +84,121 @@ def _client_evidence(stdout: str) -> dict | None:
                 events.append(json.loads(line))
             except json.JSONDecodeError:
                 return None
-        evidence = events[-1] if events else None
+        evidence = next(
+            (event for event in reversed(events) if isinstance(event, dict) and {"provider", "model", "status"} <= event.keys()),
+            events[-1] if events else None,
+        )
     return evidence if isinstance(evidence, dict) else None
+
+
+def _opencode_terminal_event(event: dict, pending_tool_calls: set[str]) -> bool:
+    event_type = event.get("type")
+    part = event.get("part") or event.get("properties", {}).get("part") or {}
+    part_type = part.get("type") if isinstance(part, dict) else None
+    call_id = event.get("callID") or event.get("call_id") or (part.get("callID") if isinstance(part, dict) else None)
+    if event_type in {"tool_use", "tool_call", "tool_start"} or part_type in {"tool", "tool-use", "tool_call"}:
+        if call_id:
+            pending_tool_calls.add(str(call_id))
+    if event_type in {"tool_result", "tool_end", "tool_finish"} or part_type in {"tool_result", "tool-result"}:
+        if call_id:
+            pending_tool_calls.discard(str(call_id))
+    reason = event.get("reason")
+    if isinstance(part, dict):
+        reason = part.get("reason", reason)
+    return event_type == "step_finish" and reason == "stop" and not pending_tool_calls
+
+
+def _terminate_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=1)
+        return
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    if os.name != "nt":
+        try:
+            os.killpg(process.pid, 9)
+        except OSError:
+            pass
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=1)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def _run_opencode(args: list[str], *, env: dict[str, str], cwd: str, timeout: float) -> tuple[subprocess.CompletedProcess[str], bool]:
+    process = subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        shell=False,
+        env=env,
+        cwd=cwd,
+        start_new_session=True,
+    )
+    events: list[str] = []
+    diagnostics: list[str] = []
+    pending_tool_calls: set[str] = set()
+    messages: queue.Queue[tuple[str, str | None]] = queue.Queue()
+
+    def read_stream(name: str, stream) -> None:
+        try:
+            for line in iter(stream.readline, ""):
+                messages.put((name, line))
+        finally:
+            messages.put((name, None))
+
+    streams = [("stdout", process.stdout), ("stderr", process.stderr)]
+    threads = [threading.Thread(target=read_stream, args=item, daemon=True) for item in streams]
+    for thread in threads:
+        thread.start()
+    closed_streams = 0
+    captured_stdout = 0
+    terminal = False
+    deadline = time.monotonic() + timeout
+    try:
+        while time.monotonic() < deadline:
+            if closed_streams == len(streams) and process.poll() is not None and messages.empty():
+                break
+            try:
+                name, line = messages.get(timeout=min(0.1, max(0.0, deadline - time.monotonic())))
+            except queue.Empty:
+                continue
+            if line is None:
+                closed_streams += 1
+                continue
+            if name == "stdout":
+                if captured_stdout < _OPENCODE_STDOUT_LIMIT:
+                    retained = line[: _OPENCODE_STDOUT_LIMIT - captured_stdout]
+                    events.append(retained)
+                    captured_stdout += len(retained)
+                try:
+                    terminal = _opencode_terminal_event(json.loads(line), pending_tool_calls)
+                except json.JSONDecodeError:
+                    pass
+                if terminal:
+                    _terminate_process(process)
+                    break
+            else:
+                diagnostics.append(line)
+        else:
+            _terminate_process(process)
+            raise subprocess.TimeoutExpired(args, timeout, output="".join(events), stderr="".join(diagnostics))
+    finally:
+        if not terminal and process.poll() is None:
+            _terminate_process(process)
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        for thread in threads:
+            thread.join(timeout=1)
+    return subprocess.CompletedProcess(args, 0 if terminal else process.returncode, "".join(events), "".join(diagnostics)), terminal
 
 
 def run_openai_sdk(context, payload):
@@ -163,16 +280,27 @@ def run_client_case(context, case, payload: dict):
             "env": client_env,
         }
         if case.client.lower() == "opencode":
-            run_options["stdin"] = subprocess.DEVNULL
-            run_options["cwd"] = str(Path(config).resolve().parent)
-        try:
-            completed = subprocess.run(client_args, **run_options)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
+            try:
+                completed, terminal = _run_opencode(
+                    client_args,
+                    env=client_env,
+                    cwd=str(Path(config).resolve().parent),
+                    timeout=context.timeout,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
+        else:
+            terminal = True
+            try:
+                completed = subprocess.run(client_args, **run_options)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                return "BLOCKED", f"{case.client} execution unavailable: {type(error).__name__}"
     if completed.returncode != 0:
         diagnostic = _stderr_diagnostic(completed.stderr)
         return "FAIL", f"{case.client} exited {completed.returncode} (stderr: {diagnostic})"
     if case.client.lower() == "opencode":
+        if not terminal:
+            return "FAIL", f"{case.client} did not emit a terminal step_finish event"
         evidence = _client_evidence(completed.stdout)
     else:
         try:

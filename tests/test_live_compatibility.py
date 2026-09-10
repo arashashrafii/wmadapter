@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 import sys
 from types import SimpleNamespace
@@ -146,11 +147,10 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
             config = Path(directory) / "opencode.json"
             config.write_text("{}")
             completed = SimpleNamespace(returncode=0, stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}), stderr="")
-            with patch.dict(os.environ, {"WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "compat-harness"]), "WMADAPTER_OPENCODE_CONFIG": str(config)}), patch("subprocess.run", return_value=completed) as run:
+            with patch.dict(os.environ, {"WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "compat-harness"]), "WMADAPTER_OPENCODE_CONFIG": str(config)}), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)) as run:
                 status, detail = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, case.payload("deepseek-chat"))
                 self.assertEqual(status, "PASS")
                 self.assertIn("opencode", detail)
-                self.assertEqual(run.call_args.kwargs["shell"], False)
 
     def test_opencode_receives_bounded_prompt_argument_and_json_events(self):
         case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
@@ -169,7 +169,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                     "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "--format", "json"]),
                     "WMADAPTER_OPENCODE_CONFIG": str(config),
                 },
-            ), patch("subprocess.run", return_value=completed) as run:
+            ), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)) as run:
                 status, detail = run_client_case(
                     LiveContext("http://localhost:11556/v1", "deepseek-chat"),
                     case,
@@ -179,9 +179,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertEqual(status, "PASS")
         self.assertIn("provider/model", detail)
         self.assertEqual(run.call_args.args[0], ["opencode", "run", "--format", "json", prompt])
-        self.assertIsNone(run.call_args.kwargs["input"])
-        self.assertIs(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
-        self.assertEqual(run.call_args.kwargs["shell"], False)
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
 
     def test_opencode_prompt_placeholder_is_replaced_as_one_argument(self):
         case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
@@ -201,12 +199,11 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                     "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "{prompt}"]),
                     "WMADAPTER_OPENCODE_CONFIG": str(config),
                 },
-            ), patch("subprocess.run", return_value=completed) as run:
+            ), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)) as run:
                 status, _ = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat"), case, payload)
 
         self.assertEqual(status, "PASS")
         self.assertEqual(run.call_args.args[0][-1], "prompt; $(touch /tmp/should-not-run)")
-        self.assertIsNone(run.call_args.kwargs["input"])
 
     def test_client_case_failure_includes_bounded_redacted_stderr(self):
         case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
@@ -224,7 +221,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                     "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "compat-harness"]),
                     "WMADAPTER_OPENCODE_CONFIG": str(config),
                 },
-            ), patch("subprocess.run", return_value=completed) as run:
+            ), patch("live_compatibility.adapters._run_opencode", return_value=(completed, True)) as run:
                 status, detail = run_client_case(
                     LiveContext("http://localhost:11556/v1", "deepseek-chat"),
                     case,
@@ -237,7 +234,6 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertIn("[REDACTED]", detail)
         self.assertNotIn("super-secret-token", detail)
         self.assertLessEqual(len(detail), 600)
-        self.assertEqual(run.call_args.kwargs["shell"], False)
 
     def test_client_case_uses_temporary_xdg_data_and_runtime_without_changing_config(self):
         case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
@@ -267,7 +263,7 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
                     "XDG_DATA_HOME": "/caller/data",
                     "XDG_RUNTIME_DIR": "/caller/runtime",
                 },
-            ), patch("subprocess.run", side_effect=run_isolated) as run:
+            ), patch("live_compatibility.adapters._run_opencode", side_effect=lambda *args, **kwargs: (run_isolated(*args, **kwargs), True)) as run:
                 status, _ = run_client_case(LiveContext("http://localhost:11556/v1", "deepseek-chat", timeout=7), case, case.payload("deepseek-chat"))
 
         self.assertEqual(status, "PASS")
@@ -275,7 +271,63 @@ class LiveCompatibilityUnitTests(unittest.TestCase):
         self.assertNotEqual(observed["XDG_RUNTIME_DIR"], "/caller/runtime")
         self.assertFalse(Path(observed["XDG_DATA_HOME"]).exists())
         self.assertFalse(Path(observed["XDG_RUNTIME_DIR"]).exists())
-        self.assertEqual(run.call_args.kwargs["shell"], False)
+
+    def test_opencode_terminates_after_terminal_event_without_waiting_for_process_exit(self):
+        case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            evidence = {"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}
+            terminal = {"type": "step_finish", "part": {"reason": "stop"}}
+            code = (
+                "import time; "
+                f"print({json.dumps(evidence)!r}, flush=True); "
+                f"print({json.dumps(terminal)!r}, flush=True); "
+                "time.sleep(30)"
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps([sys.executable, "-c", code]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                },
+            ):
+                started = time.monotonic()
+                status, detail = run_client_case(
+                    LiveContext("http://localhost:11556/v1", "deepseek-chat", timeout=5),
+                    case,
+                    case.payload("deepseek-chat"),
+                )
+
+        self.assertEqual(status, "PASS")
+        self.assertIn("provider/model", detail)
+        self.assertLess(time.monotonic() - started, 3)
+
+    def test_opencode_evidence_without_terminal_event_cannot_pass(self):
+        case = next(case for case in CASES if case.client == "opencode" and case.kind == "completion")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "opencode.json"
+            config.write_text("{}")
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"status": "ok", "provider": "wmadapter", "model": "deepseek-chat"}),
+                stderr="",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "WMADAPTER_OPENCODE_COMMAND": json.dumps(["opencode", "run", "--format", "json"]),
+                    "WMADAPTER_OPENCODE_CONFIG": str(config),
+                },
+            ), patch("live_compatibility.adapters._run_opencode", return_value=(completed, False)):
+                status, detail = run_client_case(
+                    LiveContext("http://localhost:11556/v1", "deepseek-chat"),
+                    case,
+                    case.payload("deepseek-chat"),
+                )
+
+        self.assertEqual(status, "FAIL")
+        self.assertIn("terminal", detail)
 
     def test_client_case_harness_requires_explicit_configuration(self):
         case = next(case for case in CASES if case.client == "openclaw" and case.kind == "image")
