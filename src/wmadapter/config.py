@@ -73,6 +73,14 @@ class GatewayLimits(BaseModel):
 
     max_input_chars: int | None = Field(default=None, ge=1)
     max_output_chars: int | None = Field(default=None, ge=1)
+    context_budget_chars: int | None = Field(default=24000, ge=1024)
+    context_budget_profiles: dict[str, int] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_context_profiles(self):
+        if any(value < 1024 for value in self.context_budget_profiles.values()):
+            raise ValueError("context budget profiles must be at least 1024 characters")
+        return self
 
 
 class LoggingConfig(BaseModel):

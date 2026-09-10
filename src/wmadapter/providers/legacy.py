@@ -1,8 +1,14 @@
 """Compatibility adapter for existing complete(prompt)->str providers."""
+import hashlib
+import logging
+
 from .contract import ProviderRequest, ProviderResult
-from .protocol import _prompt, _image_attachments, _resolve_web_answer
+from .errors import ContextLimitError
+from .protocol import _prompt, _image_attachments, _resolve_web_answer, compact_messages, minimize_tool_schemas
 from .normalizer import ToolProtocolNormalizer
 from .recovery import ToolCallRecovery
+
+logger = logging.getLogger(__name__)
 
 
 async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
@@ -16,11 +22,30 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
         name = choice["function"]["name"]
         tools = [tool for tool in tools or [] if tool["function"]["name"] == name]
     adapter = getattr(provider, "protocol", None)
-    prompt = (adapter.prompt(messages, request.system_prompt, tools, request.client_policy)
-              if adapter else _prompt(messages, request.system_prompt, tools, request.client_policy))
+    tools = minimize_tool_schemas(tools)
     required = choice == "required" or isinstance(choice, dict)
-    if required:
-        prompt += "\nTOOL CHOICE: You must return one of the listed tool calls, not a final text answer."
+
+    def build_prompt(current_messages):
+        value = (adapter.prompt(current_messages, request.system_prompt, tools, request.client_policy)
+                 if adapter else _prompt(current_messages, request.system_prompt, tools, request.client_policy))
+        if required:
+            value += "\nTOOL CHOICE: You must return one of the listed tool calls, not a final text answer."
+        return value
+
+    prompt = build_prompt(messages)
+    budget = provider.context_budget_for(chat.model) if hasattr(provider, "context_budget_for") else None
+    compacted = False
+    if budget is not None and len(prompt) > budget:
+        messages = compact_messages(messages, max(1024, budget // 2))
+        prompt = build_prompt(messages)
+        compacted = True
+        if len(prompt) > budget:
+            raise ContextLimitError("context_length_exceeded")
+    logger.info(
+        "provider_request_metrics provider=%s model=%s message_count=%d tool_count=%d prompt_length=%d prompt_sha256=%s compacted=%s",
+        provider.name, chat.model, len(messages), len(tools or []), len(prompt),
+        hashlib.sha256(prompt.encode("utf-8", "replace")).hexdigest(), compacted,
+    )
     images = adapter.attachments(messages) if adapter else _image_attachments(messages)
     if images:
         if not provider.capabilities.image_input:

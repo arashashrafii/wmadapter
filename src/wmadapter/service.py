@@ -50,6 +50,9 @@ class DeepSeekService(ChatProvider):
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
         deepseek_cfg = config["deepseek"]
+        limits = config.get("limits", {})
+        self.context_budget_chars = limits.get("context_budget_chars")
+        self.context_budget_profiles = limits.get("context_budget_profiles", {})
         self.chat_url = deepseek_cfg.get("chat_url", "https://chat.deepseek.com/")
         self.browser = BrowserManager(
             profile_path=browser_cfg.get("profile_dir", provider_profile_dir("deepseek")),
@@ -478,6 +481,9 @@ class QwenService(ChatProvider):
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
         qwen_cfg = config.get("qwen", {})
+        limits = config.get("limits", {})
+        self.context_budget_chars = limits.get("context_budget_chars")
+        self.context_budget_profiles = limits.get("context_budget_profiles", {})
         self.chat_url = qwen_cfg.get("chat_url", "https://chat.qwen.ai/")
         self.browser = BrowserManager(
             profile_path=qwen_cfg.get("profile_dir", provider_profile_dir("qwen")),

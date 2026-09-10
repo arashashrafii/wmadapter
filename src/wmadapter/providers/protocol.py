@@ -7,6 +7,7 @@ import re
 import uuid
 from typing import Any
 from .contract import Message
+from .errors import ContextLimitError
 from .policy import ClientPolicy, detect_client_policy, strip_openclaw_instructions
 
 def _content_text(content: Any) -> str:
@@ -25,6 +26,51 @@ def _content_text(content: Any) -> str:
     if content is None:
         return ""
     return str(content)
+
+
+def minimize_tool_schemas(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    """Keep only callable function shape; omit non-executable metadata."""
+    if not tools:
+        return tools
+    minimized = []
+    for tool in tools:
+        function = tool.get("function", {}) if isinstance(tool, dict) else {}
+        value = {"type": "function", "function": {"name": function.get("name", "")}}
+        for key in ("description", "parameters", "strict"):
+            if key in function:
+                value["function"][key] = function[key]
+        minimized.append(value)
+    return minimized
+
+
+def compact_messages(messages: list[Message], max_chars: int) -> list[Message]:
+    """Retain a recent window and a metadata-only ledger for older state."""
+    serialized = [json.dumps(message.model_dump(), ensure_ascii=False, separators=(",", ":")) for message in messages]
+    if sum(map(len, serialized)) <= max_chars:
+        return messages
+    recent: list[Message] = []
+    used = 0
+    for message, encoded in reversed(list(zip(messages, serialized))):
+        if used + len(encoded) > max_chars:
+            break
+        recent.append(message)
+        used += len(encoded)
+    if messages and not recent:
+        raise ContextLimitError("context_length_exceeded")
+    recent.reverse()
+    kept = set(id(message) for message in recent)
+    ledger = []
+    for message, encoded in zip(messages, serialized):
+        if id(message) in kept:
+            continue
+        calls = getattr(message, "tool_calls", None) or []
+        call_names = [call.get("function", {}).get("name", "") for call in calls if isinstance(call, dict)]
+        ledger.append({"role": message.role, "length": len(encoded), "sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+                       "tool_call_ids": [call.get("id", "") for call in calls if isinstance(call, dict)],
+                       "tool_names": call_names})
+    if ledger:
+        recent.insert(0, Message(role="system", content="COMPACTED STATE LEDGER: " + json.dumps(ledger, separators=(",", ":"))))
+    return recent
 
 
 def _image_attachments(messages: list[Message]) -> list[str]:

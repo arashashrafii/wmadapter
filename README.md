@@ -259,6 +259,13 @@ Recovery is fail-closed and bounded to one repair request. Its diagnostics are
 redacted to reason codes, lengths, hashes, and outcomes; streamed provider
 failures remain distinct from `protocol_recovery_failed`.
 
+Prompt budgets are configurable with `limits.context_budget_chars` and
+`limits.context_budget_profiles` (exact model or provider keys). Small prompts
+remain unchanged; oversized histories receive one pre-submit state-ledger and
+recent-window compaction, while an oversized current message is rejected with
+`context_length_exceeded`. No post-submit replay occurs. `/health` is process
+health; `/ready` is authenticated provider readiness and can return 503.
+
 106 unit/contract tests and real client SDK transport checks passed against a
 fixture provider. Current live WebChat behavior and full agent runs remain
 unverified by this migration. No MCP dependency or GPT/OX placeholder was added.

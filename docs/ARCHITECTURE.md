@@ -139,6 +139,20 @@ text to identify OpenClaw, OpenCode or Hermes. Historical OpenClaw workflow
 guidance remains available only to direct internal helper callers and is not
 part of the agent-facing contract.
 
+Request sizing uses `limits.context_budget_chars` (default 24000) with optional
+exact model or provider overrides in `limits.context_budget_profiles`. Small
+prompts are passed unchanged. Oversized histories receive one pre-submit
+compaction consisting of a metadata-only state ledger and recent message
+window; an oversized current message fails with `context_length_exceeded`.
+Only one provider submission is allowed after compaction, and uncertain or
+completed submissions are never replayed. Sanitized request metrics contain
+provider/model, counts, prompt length, a fingerprint, and the compaction flag;
+they never contain prompt text, credentials, or transcripts.
+
+`/health` reports gateway process health only. `/ready` reports authenticated
+provider readiness and may return 503; readiness failure is not conflated with
+gateway process failure.
+
 Web Model Adapter emulates the API boundary, rather than an agent's workflow. Its
 provider adapters may translate structured tools to a WebChat text marker and
 translate that marker back to a standard tool call, but they do not choose,

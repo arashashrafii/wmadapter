@@ -451,6 +451,8 @@ async def chat_completion(payload: ChatRequest, request: Request):
                 yield _sse(_error("Provider request timed out", "provider_error", "provider_timeout"))
             except PageCapacityError:
                 yield _sse(_error("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_error", "provider_capacity"))
+            except ContextLimitError:
+                yield _sse(_error("Request exceeds the configured context budget", "invalid_request_error", "context_length_exceeded"))
             except ProtocolRecoveryError:
                 yield _sse(_error("Provider response could not be recovered safely", "provider_error", "protocol_recovery_failed"))
             except Exception:

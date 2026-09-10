@@ -11,6 +11,13 @@ class ChatProvider(ABC):
     model_ids: tuple[str, ...] = ()
     capabilities = ModelCapabilities()
     protocol = WebChatTextAdapter()
+    context_budget_chars: int | None = None
+    context_budget_profiles: dict[str, int] = {}
+
+    def context_budget_for(self, model: str) -> int | None:
+        return self.context_budget_profiles.get(
+            model, self.context_budget_profiles.get(self.name, self.context_budget_chars)
+        )
 
     async def infer(self, request: ProviderRequest) -> ProviderResult:
         """V2 entrypoint; existing V1 subclasses need no new methods."""
