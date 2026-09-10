@@ -123,7 +123,8 @@ def _build_all():
             elif kind == "provider_not_ready":
                 builder = _builder(cid, messages=[{"role": "user", "content": "bounded readiness probe"}])
             elif kind == "sse":
-                builder = _builder(cid, messages=[{"role": "user", "content": "stream the compatibility marker"}], stream=True)
+                marker = "Reply exactly WMADAPTER_LIVE_T52" if client == "opencode" else "stream the compatibility marker"
+                builder = _builder(cid, messages=[{"role": "user", "content": marker}], stream=True)
             else:
                 marker = "Reply exactly WMADAPTER_LIVE_T51" if client == "opencode" else f"{client} compatibility marker {cid}"
                 builder = _builder(cid, messages=[{"role": "user", "content": marker}])
