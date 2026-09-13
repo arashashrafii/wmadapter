@@ -73,7 +73,12 @@ logger = logging.getLogger(__name__)
 STREAM_HEARTBEAT_SECONDS = 5.0
 STREAM_WATCHDOG_SECONDS = 90.0
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
-router = ProviderRouter(providers, config["providers"]["default"], config["providers"].get("enabled"))
+router = ProviderRouter(
+    providers,
+    config["providers"]["default"],
+    config["providers"].get("enabled"),
+    config["providers"].get("enabled_models"),
+)
 default_system_prompt = config["deepseek"].get("system_prompt", "")
 gateway_api_key = config["server"].get("api_key")
 response_state = GatewayState()
@@ -263,8 +268,8 @@ async def ready():
 
 
 def _model_catalog():
-    return {model: name for name, provider in router.providers.items()
-            for model in provider.model_ids}
+    return {model: name for name in router.enabled_providers
+            for model in router.models_for_provider(name)}
 
 
 def _public_capabilities(provider):

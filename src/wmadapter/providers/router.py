@@ -5,7 +5,8 @@ from .base import ChatProvider
 
 class ProviderRouter:
     def __init__(self, providers: dict[str, ChatProvider], default_provider: str,
-                 enabled_providers: list[str] | tuple[str, ...] | None = None):
+                 enabled_providers: list[str] | tuple[str, ...] | None = None,
+                 enabled_models: list[str] | tuple[str, ...] | None = None):
         if default_provider not in providers:
             raise RuntimeError(f"Default provider {default_provider!r} is not configured")
         self.providers = providers
@@ -13,6 +14,7 @@ class ProviderRouter:
         self.enabled_providers = tuple(
             (default_provider,) if enabled_providers is None else enabled_providers
         )
+        self.enabled_models = None if enabled_models is None else frozenset(enabled_models)
         unknown = set(self.enabled_providers) - set(providers)
         if unknown:
             raise RuntimeError(f"Enabled provider is not configured: {sorted(unknown)[0]!r}")
@@ -36,9 +38,16 @@ class ProviderRouter:
         """Strict public model resolution; provider_for_model is legacy."""
         plain = model.split(":", 1)[-1]
         for provider in self.providers.values():
-            if plain in getattr(provider, "model_ids", ()):
+            if plain in getattr(provider, "model_ids", ()) and self.model_enabled(plain):
                 return provider
         raise RuntimeError(f"Unknown model {model!r}")
+
+    def model_enabled(self, model: str) -> bool:
+        return self.enabled_models is None or model in self.enabled_models
+
+    def models_for_provider(self, name: str) -> tuple[str, ...]:
+        provider = self.providers[name]
+        return tuple(model for model in provider.model_ids if self.model_enabled(model))
 
     async def start(self) -> None:
         failures = []

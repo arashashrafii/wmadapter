@@ -66,6 +66,7 @@ class QwenConfig(BaseModel):
 class ProviderConfig(BaseModel):
     default: str = "deepseek"
     enabled: list[str] = Field(default_factory=lambda: ["deepseek"])
+    enabled_models: list[str] | None = None
 
 
 class GatewayLimits(BaseModel):
