@@ -790,12 +790,13 @@ def _extract_tool_call_legacy(answer: str, tools: list[dict[str, Any]] | None) -
                 decoder = json.JSONDecoder()
                 for offset in (m.start() for m in re.finditer(r"\{", answer)):
                     try:
-                        candidate, _ = decoder.raw_decode(answer[offset:])
+                        candidate, payload_end = decoder.raw_decode(answer[offset:])
                     except json.JSONDecodeError:
                         continue
                     if isinstance(candidate, dict) and "name" in candidate and "arguments" in candidate:
                         call = candidate
                         match_start = offset
+                        match_end = offset + payload_end
                         break
                 else:
                     return None, answer
