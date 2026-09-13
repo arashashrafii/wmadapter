@@ -9,7 +9,6 @@ import uvicorn
 from .config import load_config
 from .logging import configure_logging
 from .manual_auth import run_manual_auth
-from .ports import find_free_port
 
 
 def run_server() -> None:
@@ -18,10 +17,7 @@ def run_server() -> None:
     configure_logging(config["logging"])
     server = config["server"]
     host = server.get("host", "127.0.0.1")
-    configured_port = int(server.get("port", 11555))
-    port = find_free_port(host, configured_port)
-    if port != configured_port:
-        print(f"Port {configured_port} is busy; using {port} instead.")
+    port = int(server.get("port", 11555))
     print(f"API URL: http://{host}:{port}/v1")
     uvicorn.run(
         "wmadapter.main:app",

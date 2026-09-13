@@ -58,7 +58,7 @@ class ContextBudgetTests(unittest.IsolatedAsyncioTestCase):
         provider.context_budget_chars = 2000
         provider.complete = AsyncMock(return_value="must not be called")
         request = ProviderRequest(chat=ChatRequest(messages=[Message(role="user", content="x" * 10000)]))
-        with self.assertRaises(ContextLimitError):
+        with self.assertRaisesRegex(ContextLimitError, r"prompt_length=\d+, budget=2000"):
             await provider.infer(request)
         provider.complete.assert_not_awaited()
 

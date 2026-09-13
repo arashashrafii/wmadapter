@@ -2,10 +2,21 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${PROJECT_DIR}/$(basename -- "${BASH_SOURCE[0]}")"
 SERVICE_NAME="wmadapter.service"
-SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SERVICE_DIR="${WMADAPTER_SYSTEMD_DIR:-/etc/systemd/system}"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
-PROFILE_ROOT="${WMADAPTER_PROFILE_ROOT:-$HOME/.local/share/wmadapter/profiles}"
+if [[ $EUID -ne 0 ]]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This uninstaller needs root privileges, but sudo is not installed. Run it as root." >&2
+    exit 1
+  fi
+  ORIGINAL_HOME="$HOME"
+  echo "Root privileges are required to remove the system-wide service; requesting them once..."
+  exec sudo env WMADAPTER_UNINSTALL_HOME="$ORIGINAL_HOME" "$SCRIPT_PATH" "$@"
+fi
+
+PROFILE_ROOT="${WMADAPTER_PROFILE_ROOT:-${WMADAPTER_UNINSTALL_HOME:-$HOME}/.local/share/wmadapter/profiles}"
 UNINSTALL_TIMEOUT_SEC="${UNINSTALL_TIMEOUT_SEC:-10}"
 
 if [[ ! "$UNINSTALL_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
@@ -51,8 +62,12 @@ run_bounded() {
 
 echo "Uninstalling Web Model Adapter local service..."
 if command -v systemctl >/dev/null 2>&1; then
-  run_bounded "systemd service stop/disable" systemctl --user disable --now "$SERVICE_NAME" || true
-  run_bounded "systemd daemon-reload" systemctl --user daemon-reload || true
+  if [[ $EUID -eq 0 ]]; then
+    run_bounded "systemd service stop/disable" systemctl disable --now "$SERVICE_NAME" || true
+    run_bounded "systemd daemon-reload" systemctl daemon-reload || true
+  else
+    echo "Warning: run uninstall.sh as root to remove the system service." >&2
+  fi
 else
   echo "Warning: systemctl command is missing; service control skipped." >&2
 fi
@@ -71,5 +86,6 @@ rm -f -- \
   "$PROJECT_DIR/.wmadapter.pid" \
   "$PROJECT_DIR/wmadapter.install.log" \
   "$PROJECT_DIR/wmadapter.log"
+rm -f -- "${WMADAPTER_UNINSTALL_HOME:-$HOME}/.local/share/wmadapter/wmadapter.log"
 
 echo "Web Model Adapter local cleanup completed. Source files were kept in: $PROJECT_DIR"

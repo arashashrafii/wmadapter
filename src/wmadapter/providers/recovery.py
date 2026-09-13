@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 import hashlib
 import logging
+import uuid
 from typing import Any
 
 from .normalizer import ToolProtocolNormalizer
+from .protocol import ToolProtocolStatus
 
 logger = logging.getLogger(__name__)
 _REPAIR_CONTEXT_LIMIT = 12000
@@ -26,6 +28,10 @@ def _diagnostic(reason: str, value: str, outcome: str) -> None:
         "protocol_recovery reason=%s length=%d sha256=%s outcome=%s",
         reason, len(value), _fingerprint(value), outcome,
     )
+
+
+def _conversation_fingerprint(value: str | None) -> str:
+    return _fingerprint(value or "anonymous")[:16]
 
 
 def _compact_context(prompt: str) -> str:
@@ -56,7 +62,7 @@ class ToolCallRecovery:
         prompt: str,
     ) -> tuple[dict[str, Any] | None, str]:
         normalizer = ToolProtocolNormalizer()
-        call, visible = normalizer.normalize(answer, tools)
+        status, call, visible = normalizer.normalize_with_status(answer, tools)
         if call is not None and self.validate_call(call):
             _diagnostic("initial_valid", answer, "bypass")
             return call, visible
@@ -64,7 +70,7 @@ class ToolCallRecovery:
         # Ordinary content is already a complete provider response. Only ask
         # for repair when the WebChat leaked a protocol marker or returned an
         # empty turn; this avoids changing normal answers.
-        needs_repair = not visible.strip() or (tools and "<tool_call>" in answer)
+        needs_repair = status is ToolProtocolStatus.UNRESOLVED_MARKER or not visible.strip()
         if not needs_repair:
             _diagnostic("initial_complete", answer, "bypass")
             return None, visible
@@ -79,10 +85,22 @@ class ToolCallRecovery:
             + "\n\nPROTOCOL REPAIR: Return either one valid <tool_call> marker using only "
             "the listed tools, or a final answer. Do not narrate an action."
         )
-        repaired = await provider.complete(
-            repair_prompt, conversation_id=conversation_id
-        )
-        call, visible = normalizer.normalize(repaired, tools)
+        if getattr(type(provider), "repair_complete", None) is None:
+            repair_id = "repair:" + uuid.uuid4().hex
+            logger.info(
+                "protocol_recovery_context original=%s repair=%s isolation=fallback",
+                _conversation_fingerprint(conversation_id), _conversation_fingerprint(repair_id),
+            )
+            repaired = await provider.complete(repair_prompt, conversation_id=repair_id)
+        else:
+            logger.info(
+                "protocol_recovery_context original=%s isolation=provider_api",
+                _conversation_fingerprint(conversation_id),
+            )
+            repaired = await provider.repair_complete(
+                repair_prompt, conversation_id=conversation_id
+            )
+        status, call, visible = normalizer.normalize_with_status(repaired, tools)
         if call is not None and not self.validate_call(call):
             _diagnostic("repair_invalid_tool_call", repaired, "fail_closed")
             call, visible = None, ""
@@ -90,7 +108,7 @@ class ToolCallRecovery:
             _diagnostic("repair_valid_tool_call", repaired, "repaired_tool")
         elif not visible.strip():
             _diagnostic("repair_empty", repaired, "fail_closed")
-        elif tools and "<tool_call>" in repaired:
+        elif status is ToolProtocolStatus.UNRESOLVED_MARKER:
             _diagnostic("repair_unresolved_marker", repaired, "fail_closed")
         else:
             _diagnostic("repair_complete", repaired, "repaired_final")

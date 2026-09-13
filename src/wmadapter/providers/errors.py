@@ -21,6 +21,14 @@ class ProviderRateLimitError(RuntimeError):
 class ContextLimitError(ValueError):
     """The request exceeds a known context limit."""
 
+    def __init__(self, prompt_length: int, budget: int):
+        self.prompt_length = prompt_length
+        self.budget = budget
+        super().__init__(
+            f"Request exceeds the configured context budget: "
+            f"prompt_length={prompt_length}, budget={budget}"
+        )
+
 
 class ProviderInternalError(RuntimeError):
     """An unexpected provider-side failure with no safe public detail."""

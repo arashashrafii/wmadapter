@@ -258,8 +258,16 @@ async def run_manual_auth(
         with socket.socket() as probe_socket:
             probe_socket.bind(("127.0.0.1", 0))
             cdp_port = probe_socket.getsockname()[1]
+        chrome_args = [
+            executable,
+            f"--user-data-dir={profile}",
+            f"--app={target.url}",
+            "--no-first-run",
+            "--disable-sync",
+            f"--remote-debugging-port={cdp_port}",
+        ]
         process = subprocess.Popen(
-            [executable, f"--user-data-dir={profile}", f"--app={target.url}", "--no-first-run", "--disable-sync", f"--remote-debugging-port={cdp_port}"],
+            chrome_args,
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,

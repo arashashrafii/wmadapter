@@ -415,15 +415,16 @@ class DeepSeekService(ChatProvider):
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
-                    self.ready = False
                     self.last_error = str(exc)
                     logger.warning("DeepSeek submission is uncertain: %s", exc)
                     raise
                 except Exception as exc:
-                    self.ready = False
                     self.last_error = str(exc)
                     logger.warning("DeepSeek request failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    if attempt >= attempts or self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc):
+                    auth_failure = self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc)
+                    if auth_failure:
+                        self.ready = False
+                    if attempt >= attempts or auth_failure:
                         raise
                     self._clear_conversation_pages()
                     await self.browser.restart()
@@ -447,15 +448,16 @@ class DeepSeekService(ChatProvider):
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
-                    self.ready = False
                     self.last_error = str(exc)
                     logger.warning("DeepSeek attachment submission is uncertain: %s", exc)
                     raise
                 except Exception as exc:
-                    self.ready = False
                     self.last_error = str(exc)
                     logger.warning("DeepSeek request with attachments failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    if attempt >= attempts or self._is_auth_failure(exc):
+                    auth_failure = self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc)
+                    if auth_failure:
+                        self.ready = False
+                    if attempt >= attempts or auth_failure:
                         raise
                     self._clear_conversation_pages()
                     await self.browser.restart()
@@ -774,15 +776,16 @@ class QwenService(ChatProvider):
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
-                    self.ready = False
                     self.last_error = str(exc)
                     logger.warning("Qwen submission is uncertain: %s", exc)
                     raise
                 except Exception as exc:
-                    self.ready = False
                     self.last_error = str(exc)
                     logger.warning("Qwen request failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    if attempt >= attempts or self.auth_state == "LOGIN_INTERRUPTED":
+                    auth_failure = self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc)
+                    if auth_failure:
+                        self.ready = False
+                    if attempt >= attempts or auth_failure:
                         raise
                     self._conversation_pages.clear()
                     await self.browser.restart()

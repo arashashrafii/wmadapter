@@ -7,6 +7,7 @@ from wmadapter import main
 from wmadapter.providers.base import ChatProvider
 from wmadapter.providers.opencode import translate_request
 from wmadapter.providers.router import ProviderRouter
+from wmadapter.providers.policy import ClientPolicy
 
 
 class OpenCodeProvider(ChatProvider):
@@ -65,7 +66,7 @@ class OpenCodeChannelTests(unittest.TestCase):
         self.assertEqual(translated.tools[0]["function"]["name"], "lookup")
 
     def test_opencode_channel_does_not_change_generic_chat_channel(self):
-        response = self.client.post("/v1/chat/completions", json=self.request())
+        response = self.client.post("/v1/chat/completions", json=self.request(max_tokens=32000))
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["object"], "chat.completion")
@@ -80,6 +81,17 @@ class OpenCodeChannelTests(unittest.TestCase):
         self.assertIsNone(forwarded.chat.max_tokens)
         self.assertIsNone(forwarded.canonical.max_tokens)
         self.assertEqual(forwarded.client_max_tokens, 32000)
+
+    def test_openclaw_hint_selects_openclaw_policy_on_shared_route(self):
+        response = self.client.post(
+            "/v1/chat/completions",
+            json=self.request(tools=[{"type": "function", "function": {"name": "computer", "parameters": {}}}]),
+            headers={"User-Agent": "OpenClaw/2026.8.1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        forwarded = self.provider.infer.call_args.args[0]
+        self.assertEqual(forwarded.client_policy, ClientPolicy.OPENCLAW)
 
     def test_opencode_title_request_accepts_large_client_budget_without_provider_call(self):
         response = self.client.post("/v1/opencode/chat/completions", json={

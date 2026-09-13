@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from .contract import ModelCapabilities, ProviderRequest, ProviderResult
 from .webchat_adapter import WebChatTextAdapter
 from collections.abc import AsyncIterator
+import hashlib
 
 
 class ChatProvider(ABC):
@@ -44,6 +45,12 @@ class ChatProvider(ABC):
     @abstractmethod
     async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
         pass
+
+    async def repair_complete(self, prompt: str, conversation_id: str | None = None) -> str:
+        """Complete repair text without appending it to primary history."""
+        seed = conversation_id or "anonymous"
+        repair_id = "repair:" + hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:24]
+        return await self.complete(prompt, conversation_id=repair_id)
 
     async def delete_conversation(self, conversation_id: str) -> bool:
         """Release provider-side state for one logical conversation."""

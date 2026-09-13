@@ -128,10 +128,13 @@ Then start the bridge:
 .venv/bin/wmadapter
 ```
 
-The server defaults to `http://127.0.0.1:11555`.
+The server defaults to `http://127.0.0.1:11555` (also available as
+`http://localhost:11555`). OpenCode and OpenClaw can use the shared OpenAI-compatible
+base URL `http://127.0.0.1:11555/v1`.
 
-Container packaging is temporarily unavailable. Use the local virtual
-environment and optional user-level systemd service described here.
+The installer creates a system-wide systemd service under `/etc/systemd/system`.
+Run `./install.sh` directly; it elevates itself with `sudo` when needed and may
+ask for the password once. The service itself does not prompt for a root password.
 
 Authentication is browser-only. Web Model Adapter never accepts, stores, or
 automates provider usernames or passwords; only the isolated Chrome profile
@@ -226,8 +229,11 @@ Supported and verified at the local contract level:
   buffered SSE.
 - `POST /v1/completions` supports the documented legacy text subset and
   `POST /v1/responses` supports non-streaming text responses.
-- `/v1/opencode/chat/completions` preserves OpenCode translation; OpenClaw
-  uses the standard route. Clients execute returned tools and send results back.
+- `/v1/chat/completions` is the shared OpenAI-compatible route. Positive
+  `max_tokens` and `max_completion_tokens` values are accepted as client-only
+  budgets and are never forwarded to the web provider. The OpenCode-specific
+  route remains available for compatibility, but clients do not need it.
+  Clients execute returned tools and send results back.
 
 Validated but explicitly unsupported by the current web providers:
 
@@ -258,7 +264,11 @@ Treat live media cases as capability checks, not vision evidence. Do not
 commit reports containing credentials, browser session data, prompts, or
 provider transcripts.
 
-Recovery is fail-closed and bounded to one repair request. Its diagnostics are
+Recovery is fail-closed and bounded to one repair request. Repairs use the
+provider's isolated `repair_complete` API when available. Legacy providers use
+a unique `repair:` conversation ID as a safe fallback; repair output is not
+appended to the primary conversation, and the original ID remains active for
+the next continuation. Its diagnostics are
 redacted to reason codes, lengths, hashes, and outcomes; streamed provider
 failures remain distinct from `protocol_recovery_failed`.
 

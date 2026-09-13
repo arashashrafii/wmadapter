@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import AsyncMock
 import re
@@ -9,6 +10,45 @@ TOOLS = [{"type": "function", "function": {"name": "exec"}}]
 
 
 class ProtocolRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    def test_schema_guided_tool_arguments_stringify_object_for_string_field(self):
+        from wmadapter.providers.protocol import _extract_tool_call
+
+        tools = [{"type": "function", "function": {
+            "name": "write",
+            "parameters": {"type": "object", "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+            }},
+        }}]
+        answer = '<tool_call>{"name":"write","arguments":{"path":"package.json","content":{"name":"iran-smb-accounting"}}}</tool_call>'
+        call, visible = _extract_tool_call(answer, tools)
+
+        self.assertEqual(visible, "")
+        self.assertIsNotNone(call)
+        self.assertEqual(
+            json.loads(call["function"]["arguments"])["content"],
+            '{"name":"iran-smb-accounting"}',
+        )
+
+    def test_deepseek_tool_token_format_becomes_openai_tool_call(self):
+        from wmadapter.providers.protocol import _extract_tool_call
+
+        answer = (
+            "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>computer"
+            "<｜tool▁call▁argument▁begin｜>{\"action\":\"screenshot\"}"
+            "<｜tool▁call▁argument▁end｜><｜tool▁call▁end｜>"
+            "<｜tool▁calls▁end｜>"
+        )
+        call, visible = _extract_tool_call(answer, [{
+            "type": "function",
+            "function": {"name": "computer", "parameters": {"type": "object"}},
+        }])
+
+        self.assertEqual(visible, "")
+        self.assertIsNotNone(call)
+        self.assertEqual(call["function"]["name"], "computer")
+        self.assertEqual(json.loads(call["function"]["arguments"])["action"], "screenshot")
+
     async def test_duplicate_action_after_identical_results_requests_new_strategy(self):
         from wmadapter.main import _extract_tool_call
         answer = '<tool_call>{"name":"exec","arguments":{"command":"nc localhost 8080"}}</tool_call>'
@@ -24,14 +64,13 @@ class ProtocolRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_narrated_action_is_reasked_not_executed_as_prose(self):
         provider = AsyncMock()
-        provider.complete.return_value = '<tool_call>{"name":"exec","arguments":{"command":"pwd"}}</tool_call>'
         call, text = await _resolve_web_answer(
             provider, 'I will run it.\nAction: exec\nAction Input: {"command":"pwd"}',
             [Message(role="user", content="Run pwd")], TOOLS, "session-a", "original context",
         )
         self.assertEqual(call["function"]["name"], "exec")
-        self.assertEqual(text, "")
-        self.assertEqual(provider.complete.call_args.kwargs["conversation_id"], "session-a")
+        self.assertEqual(text, "I will run it.")
+        provider.complete.assert_not_awaited()
 
     async def test_narrated_gui_plan_is_reasked_for_computer_call(self):
         provider = AsyncMock()
@@ -134,6 +173,36 @@ class ProtocolRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(repair_prompt), len(prompt))
         self.assertIn("[REPAIR CONTEXT COMPACTED]", repair_prompt)
         self.assertEqual(provider.complete.await_count, 1)
+
+    async def test_provider_repair_api_receives_primary_id_without_using_primary_history(self):
+        from wmadapter.providers.recovery import ToolCallRecovery
+        class IsolatedProvider:
+            def __init__(self):
+                self.repair_calls = []
+                self.complete = AsyncMock()
+
+            async def repair_complete(self, prompt, conversation_id=None):
+                self.repair_calls.append((prompt, conversation_id))
+                return "repaired"
+
+        provider = IsolatedProvider()
+        call, text = await ToolCallRecovery().resolve(
+            provider, "", [], TOOLS, "primary-session", "context"
+        )
+        self.assertIsNone(call)
+        self.assertEqual(text, "repaired")
+        self.assertEqual(len(provider.repair_calls), 1)
+        self.assertEqual(provider.repair_calls[0][1], "primary-session")
+        provider.complete.assert_not_awaited()
+
+    async def test_legacy_provider_gets_isolated_fallback_id_including_anonymous_turn(self):
+        from wmadapter.providers.recovery import ToolCallRecovery
+        provider = AsyncMock()
+        provider.complete.return_value = "repaired"
+        await ToolCallRecovery().resolve(provider, "", [], TOOLS, None, "context")
+        repair_id = provider.complete.call_args.kwargs["conversation_id"]
+        self.assertTrue(repair_id.startswith("repair:"))
+        self.assertNotEqual(repair_id, None)
 
     async def test_research_action_verification_round_trip(self):
         provider = AsyncMock()

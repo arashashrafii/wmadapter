@@ -36,11 +36,14 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     budget = provider.context_budget_for(chat.model) if hasattr(provider, "context_budget_for") else None
     compacted = False
     if budget is not None and len(prompt) > budget:
-        messages = compact_messages(messages, max(1024, budget // 2))
+        try:
+            messages = compact_messages(messages, max(1024, budget // 2))
+        except ContextLimitError as exc:
+            raise ContextLimitError(len(prompt), budget) from exc
         prompt = build_prompt(messages)
         compacted = True
         if len(prompt) > budget:
-            raise ContextLimitError("context_length_exceeded")
+            raise ContextLimitError(len(prompt), budget)
     logger.info(
         "provider_request_metrics provider=%s model=%s message_count=%d tool_count=%d prompt_length=%d prompt_sha256=%s compacted=%s client_max_tokens=%s",
         provider.name, chat.model, len(messages), len(tools or []), len(prompt),

@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import uuid
+from enum import Enum
 from typing import Any
 from .contract import Message
 from .errors import ContextLimitError
@@ -56,7 +57,7 @@ def compact_messages(messages: list[Message], max_chars: int) -> list[Message]:
         recent.append(message)
         used += len(encoded)
     if messages and not recent:
-        raise ContextLimitError("context_length_exceeded")
+        raise ContextLimitError(sum(map(len, serialized)), max_chars)
     recent.reverse()
     kept = set(id(message) for message in recent)
     ledger = []
@@ -377,7 +378,9 @@ async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversa
                 == signature(recent[-2][0]))
     def needs_repair(text):
         return not text.strip() or bool(tools and re.search(
-            r"<tool_call>|^\s*Action Input:", text, re.MULTILINE
+            r"<tool_call\b|<｜tool▁calls▁begin｜>|<｜tool▁call▁begin｜>|"
+            r"<｜｜DSML｜｜\s*(?:invoke|parameter)\b|(?:^|\n)\s*Action\s*:\s*|"
+            r"(?:^|\n)\s*Action Input\s*:", text, re.IGNORECASE
         ))
     def is_action_request():
         action_terms = (
@@ -571,34 +574,141 @@ def _clean_renderer_artifacts(answer: str) -> str:
     return "\n".join(cleaned).strip()
 
 
-def _normalize_tool_arguments(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Repair one known OpenClaw browser fill shape without broad coercion."""
+def _normalize_tool_arguments(
+    name: str,
+    arguments: dict[str, Any],
+    tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Apply schema-guided repairs to browser-model tool arguments."""
+    if not isinstance(arguments, dict):
+        return {}
+    normalized = dict(arguments)
+    schema = next(
+        (
+            item.get("function", {}).get("parameters", {})
+            for item in tools or []
+            if item.get("function", {}).get("name") == name
+        ),
+        {},
+    )
+    properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+    for key, value in list(normalized.items()):
+        expected = properties.get(key, {}) if isinstance(properties, dict) else {}
+        if isinstance(expected, dict) and expected.get("type") == "string" and isinstance(value, (dict, list)):
+            normalized[key] = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
     if (
         name == "browser"
-        and arguments.get("action") == "act"
-        and arguments.get("kind") == "fill"
-        and "fields" not in arguments
-        and isinstance(arguments.get("ref"), str)
-        and isinstance(arguments.get("text"), str)
+        and normalized.get("action") == "act"
+        and normalized.get("kind") == "fill"
+        and "fields" not in normalized
+        and isinstance(normalized.get("ref"), str)
+        and isinstance(normalized.get("text"), str)
     ):
-        normalized = dict(arguments)
         ref = normalized.pop("ref")
         text = normalized.pop("text")
         normalized["fields"] = [{"ref": ref, "text": text}]
-        return normalized
-    return arguments
+    return normalized
+
+
+class ToolProtocolStatus(str, Enum):
+    ORDINARY_TEXT = "ordinary_text"
+    VALID_TOOL_CALL = "valid_tool_call"
+    UNRESOLVED_MARKER = "unresolved_marker"
+
+
+def _has_known_tool_marker(answer: str) -> bool:
+    """Return true for complete, incomplete, and malformed known protocols."""
+    return bool(re.search(
+        r"<tool_call\b|<｜tool▁calls▁begin｜>|<｜tool▁call▁begin｜>|"
+        r"<｜｜DSML｜｜\s*invoke\b|<｜｜DSML｜｜\s*parameter\b|"
+        r"(?:^|\n)\s*Action\s*:\s*[A-Za-z_]\w*|"
+        r"(?:^|\n)\s*Action Input\s*:", answer, re.IGNORECASE,
+    ))
+
+
+def _extract_tool_call_status(answer: str, tools: list[dict[str, Any]] | None) -> tuple[ToolProtocolStatus, dict[str, Any] | None, str]:
+    calls, visible = _extract_tool_calls(answer, tools)
+    if calls:
+        return ToolProtocolStatus.VALID_TOOL_CALL, calls[0], visible
+    # Keep the established Action/Action Input and rendered-JSON compatibility
+    # protocols reachable after the multi-call parser runs.
+    legacy_call, legacy_visible = _extract_tool_call_legacy(answer, tools)
+    if legacy_call:
+        return ToolProtocolStatus.VALID_TOOL_CALL, legacy_call, legacy_visible
+    if tools and _has_known_tool_marker(answer):
+        return ToolProtocolStatus.UNRESOLVED_MARKER, None, visible
+    return ToolProtocolStatus.ORDINARY_TEXT, None, visible
 
 
 def _extract_tool_call(answer: str, tools: list[dict[str, Any]] | None) -> tuple[dict[str, Any] | None, str]:
     """Normalize web-model tool markup into one OpenAI-compatible call."""
-    if tools:
-        allowed = {item.get("function", {}).get("name") for item in tools}
-        pattern = re.compile(
-            r"<｜｜DSML｜｜\s*invoke\s+name=[\"']([^\"']+)[\"']\s*>"
-            r"(.*?)</｜｜DSML｜｜\s*invoke\s*>", re.DOTALL,
-        )
-        match = pattern.search(answer)
-        if match and match.group(1) in allowed:
+    _, call, visible = _extract_tool_call_status(answer, tools)
+    return call, visible
+
+def _extract_tool_calls(answer: str, tools: list[dict[str, Any]] | None) -> tuple[list[dict[str, Any]], str]:
+    """Identify all tool calls and reconstruct the visible text."""
+    if not tools:
+        return [], answer
+
+    allowed = {item.get("function", {}).get("name") for item in tools}
+    calls = []
+
+    # Collect all tool markers
+    markers = []
+
+    # Debug: print the regex matches
+    # for match in re.finditer(..., answer, re.DOTALL):
+    #     print(f"DEBUG: Match found: {match.group(0)}")
+
+    # 1. DeepSeek markers
+    pattern1 = re.compile(
+        r"(<｜tool▁call▁begin｜>\s*([^<]+?)\s*"
+        r"<｜tool▁call▁argument▁begin｜>\s*(.*?)\s*"
+        r"<｜tool▁call▁argument▁end｜>\s*<｜tool▁call▁end｜>)|" # Group 1: Whole call, Group 2: name, Group 3: args
+        r"(<tool_call>\s*(.*?)\s*</tool_call>)", # Group 4: Whole call, Group 5: JSON
+        re.DOTALL,
+    )
+    for match in pattern1.finditer(answer):
+        if match.group(1): # DeepSeek call
+            name = match.group(2).strip()
+            if name in allowed:
+                try:
+                    arguments = json.loads(match.group(3).strip())
+                    if isinstance(arguments, dict):
+                        arguments = _normalize_tool_arguments(name, arguments, tools)
+                        call = {"id": f"call_{uuid.uuid4().hex}", "type": "function", "function": {
+                            "name": name,
+                            "arguments": json.dumps(arguments, ensure_ascii=False, separators=(",", ":")),
+                        }}
+                        markers.append((match.start(), match.end(), call))
+                except json.JSONDecodeError:
+                    pass
+        elif match.group(4): # tool_call marker
+            try:
+                data = json.loads(match.group(5).strip())
+                if isinstance(data, dict) and "name" in data and "arguments" in data:
+                    name = data["name"]
+                    if name in allowed:
+                        arguments = _normalize_tool_arguments(name, data["arguments"], tools)
+                        call = {"id": f"call_{uuid.uuid4().hex}", "type": "function", "function": {
+                            "name": name,
+                            "arguments": json.dumps(arguments, ensure_ascii=False, separators=(",", ":")),
+                        }}
+                        markers.append((match.start(), match.end(), call))
+            except json.JSONDecodeError:
+                pass
+    # Wrapper tokens are removed after inner calls are extracted; treating the
+    # whole wrapper as a marker would hide valid calls nested inside it.
+    # 2. DSML markers
+    for match in re.finditer(
+        r"<｜｜DSML｜｜\s*invoke\s+name=[\"']([^\"']+)[\"']\s*>"
+        r"(.*?)</｜｜DSML｜｜\s*invoke\s*>",
+        answer,
+        re.DOTALL,
+    ):
+        name = match.group(1)
+        if name in allowed:
             arguments: dict[str, Any] = {}
             for parameter in re.finditer(
                 r"<｜｜DSML｜｜\s*parameter\s+name=[\"']([^\"']+)[\"']"
@@ -610,34 +720,60 @@ def _extract_tool_call(answer: str, tools: list[dict[str, Any]] | None) -> tuple
                     arguments[key] = json.loads(value)
                 except json.JSONDecodeError:
                     arguments[key] = value
-            name = match.group(1)
-            arguments = _normalize_tool_arguments(name, arguments)
+            arguments = _normalize_tool_arguments(name, arguments, tools)
             call = {"id": f"call_{uuid.uuid4().hex}", "type": "function", "function": {
                 "name": name,
                 "arguments": json.dumps(arguments, ensure_ascii=False, separators=(",", ":")),
             }}
-            visible = (answer[:match.start()] + answer[match.end():]).strip()
-            return call, visible
-    return _extract_tool_call_legacy(answer, tools)
+            markers.append((match.start(), match.end(), call))
 
+    # Sort markers and filter for overlapping (not expected, but good to be safe)
+    markers.sort()
+
+    # Reconstruct visible text
+    visible_parts = []
+    last_end = 0
+    for start, end, call in markers:
+        if start > last_end:
+            visible_parts.append(answer[last_end:start])
+        if call:
+            calls.append(call)
+        last_end = end
+    if last_end < len(answer):
+        visible_parts.append(answer[last_end:])
+
+    visible = "".join(visible_parts)
+    visible = re.sub(r"<｜tool▁calls▁(?:begin|end)｜>", "", visible)
+    return calls, visible.strip()
 
 def _extract_tool_call_legacy(answer: str, tools: list[dict[str, Any]] | None) -> tuple[dict[str, Any] | None, str]:
+    """Extract one legacy call while retaining all text around its exact span.
+
+    Surrounding assistant text is intentionally lossless: only the validated
+    tool-call marker/payload is removed.  This also prevents a prose prefix or
+    suffix from being mistaken for part of the call.
+    """
     if not tools:
         return None, answer
     match = re.search(r"<tool_call>\s*(\{.*\})\s*</tool_call>", answer, re.DOTALL)
     json_match = None
+    match_end = None
     if not match:
-        action_protocol = re.fullmatch(
-            r"\s*Action:\s*([A-Za-z_][\w.-]*)\s*\n\s*Action Input:\s*(\{.*\})\s*",
-            answer,
-            re.DOTALL | re.IGNORECASE,
+        action_protocol = re.search(
+            r"(?:^|\n)\s*Action:\s*([A-Za-z_][\w.-]*)\s*\n\s*Action Input:\s*",
+            answer, re.IGNORECASE,
         )
         if action_protocol:
             try:
-                call = {"name": action_protocol.group(1), "arguments": json.loads(action_protocol.group(2))}
-            except json.JSONDecodeError:
+                payload_start = action_protocol.end()
+                arguments, payload_end = json.JSONDecoder().raw_decode(answer[payload_start:].lstrip())
+                if not isinstance(arguments, dict):
+                    return None, answer
+                call = {"name": action_protocol.group(1), "arguments": arguments}
+                match_end = payload_start + (len(answer[payload_start:]) - len(answer[payload_start:].lstrip())) + payload_end
+            except (json.JSONDecodeError, TypeError):
                 return None, answer
-            match_start = 0
+            match_start = action_protocol.start()
         else:
             legacy = re.search(r'<invoke\s+name=["\']([^"\']+)["\']>(.*?)</invoke>', answer, re.DOTALL)
         if not action_protocol and not legacy:
@@ -669,6 +805,7 @@ def _extract_tool_call_legacy(answer: str, tools: list[dict[str, Any]] | None) -
                 except json.JSONDecodeError:
                     return None, answer
                 match_start = json_match.start()
+                match_end = json_match.end()
         elif not action_protocol:
             name = legacy.group(1)
             arguments = {
@@ -680,7 +817,8 @@ def _extract_tool_call_legacy(answer: str, tools: list[dict[str, Any]] | None) -
             if match_start < 0:
                 match_start = legacy.start()
     else:
-        match_start = match.start()
+            match_start = match.start()
+            match_end = match.end()
     try:
         if match and not json_match:
             payload = match.group(1)
@@ -752,9 +890,12 @@ def _extract_tool_call_legacy(answer: str, tools: list[dict[str, Any]] | None) -
             arguments = json.loads(arguments)
         if not isinstance(arguments, dict):
             return None, answer
-        arguments = _normalize_tool_arguments(name, arguments)
+        arguments = _normalize_tool_arguments(name, arguments, tools)
+        if match_end is None:
+            match_end = match_start + len(json.dumps(call, ensure_ascii=False))
+        visible = answer[:match_start] + answer[match_end:]
         return {"id": f"call_{uuid.uuid4().hex}", "type": "function", "function": {
             "name": name, "arguments": json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
-        }}, answer[:match_start].strip()
+        }}, visible.strip()
     except (TypeError, ValueError, json.JSONDecodeError):
         return None, answer

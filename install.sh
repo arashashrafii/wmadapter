@@ -5,16 +5,34 @@ API_HOST="127.0.0.1"
 API_PORT="11555"
 REPO_URL="https://github.com/arashashrafii/wmadapter"
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${PROJECT_DIR}/$(basename -- "${BASH_SOURCE[0]}")"
 SERVICE_NAME="wmadapter.service"
-SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SERVICE_DIR="/etc/systemd/system"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
 DISPLAY_VALUE="${DISPLAY:-}"
-RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 BROWSER_EXECUTABLE=""
 INSTALL_SUCCESS=0
 USE_XVFB=0
 
 cd -- "$PROJECT_DIR"
+
+if [[ $EUID -ne 0 ]]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "This installer needs root privileges, but sudo is not installed. Run it as root." >&2
+    exit 1
+  fi
+  echo "Root privileges are required for the system-wide service; requesting them once..."
+  exec sudo --preserve-env=DISPLAY,WAYLAND_DISPLAY,XAUTHORITY,DBUS_SESSION_BUS_ADDRESS,XDG_RUNTIME_DIR -- "$SCRIPT_PATH" "$@"
+fi
+
+# The unit is system-wide, but browser automation must run as the desktop user
+# so Chrome can use the user's display and its normal sandbox.
+TARGET_USER="${SUDO_USER:-$(logname 2>/dev/null || true)}"
+TARGET_USER="${TARGET_USER:-root}"
+TARGET_UID="$(id -u "$TARGET_USER")"
+TARGET_GROUP="$(id -gn "$TARGET_USER")"
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+TARGET_HOME="${TARGET_HOME:-/root}"
 
 say() { printf '\n%s\n' "$*"; }
 ask() {
@@ -85,7 +103,7 @@ server:
 browser:
   mode: managed
   headless: ${headless}
-  profile_dir: ~/.local/share/wmadapter/profiles/${provider}
+  profile_dir: ${TARGET_HOME}/.local/share/wmadapter/profiles/${provider}
   executable_path: ${executable_path}
   cdp_endpoint: ${cdp_endpoint:-null}
   restart_retries: 1
@@ -96,7 +114,7 @@ provider_choice: ${provider}
 qwen:
   chat_url: ${chat_url}
   auth: google
-  profile_dir: ~/.local/share/wmadapter/profiles/qwen
+  profile_dir: ${TARGET_HOME}/.local/share/wmadapter/profiles/qwen
   headless: ${headless}
 
 deepseek:
@@ -113,7 +131,7 @@ providers:
 
 logging:
   level: INFO
-  file: wmadapter.log
+  file: ${TARGET_HOME}/.local/share/wmadapter/wmadapter.log
   max_bytes: 1000000
   backup_count: 3
 YAML
@@ -144,7 +162,6 @@ ensure_browser() {
 }
 write_service() {
   local login_mode="$1"
-  mkdir -p "$SERVICE_DIR"
   local exec_start="${PROJECT_DIR}/.venv/bin/wmadapter"
   if [ "$USE_XVFB" -eq 1 ]; then
     exec_start="/usr/bin/xvfb-run --auto-servernum --server-args='-screen 0 1440x1000x24' ${exec_start}"
@@ -156,21 +173,24 @@ After=network-online.target
 
 [Service]
 Type=simple
+User=${TARGET_USER}
+Group=${TARGET_GROUP}
 WorkingDirectory=${PROJECT_DIR}
+Environment=HOME=${TARGET_HOME}
 EnvironmentFile=-${PROJECT_DIR}/.env
 Environment=WMADAPTER_LOGIN=${login_mode}
 Environment=WMADAPTER_XVFB=${USE_XVFB}
 Environment=DISPLAY=${DISPLAY_VALUE}
 Environment=WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}
 Environment=XAUTHORITY=${XAUTHORITY:-}
-Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
+Environment=XDG_RUNTIME_DIR=/run/user/${TARGET_UID}
 Environment=DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}
 ExecStart=${exec_start}
 Restart=on-failure
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 SERVICE
 }
 prepare_runtime_display() {
@@ -188,21 +208,44 @@ prepare_runtime_display() {
 start_service() {
   local login_mode="$1"
   write_service "$login_mode"
-  systemctl --user daemon-reload
-  systemctl --user enable --now "$SERVICE_NAME"
+  say "Created system service: ${SERVICE_FILE}"
+  systemctl daemon-reload
+  systemctl enable "$SERVICE_NAME"
+  if ! systemctl restart "$SERVICE_NAME"; then
+    echo "The service was created but could not be started." >&2
+    systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
+    echo "Unit file: ${SERVICE_FILE}" >&2
+    exit 1
+  fi
 }
 run_foreground_auth() {
   if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo "interactive_session_unavailable: DISPLAY or WAYLAND_DISPLAY is not set" >&2
     return 1
   fi
-  WMADAPTER_LOGIN=1 .venv/bin/wmadapter auth "$PROVIDER" --external-browser
+  if [[ "$TARGET_USER" == "root" ]]; then
+    WMADAPTER_LOGIN=1 HOME="$TARGET_HOME" .venv/bin/wmadapter auth "$PROVIDER" --external-browser
+  else
+    command -v runuser >/dev/null 2>&1 || {
+      echo "runuser is required to launch browser authentication as ${TARGET_USER}." >&2
+      return 1
+    }
+    runuser -u "$TARGET_USER" -- env \
+      HOME="$TARGET_HOME" \
+      DISPLAY="${DISPLAY:-}" \
+      WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+      XAUTHORITY="${XAUTHORITY:-}" \
+      XDG_RUNTIME_DIR="/run/user/${TARGET_UID}" \
+      DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
+      WMADAPTER_LOGIN=1 \
+      "${PROJECT_DIR}/.venv/bin/wmadapter" auth "$PROVIDER" --external-browser
+  fi
 }
 stop_service() {
-  systemctl --user disable --now "$SERVICE_NAME" 2>/dev/null || true
+  systemctl disable --now "$SERVICE_NAME" 2>/dev/null || true
 }
 cleanup_previous_install() {
-  local profile_root="$HOME/.local/share/wmadapter/profiles"
+  local profile_root="$TARGET_HOME/.local/share/wmadapter/profiles"
   stop_service
   pkill -TERM -f "$PROJECT_DIR/.venv/bin/wmadapter auth " 2>/dev/null || true
   local pids
@@ -212,15 +255,15 @@ cleanup_previous_install() {
   fi
   rm -rf -- "$profile_root"
   rm -f -- "$SERVICE_FILE" "$PROJECT_DIR/config.yaml"
-  systemctl --user daemon-reload 2>/dev/null || true
+  systemctl daemon-reload 2>/dev/null || true
   say "Previous Web Model Adapter runtime and profile cleaned up."
 }
 cleanup_failed_install() {
   local status=$?
   if [ "$status" -ne 0 ] && [ "$INSTALL_SUCCESS" -ne 1 ]; then
     stop_service 2>/dev/null || true
-    rm -f -- "$SERVICE_FILE"
-    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl daemon-reload 2>/dev/null || true
+    echo "Installation failed; the generated service was left at ${SERVICE_FILE} for inspection." >&2
   fi
   return "$status"
 }
@@ -252,7 +295,6 @@ run_smoke() {
 need curl
 need systemctl
 trap cleanup_failed_install EXIT
-API_PORT="$(find_free_port "$API_PORT")"
 API_URL="http://${API_HOST}:${API_PORT}/v1"
 export API_PORT
 

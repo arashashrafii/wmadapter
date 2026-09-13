@@ -40,7 +40,9 @@ limits:
   max_output_chars:
   # Optional prompt budget; profiles may use an exact model or provider name.
   context_budget_chars: 24000
-  context_budget_profiles: {}
+  context_budget_profiles:
+    # OpenCode adds system/tool context around the user's message.
+    deepseek-chat: 48000
 
 logging:
   level: INFO

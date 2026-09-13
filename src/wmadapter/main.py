@@ -44,6 +44,7 @@ from .providers.contract import (
 )
 from .providers.state import ConversationStateConflict, GatewayState, UnknownResponseId
 from .providers.opencode import translate_request as translate_opencode_request
+from .providers.policy import detect_client_policy
 from .providers.errors import (
     ContextLimitError,
     ProviderInternalError,
@@ -183,7 +184,7 @@ def _provider_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, TimeoutError):
         return HTTPException(504, "provider_timeout")
     if isinstance(exc, ContextLimitError):
-        return HTTPException(400, "context_length_exceeded")
+        return HTTPException(400, f"context_length_exceeded: {exc}")
     if isinstance(exc, ProviderUnavailableError):
         return HTTPException(503, "provider_unavailable")
     if isinstance(exc, UncertainSubmitError):
@@ -228,7 +229,7 @@ async def http_error(request, exc):
         return JSONResponse(_error(message, "provider_error", code), status_code=503)
     kind = "provider_error" if exc.status_code >= 500 else "invalid_request_error"
     code = "model_not_found" if exc.status_code == 404 and "model" in str(exc.detail).lower() else kind
-    if exc.status_code == 400 and str(exc.detail) == "context_length_exceeded":
+    if exc.status_code == 400 and str(exc.detail).startswith("context_length_exceeded"):
         code = "context_length_exceeded"
     elif exc.status_code == 502 and str(exc.detail) == "provider_submission_uncertain":
         code = "provider_submission_uncertain"
@@ -376,7 +377,7 @@ async def models(request: Request):
 
 
 @app.post("/v1/chat/completions")
-async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_tokens: bool = False):
+async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_tokens: bool = True):
     _authorize(request)
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
@@ -394,12 +395,26 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         # OpenClaw may omit both fields. Keep one local provider conversation
         # across stateless turns; explicit identifiers remain isolated.
         conversation_id = "auto:openclaw" if provider.name == "deepseek" else _fallback_conversation_id(payload.messages)
-    client_max_tokens = payload.max_tokens if allow_max_tokens else None
-    provider_payload = (payload.model_copy(update={"max_tokens": None})
-                        if allow_max_tokens else payload)
+    client_max_tokens = None
+    provider_payload = payload
+    if allow_max_tokens:
+        client_max_tokens = payload.max_tokens or payload.max_completion_tokens
+        if client_max_tokens is not None:
+            provider_payload = payload.model_copy(update={
+                "max_tokens": None,
+                "max_completion_tokens": None,
+            })
+    client_hint = " ".join(filter(None, (
+        request.headers.get("user-agent"),
+        request.headers.get("x-client"),
+        request.headers.get("x-client-name"),
+    )))
     inference = ProviderRequest(
         chat=provider_payload, canonical=canonicalize(provider_payload), conversation_id=conversation_id,
         structured_output=structured_output,
+        # Do not infer client policy from ordinary prompt text on the public
+        # route; use explicit client hints or distinctive OpenClaw tools.
+        client_policy=detect_client_policy([], payload.tools, client_hint),
         client_max_tokens=client_max_tokens,
         system_prompt=("" if provider.name == "qwen" else default_system_prompt)
         + (("\n" + _structured_instruction(structured_output)) if structured_output else ""),

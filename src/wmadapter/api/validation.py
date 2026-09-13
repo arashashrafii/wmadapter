@@ -4,6 +4,15 @@ from fastapi import HTTPException
 from ..providers.contract import ChatRequest, normalize_tool_calls
 
 
+_SUPPORTED_CHAT_FIELDS = {
+    'model', 'messages', 'stream', 'stream_options', 'temperature', 'top_p',
+    'max_tokens', 'max_completion_tokens', 'user', 'conversation_id',
+    'previous_response_id', 'tools', 'tool_choice', 'parallel_tool_calls',
+    'response_format', 'stop', 'presence_penalty', 'frequency_penalty',
+    'seed', 'n', 'reasoning_effort',
+}
+
+
 def validate_input_limit(chat: ChatRequest, max_input_chars: int | None) -> None:
     """Reject oversized input; never truncate content to fit a gateway limit."""
     if max_input_chars is None:
@@ -23,6 +32,9 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
     def invalid(message):
         raise HTTPException(400, message)
 
+    unsupported = sorted(set(chat.model_extra or {}) - _SUPPORTED_CHAT_FIELDS)
+    if unsupported:
+        invalid(f'Unsupported Chat Completions field: {unsupported[0]}')
     if not chat.messages:
         invalid('messages must not be empty')
     if chat.max_tokens is not None and chat.max_completion_tokens is not None:
@@ -31,7 +43,7 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
         'temperature', 'top_p', 'max_tokens', 'max_completion_tokens',
         'presence_penalty', 'frequency_penalty', 'seed', 'stop',
     ):
-        if field == 'max_tokens' and allow_max_tokens:
+        if field in {'max_tokens', 'max_completion_tokens'} and allow_max_tokens:
             continue
         if getattr(chat, field, None) is not None:
             invalid(f'Unsupported sampling control: {field}')

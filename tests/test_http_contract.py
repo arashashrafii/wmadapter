@@ -78,6 +78,14 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(body['choices'][0]['finish_reason'], 'stop')
         self.assertIsNone(body['usage'])
 
+    def test_unsupported_chat_fields_are_rejected_with_openai_error_shape(self):
+        response = self.post(logprobs=True)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['type'], 'invalid_request_error')
+        self.assertEqual(response.json()['error']['code'], 'unsupported_feature')
+        self.assertIn('logprobs', response.json()['error']['message'])
+        self.provider.complete.assert_not_called()
+
     def test_usage_is_forwarded_only_from_complete_observed_provider_data(self):
         self.provider.infer = AsyncMock(return_value=ProviderResult(
             content='hello', usage={'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5}
@@ -95,8 +103,7 @@ class HTTPContractTests(unittest.TestCase):
 
     def test_unsupported_sampling_and_stop_controls_are_rejected_before_provider(self):
         for field, value in (
-            ('temperature', 0.2), ('top_p', 0.9), ('max_tokens', 20),
-            ('max_completion_tokens', 20), ('presence_penalty', 0.1),
+            ('temperature', 0.2), ('top_p', 0.9), ('presence_penalty', 0.1),
             ('frequency_penalty', 0.1), ('seed', 7), ('stop', '\\n'),
         ):
             with self.subTest(field=field):
@@ -105,11 +112,17 @@ class HTTPContractTests(unittest.TestCase):
                 self.assertIn('Unsupported sampling control', response.json()['error']['message'])
         self.provider.complete.assert_not_called()
 
-    def test_openclaw_shaped_route_keeps_max_tokens_unsupported(self):
-        response = self.post(max_tokens=32000, user="openclaw-agent")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Unsupported sampling control', response.json()['error']['message'])
-        self.provider.complete.assert_not_called()
+    def test_standard_chat_accepts_client_only_token_budgets(self):
+        self.provider.infer = AsyncMock(return_value=ProviderResult(content='hello'))
+        for field in ('max_tokens', 'max_completion_tokens'):
+            with self.subTest(field=field):
+                response = self.post(**{field: 32000})
+                self.assertEqual(response.status_code, 200)
+                forwarded = self.provider.infer.call_args.args[0]
+                self.assertIsNone(forwarded.chat.max_tokens)
+                self.assertIsNone(forwarded.chat.max_completion_tokens)
+                self.assertEqual(forwarded.client_max_tokens, 32000)
+                self.provider.infer.reset_mock()
 
     def test_sampling_types_ranges_and_conflicts_are_validated(self):
         for body in (
