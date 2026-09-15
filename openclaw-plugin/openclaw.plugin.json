@@ -1,0 +1,10 @@
+{
+  "id": "wmadapter-image",
+  "name": "Wmadapter image generation",
+  "description": "OpenClaw image-generation registration for the Wmadapter gateway.",
+  "version": "0.1.0",
+  "entry": "./index.js",
+  "categories": ["media"],
+  "contracts": { "imageGenerationProviders": ["wmadapter"] },
+  "configSchema": { "type": "object", "additionalProperties": false }
+}
