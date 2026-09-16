@@ -20,14 +20,16 @@ Verified capabilities:
 - `/v1/chat/completions` (ordinary responses and buffered SSE)
 - `/v1/completions` (supported legacy text-completion subset)
 - `/v1/embeddings` (contract validation; vectors are not currently supported)
-- `/v1/images` (contract validation; image generation is not currently supported)
+- `/v1/images` (validated Qwen image generation with base64 artifact serialization when enabled by verified configuration)
+- `/v1/images/edits` (validated contract; image understanding/editing is not currently verified or supported)
 - `/v1/audio/*` and `/v1/realtime` (validated contracts; audio/realtime are not currently supported)
 - `/v1/files` (validated contract; file/PDF handling is not currently supported)
 - `/v1/batches` (validated contract; asynchronous batch processing is not currently supported)
 - OpenAI-compatible chat requests, buffered SSE, model capabilities, and
   preservation of tools and tool results through the provider contract.
-- DeepSeek/Qwen provider routing; Qwen is text-only and DeepSeek image input is
-  not advertised until live model/UI verification establishes observable vision
+- DeepSeek/Qwen provider routing; Qwen image generation is advertised only when
+  the verified configuration flag is enabled. DeepSeek image input is not
+  advertised until live model/UI verification establishes observable vision
   support.
 - Sampling controls are validated; shared Chat Completions and OpenClaw reject
   them, while OpenCode accepts positive `max_tokens` only as a client-requested
@@ -140,6 +142,36 @@ Authentication is browser-only. Web Model Adapter never accepts, stores, or
 automates provider usernames or passwords; only the isolated Chrome profile
 holds browser-managed session state.
 
+## OpenCode and timeout semantics
+
+Timeouts apply to one provider request, not to the whole OpenCode project run.
+An OpenCode tool loop is a sequence of independent streaming
+`/v1/opencode/chat/completions` requests: OpenCode sends a prompt plus the
+conversation/tool history, Web Model Adapter submits that turn to DeepSeek Web,
+waits for the rendered answer, and then returns the answer or tool call. The
+next tool result starts a new request. Therefore a project run with 20 turns can
+take substantially longer than 15 minutes; there is no global project-run
+timeout in Web Model Adapter.
+
+For DeepSeek, `deepseek.timeout_ms` is the base timeout for a single Web Chat
+turn (180 seconds by default). Long OpenCode histories receive an adaptive
+extension: 30 seconds for each additional 8,000 prompt characters after the
+first 12,000 characters, capped at 900,000 ms (15 minutes). For example, an
+87,000-character turn receives approximately 480 seconds. This is an
+observation timeout for the browser-rendered answer; it does not resend a
+message after the send gesture.
+
+The OpenCode streaming route has a separate 900-second watchdog. It bounds how
+long the HTTP request remains open and currently matches the maximum DeepSeek
+turn timeout. If either limit expires after submission, the result is treated
+as uncertain because DeepSeek may still have received or be processing the
+message. The adapter then performs a bounded, read-only reconciliation of the
+same conversation (120 seconds by default). If the late answer appears, it is
+returned to OpenCode and the tool loop can continue. Automatic replay remains
+disabled when reconciliation cannot establish the result, avoiding duplicate
+tool actions. A timeout in one turn does not represent the total time already
+spent on earlier turns.
+
 Canonical environment variables use the `WMADAPTER_*` prefix, including
 `WMADAPTER_CONFIG`, `WMADAPTER_LOGIN`, `WMADAPTER_XVFB`, and `WMADAPTER_URL`.
 
@@ -237,12 +269,14 @@ Supported and verified at the local contract level:
 
 Validated but explicitly unsupported by the current web providers:
 
-- `/v1/embeddings`, `/v1/images`, `/v1/audio/*`, `/v1/realtime`, `/v1/files`,
+- `/v1/embeddings`, `/v1/images/edits`, `/v1/audio/*`, `/v1/realtime`, `/v1/files`, `/v1/videos`,
   and `/v1/batches` return safe `501` capability errors after validation.
 - Custom tools, parallel execution, deterministic sampling/token controls,
   audio/video/file/PDF input, and image input are rejected where applicable.
-  DeepSeek vision and Qwen multimodal support are not claimed without live
-  UI/model evidence.
+  DeepSeek vision and Qwen image input are not claimed without live UI/model
+  evidence. Qwen image generation returns one validated PNG/JPEG/GIF/WebP
+  artifact as `b64_json` when `qwen.image_generation_verified` is enabled;
+  otherwise it returns `image_generation_unverified` and no data.
 
 Deterministic OpenCode/OpenClaw acceptance coverage:
 

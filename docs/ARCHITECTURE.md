@@ -96,9 +96,14 @@ and a specific supplied function are validated; malformed calls and invalid
 JSON arguments are rejected. Responses tool fields remain explicitly
 unsupported, and no tool is executed by the gateway.
 
-The images route validates a non-empty text prompt and model selection but
-returns `501 image_generation_not_supported`; current web providers expose no
-verified image-generation path, and the gateway never fabricates image data.
+The images route validates a single non-empty text prompt and model selection.
+For Qwen, the capability is opt-in through the verified configuration flag;
+the adapter selects the provider-owned image mode, accepts only a provider-owned
+HTTPS artifact, validates MIME/magic bytes and size, and serializes one
+`b64_json` result. Unverified providers return `501
+image_generation_unverified`; provider failures return a safe `502
+image_generation_failed`. No URL is exposed to clients and no artifact is
+fabricated.
 
 Audio speech, transcription, translation, and Realtime routes validate their
 request shapes but return `501` (`audio_not_supported` or
@@ -119,7 +124,9 @@ persistent job store.
 Only providers listed in `providers.enabled` are started at application launch;
 an enabled-provider startup failure leaves the application running with that
 provider not ready while other enabled providers are still attempted. Qwen's
-observable contract is text-only; multimodal support is not advertised.
+observable contract is text-first: Qwen image generation is separately
+capability-gated, while image input and other multimodal features are not
+advertised without their own verified evidence.
 
 No MCP server is needed for this boundary. A client may itself expose MCP
 functions as model tools; Web Model Adapter simply preserves their schema and results.
@@ -129,8 +136,11 @@ Compatibility summary: `/health`, `/ready`, `/props`, `/v1/models`, Chat
 Completions, the documented legacy Completions subset, text-only non-streaming
 Responses, and the OpenCode translation route are implemented. OpenClaw uses
 the standard Chat Completions route and executes returned tools client-side.
-Embeddings, image generation, audio, Realtime, Files/PDFs, and Batches are
-validated surfaces with explicit `501` unsupported responses; they do not
+Embeddings, video generation, audio, Realtime, Files/PDFs, and Batches are
+validated surfaces with explicit `501` unsupported responses; Qwen image
+generation is the exception when verified configuration enables it. The image
+route returns only validated base64 bytes and does not expose provider URLs;
+the other surfaces do not
 create fake output, storage, or asynchronous jobs. Image, video, audio, file,
 and PDF input is rejected when no verified provider capability exists.
 

@@ -29,7 +29,7 @@ def _content_text(content: Any) -> str:
     return str(content)
 
 
-def minimize_tool_schemas(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+def minimize_tool_schemas(tools: list[dict[str, Any]] | None, *, compact_descriptions: bool = False) -> list[dict[str, Any]] | None:
     """Keep only callable function shape; omit non-executable metadata."""
     if not tools:
         return tools
@@ -39,7 +39,12 @@ def minimize_tool_schemas(tools: list[dict[str, Any]] | None) -> list[dict[str, 
         value = {"type": "function", "function": {"name": function.get("name", "")}}
         for key in ("description", "parameters", "strict"):
             if key in function:
-                value["function"][key] = function[key]
+                item = function[key]
+                if key == "description" and compact_descriptions and isinstance(item, str):
+                    item = item[:1200].rstrip()
+                    if len(function[key]) > 1200:
+                        item += " [description compacted]"
+                value["function"][key] = item
         minimized.append(value)
     return minimized
 

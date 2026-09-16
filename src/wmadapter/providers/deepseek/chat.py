@@ -51,6 +51,8 @@ class DeepSeekChat:
         self.page = page
         self.timeout_ms = timeout_ms
         self.submit_state = SubmitState.NOT_SUBMITTED
+        self._previous_response_count = 0
+        self._previous_response_text = ""
 
     async def _first_visible(self, selectors: list[str]):
         return await first_visible(self.page, selectors, "DeepSeek")
@@ -162,6 +164,8 @@ class DeepSeekChat:
         previous_text = ""
         if previous_count:
                     previous_text = await self._response_text(response_locator.last)
+        self._previous_response_count = previous_count
+        self._previous_response_text = previous_text
 
         attachment_directory = tempfile.TemporaryDirectory(prefix="wmadapter-image-") if attachments else None
         try:
@@ -229,3 +233,40 @@ class DeepSeekChat:
         finally:
             if attachment_directory is not None:
                 attachment_directory.cleanup()
+
+    async def recover_response(self, timeout_ms: int = 120000) -> str | None:
+        """Observe an already-submitted turn without sending it again.
+
+        A browser timeout is ambiguous: DeepSeek may still be rendering the
+        answer. Reconcile the same page for a bounded grace period so a late
+        answer can be returned safely. Any closed-page or observation failure
+        returns ``None`` and leaves the caller's uncertain-submit policy intact.
+        """
+        if timeout_ms <= 0 or self.submit_state not in (
+            SubmitState.SUBMITTING, SubmitState.SUBMITTED_UNCERTAIN
+        ):
+            return None
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
+        last_text = ""
+        stable_rounds = 0
+        try:
+            while asyncio.get_running_loop().time() < deadline:
+                blocks = await self._response_locator()
+                block_count = await blocks.count()
+                current_text = await self._response_text(blocks.last)
+                if block_count > self._previous_response_count or (
+                    block_count and current_text != self._previous_response_text
+                ):
+                    if current_text:
+                        if current_text == last_text:
+                            stable_rounds += 1
+                        else:
+                            stable_rounds = 0
+                            last_text = current_text
+                        if stable_rounds >= 5:
+                            self.submit_state = SubmitState.COMPLETED
+                            return current_text
+                await asyncio.sleep(1)
+        except Exception:
+            return None
+        return None

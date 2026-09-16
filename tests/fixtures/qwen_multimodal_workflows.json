@@ -1,0 +1,24 @@
+{
+  "provider": "qwen",
+  "model": "qwen-chat",
+  "verified": {
+    "text": true,
+    "web_search": false,
+    "code_interpreter": false,
+    "artifacts": false,
+    "citations": false,
+    "generated_files": false,
+    "image_generation": true,
+    "image_understanding": false,
+    "image_editing": false,
+    "audio_understanding": false,
+    "speech_input": false,
+    "speech_output": false,
+    "voice_conversation": false,
+    "video_understanding": false,
+    "long_video_understanding": false,
+    "availability_quota_model_region_size_limits": false
+  },
+  "evidence": "No authenticated live media workflow or provider-reported limit evidence was available for this validation run.",
+  "redaction": "No credentials, cookies, account identifiers, uploaded media, provider payloads, executable code, or artifact bytes are stored."
+}

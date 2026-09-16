@@ -20,14 +20,20 @@ deepseek:
   transport: web
   chat_url: https://chat.deepseek.com/
   timeout_ms: 180000
+  # After a post-submit timeout, observe the same conversation without resending.
+  recovery_timeout_ms: 120000
   login_timeout_ms: 30000
   system_prompt: Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required.
 
 qwen:
-  chat_url: https://chat.qwen.ai/
+  chat_url: https://chat.qwen.ai/auth
   headless: false
   auth: google
   profile_dir: ~/.local/share/wmadapter/profiles/qwen
+  models:
+    - qwen-chat
+  # Enable only after the live Qwen image UI/artifact probe succeeds.
+  image_generation_verified: true
 
 providers:
   default: deepseek

@@ -64,6 +64,7 @@ class DeepSeekService(ChatProvider):
             launch_url=self.chat_url,
         )
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
+        self.recovery_timeout_ms = int(deepseek_cfg.get("recovery_timeout_ms", 120000))
         self.login_timeout_ms = int(deepseek_cfg.get("login_timeout_ms", 30000))
         self.restart_retries = int(browser_cfg.get("restart_retries", 1))
         self.last_error: str | None = None
@@ -86,6 +87,19 @@ class DeepSeekService(ChatProvider):
         self._last_probe_at: float | None = None
         self._last_probe_result: str | None = None
         self._initial_start_available = True
+
+    def _request_timeout_ms(self, prompt: str) -> int:
+        """Allow long WebChat turns more render time without unbounded waits.
+
+        DeepSeek Web has no stable, documented UI response SLA. Long OpenCode
+        tool envelopes are especially slow to render, so add 30 seconds per
+        8k prompt characters after the normal 12k baseline, capped at fifteen
+        minutes. This only changes observation time; it never resubmits an
+        uncertain browser submission.
+        """
+        extra_chars = max(0, len(prompt) - 12000)
+        extension = ((extra_chars + 7999) // 8000) * 30000
+        return min(900000, self.timeout_ms + extension)
 
     async def start(self) -> None:
         if self.auth_state == "LOGIN_INTERRUPTED":
@@ -408,8 +422,13 @@ class DeepSeekService(ChatProvider):
                     self._mark_page_active(page)
                     try:
                         await self._authenticate(page)
-                        chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
-                        answer = await chat.send_message(prompt)
+                        chat = DeepSeekChat(page, timeout_ms=self._request_timeout_ms(prompt))
+                        try:
+                            answer = await chat.send_message(prompt)
+                        except UncertainSubmitError:
+                            answer = await chat.recover_response(self.recovery_timeout_ms)
+                            if answer is None:
+                                raise
                     finally:
                         self._mark_page_inactive(page)
                     self.last_error = None
@@ -441,8 +460,13 @@ class DeepSeekService(ChatProvider):
                     self._mark_page_active(page)
                     try:
                         await self._authenticate(page)
-                        chat = DeepSeekChat(page, timeout_ms=self.timeout_ms)
-                        answer = await chat.send_message(prompt, attachments=attachments or [])
+                        chat = DeepSeekChat(page, timeout_ms=self._request_timeout_ms(prompt))
+                        try:
+                            answer = await chat.send_message(prompt, attachments=attachments or [])
+                        except UncertainSubmitError:
+                            answer = await chat.recover_response(self.recovery_timeout_ms)
+                            if answer is None:
+                                raise
                     finally:
                         self._mark_page_inactive(page)
                     self.last_error = None
@@ -476,17 +500,39 @@ class DeepSeekService(ChatProvider):
 
 class QwenService(ChatProvider):
     name = "qwen"
-    model_ids = ("qwen-chat",)
     capabilities = ModelCapabilities(image_input=False)
     protocol = QwenTextAdapter()
+
+    @staticmethod
+    def _is_auth_failure(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return any(marker in message for marker in (
+            "challenge_visible", "sign_in_visible", "unknown_ui", "session_pending",
+            "provider_login_required", "no_visible_editable_chat_input", "account_suspended",
+            "rate_limited", "rate limit", "too many requests", "40029",
+        ))
+
+    @staticmethod
+    def _safe_error(exc: Exception) -> str:
+        """Expose only a stable class marker; never retain provider/UI details."""
+        return f"provider_request_failed:{type(exc).__name__}"
 
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
         qwen_cfg = config.get("qwen", {})
+        self.capabilities = self.capabilities.model_copy(update={
+            "image_generation": bool(qwen_cfg.get("image_generation_verified", False)),
+        })
+        configured_models = tuple(qwen_cfg.get("models") or ("qwen-chat",))
+        if any(not isinstance(model, str) or not model.strip() for model in configured_models):
+            raise ValueError("qwen.models must contain non-empty model IDs")
+        if len(set(configured_models)) != len(configured_models):
+            raise ValueError("qwen.models must not contain duplicate model IDs")
+        self.model_ids = configured_models
         limits = config.get("limits", {})
         self.context_budget_chars = limits.get("context_budget_chars")
         self.context_budget_profiles = limits.get("context_budget_profiles", {})
-        self.chat_url = qwen_cfg.get("chat_url", "https://chat.qwen.ai/")
+        self.chat_url = qwen_cfg.get("chat_url", "https://chat.qwen.ai/auth")
         self.browser = BrowserManager(
             profile_path=qwen_cfg.get("profile_dir", provider_profile_dir("qwen")),
             headless=qwen_cfg.get("headless", False),
@@ -516,6 +562,12 @@ class QwenService(ChatProvider):
         self._last_probe_at: float | None = None
         self._last_probe_result: str | None = None
         self._initial_start_available = True
+
+    async def _bootstrap_page(self, page):
+        """Navigate only a newly-created blank page to Qwen."""
+        if getattr(page, "url", "") in {"", "about:blank"}:
+            await page.goto(self.chat_url, wait_until="domcontentloaded")
+        return page
 
     async def start(self) -> None:
         if self.auth_state == "LOGIN_INTERRUPTED":
@@ -575,12 +627,35 @@ class QwenService(ChatProvider):
                                 return await probe.probe_auth() == CHAT_READY
                             await self.browser.handoff_to_headless(auth_probe=auth_probe)
                         self._set_auth_state("VERIFYING_SESSION", "session_probe")
-                        probe = QwenChat(await self.browser.page())
-                        await probe.probe_auth()
-                        if await probe.probe_auth() == CHAT_READY:
-                            self.ready = True
-                            self._set_auth_state("READY", "authenticated")
-                            return
+                        verification_page = self.browser._primary_pages.get(self.name)
+                        if verification_page is None:
+                            verification_page = next(
+                                (
+                                    candidate
+                                    for (owner, _), candidate in self.browser._page_claims.items()
+                                    if owner == self.name and not candidate.is_closed()
+                                ),
+                                None,
+                            )
+                        if verification_page is None:
+                            verification_page = await self.browser.page()
+                        probe = QwenChat(verification_page)
+                        verified_streak = 0
+                        # A fresh page can briefly report SESSION_PENDING while
+                        # Qwen restores the authenticated composer after the
+                        # browser handoff. Keep probing the same page long
+                        # enough for that state to settle.
+                        for _ in range(6):
+                            state = await probe.probe_auth()
+                            if state == CHAT_READY:
+                                verified_streak += 1
+                                if verified_streak >= 2:
+                                    self.ready = True
+                                    self._set_auth_state("READY", "authenticated")
+                                    return
+                            else:
+                                verified_streak = 0
+                            await asyncio.sleep(2)
                 else:
                     ready_streak = 0
                     if state == SIGN_IN_VISIBLE:
@@ -720,7 +795,7 @@ class QwenService(ChatProvider):
                     f"Qwen page capacity reached ({self.max_pages}); close an idle conversation before opening another"
                 )
             self._track_page(page)
-            return page
+            return await self._bootstrap_page(page)
         page = self._conversation_pages.get(conversation_id)
         if page is not None and not page.is_closed():
             self._track_page(page)
@@ -735,7 +810,7 @@ class QwenService(ChatProvider):
         page = await self.browser.page_for(self.name, conversation_id)
         self._track_page(page)
         self._conversation_pages[conversation_id] = page
-        return page
+        return await self._bootstrap_page(page)
 
     async def _authenticate(self, conversation_id: str | None = None) -> None:
         self._set_auth_state("AUTHENTICATING", "provider_session_check")
@@ -768,20 +843,23 @@ class QwenService(ChatProvider):
                     page = await self._page_for_conversation(conversation_id)
                     self._mark_page_active(page)
                     try:
-                        await self._authenticate(conversation_id)
+                        if not self.ready:
+                            await self._authenticate(conversation_id)
                         page = await self._page_for_conversation(conversation_id)
+                        if getattr(page, "url", "").rstrip("/") == self.chat_url.rstrip("/"):
+                            await page.goto("https://chat.qwen.ai/", wait_until="domcontentloaded")
                         answer = await QwenChat(page, timeout_ms=self.timeout_ms).send_message(prompt)
                     finally:
                         self._mark_page_inactive(page)
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
-                    self.last_error = str(exc)
-                    logger.warning("Qwen submission is uncertain: %s", exc)
+                    self.last_error = self._safe_error(exc)
+                    logger.warning("Qwen submission is uncertain (%s)", type(exc).__name__)
                     raise
                 except Exception as exc:
-                    self.last_error = str(exc)
-                    logger.warning("Qwen request failed on attempt %s/%s: %s", attempt, attempts, exc)
+                    self.last_error = self._safe_error(exc)
+                    logger.warning("Qwen request failed on attempt %s/%s (%s)", attempt, attempts, type(exc).__name__)
                     auth_failure = self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc)
                     if auth_failure:
                         self.ready = False
@@ -793,3 +871,16 @@ class QwenService(ChatProvider):
 
     async def stream_complete(self, prompt: str, conversation_id: str | None = None):
         yield await self.complete(prompt, conversation_id=conversation_id)
+
+    async def generate_image(self, prompt: str, conversation_id: str | None = None) -> tuple[bytes, str]:
+        """Generate one verified Qwen image; capability gating is enforced by the API."""
+        async with self._request_lock:
+            page = await self._page_for_conversation(conversation_id)
+            self._mark_page_active(page)
+            try:
+                if not self.ready:
+                    await self._authenticate(conversation_id)
+                page = await self._page_for_conversation(conversation_id)
+                return await QwenChat(page, timeout_ms=self.timeout_ms).send_image(prompt)
+            finally:
+                self._mark_page_inactive(page)

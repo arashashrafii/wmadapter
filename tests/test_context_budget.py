@@ -71,6 +71,16 @@ class ContextBudgetTests(unittest.IsolatedAsyncioTestCase):
             "name": "lookup", "description": "find", "parameters": {"type": "object"}, "strict": True,
         }}])
 
+    def test_opencode_tool_schema_compaction_preserves_callable_shape(self):
+        tool = {"type": "function", "function": {
+            "name": "write", "description": "x" * 2000,
+            "parameters": {"type": "object"},
+        }}
+        compacted = minimize_tool_schemas([tool], compact_descriptions=True)[0]["function"]
+        self.assertEqual(compacted["name"], "write")
+        self.assertEqual(compacted["parameters"], {"type": "object"})
+        self.assertLessEqual(len(compacted["description"]), 1230)
+
 
 if __name__ == "__main__":
     unittest.main()

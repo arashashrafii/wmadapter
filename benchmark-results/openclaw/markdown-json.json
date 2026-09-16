@@ -1,0 +1,511 @@
+[agent/embedded] embedded run agent end: runId=344d811c-e5dc-4abd-9c17-63231ac75a3f isError=true model=deepseek-chat provider=vllm error=Request exceeds the configured context budget rawError=Request exceeds the configured context budget
+{
+  "payloads": [
+    {
+      "text": "Request exceeds the configured context budget",
+      "mediaUrl": null
+    }
+  ],
+  "meta": {
+    "durationMs": 2010,
+    "agentMeta": {
+      "sessionId": "6ff4cc63-e3cc-40ef-9de4-c2bfde14fabd",
+      "sessionFile": "/home/arash/.openclaw/agents/main/sessions/6ff4cc63-e3cc-40ef-9de4-c2bfde14fabd.jsonl",
+      "provider": "vllm",
+      "model": "deepseek-chat",
+      "contextTokens": 200000,
+      "agentHarnessId": "openclaw",
+      "lastCallUsage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+      },
+      "contextBudgetStatus": {
+        "schemaVersion": 1,
+        "source": "pre-prompt-estimate",
+        "updatedAt": 1789292368520,
+        "provider": "vllm",
+        "model": "deepseek-chat",
+        "route": "fits",
+        "shouldCompact": false,
+        "estimatedPromptTokens": 10306,
+        "contextTokenBudget": 200000,
+        "promptBudgetBeforeReserve": 180000,
+        "reserveTokens": 20000,
+        "effectiveReserveTokens": 20000,
+        "remainingPromptBudgetTokens": 169694,
+        "overflowTokens": 0,
+        "toolResultReducibleChars": 0,
+        "messageCount": 0,
+        "unwindowedMessageCount": 0,
+        "sessionId": "6ff4cc63-e3cc-40ef-9de4-c2bfde14fabd"
+      }
+    },
+    "aborted": false,
+    "systemPromptReport": {
+      "source": "run",
+      "generatedAt": 1789292368384,
+      "sessionId": "6ff4cc63-e3cc-40ef-9de4-c2bfde14fabd",
+      "sessionKey": "agent:main:wmadapter-benchmark",
+      "provider": "vllm",
+      "model": "deepseek-chat",
+      "workspaceDir": "/home/arash/.openclaw/workspace",
+      "bootstrapMaxChars": 12000,
+      "bootstrapTotalMaxChars": 60000,
+      "bootstrapTruncation": {
+        "warningMode": "always",
+        "warningShown": false,
+        "truncatedFiles": 0,
+        "nearLimitFiles": 0,
+        "totalNearLimit": false
+      },
+      "sandbox": {
+        "mode": "off",
+        "sandboxed": false
+      },
+      "systemPrompt": {
+        "chars": 34045,
+        "hash": "00daba481b97868d63ec86f1b192e3f0ff12f4bdb7f852045252fcf9057fed22",
+        "projectContextChars": 13258,
+        "nonProjectContextChars": 20787
+      },
+      "injectedWorkspaceFiles": [
+        {
+          "name": "AGENTS.md",
+          "path": "/home/arash/.openclaw/workspace/AGENTS.md",
+          "missing": false,
+          "rawChars": 8946,
+          "injectedChars": 8946,
+          "truncated": false
+        },
+        {
+          "name": "SOUL.md",
+          "path": "/home/arash/.openclaw/workspace/SOUL.md",
+          "missing": false,
+          "rawChars": 1797,
+          "injectedChars": 1797,
+          "truncated": false
+        },
+        {
+          "name": "TOOLS.md",
+          "path": "/home/arash/.openclaw/workspace/TOOLS.md",
+          "missing": false,
+          "rawChars": 910,
+          "injectedChars": 910,
+          "truncated": false
+        },
+        {
+          "name": "IDENTITY.md",
+          "path": "/home/arash/.openclaw/workspace/IDENTITY.md",
+          "missing": false,
+          "rawChars": 693,
+          "injectedChars": 693,
+          "truncated": false
+        },
+        {
+          "name": "USER.md",
+          "path": "/home/arash/.openclaw/workspace/USER.md",
+          "missing": false,
+          "rawChars": 534,
+          "injectedChars": 534,
+          "truncated": false
+        },
+        {
+          "name": "HEARTBEAT.md",
+          "path": "/home/arash/.openclaw/workspace/HEARTBEAT.md",
+          "missing": false,
+          "rawChars": 151,
+          "injectedChars": 151,
+          "truncated": false
+        }
+      ],
+      "skills": {
+        "promptChars": 10648,
+        "hash": "48b00b451538c26cb2c2e93c7598cdbbcfa1c7e589bd7d93c20d0e6d36065333",
+        "entries": [
+          {
+            "name": "babysit",
+            "blockChars": 229
+          },
+          {
+            "name": "browser-automation",
+            "blockChars": 339
+          },
+          {
+            "name": "canvas",
+            "blockChars": 928
+          },
+          {
+            "name": "create-hook",
+            "blockChars": 275
+          },
+          {
+            "name": "create-rule",
+            "blockChars": 373
+          },
+          {
+            "name": "create-skill",
+            "blockChars": 237
+          },
+          {
+            "name": "diagram-maker",
+            "blockChars": 282
+          },
+          {
+            "name": "env-setup",
+            "blockChars": 307
+          },
+          {
+            "name": "gemini",
+            "blockChars": 267
+          },
+          {
+            "name": "gh-issues",
+            "blockChars": 305
+          },
+          {
+            "name": "github",
+            "blockChars": 276
+          },
+          {
+            "name": "healthcheck",
+            "blockChars": 294
+          },
+          {
+            "name": "loop",
+            "blockChars": 223
+          },
+          {
+            "name": "meme-maker",
+            "blockChars": 267
+          },
+          {
+            "name": "node-connect",
+            "blockChars": 297
+          },
+          {
+            "name": "node-inspect-debugger",
+            "blockChars": 293
+          },
+          {
+            "name": "notion",
+            "blockChars": 288
+          },
+          {
+            "name": "obsidian",
+            "blockChars": 306
+          },
+          {
+            "name": "python-debugpy",
+            "blockChars": 281
+          },
+          {
+            "name": "sdk",
+            "blockChars": 1025
+          },
+          {
+            "name": "session-logs",
+            "blockChars": 269
+          },
+          {
+            "name": "skill-creator",
+            "blockChars": 275
+          },
+          {
+            "name": "spike",
+            "blockChars": 267
+          },
+          {
+            "name": "split-to-prs",
+            "blockChars": 260
+          },
+          {
+            "name": "statusline",
+            "blockChars": 341
+          },
+          {
+            "name": "taskflow",
+            "blockChars": 297
+          },
+          {
+            "name": "taskflow-inbox-triage",
+            "blockChars": 307
+          },
+          {
+            "name": "update-cli-config",
+            "blockChars": 416
+          },
+          {
+            "name": "update-cursor-settings",
+            "blockChars": 386
+          },
+          {
+            "name": "weather",
+            "blockChars": 282
+          }
+        ]
+      },
+      "tools": {
+        "listChars": 0,
+        "schemaChars": 30357,
+        "entries": [
+          {
+            "name": "read",
+            "summaryChars": 298,
+            "summaryHash": "f8a1d7cf1ecfe02b1b5865c93387e6a5891e5079117b4fe18614b6f912521727",
+            "schemaChars": 304,
+            "schemaHash": "134f19bcabe3e29d63c5cebb38f1d2556759fd08adad6bc90a4b4d3cd1fb8441",
+            "propertiesCount": 3
+          },
+          {
+            "name": "edit",
+            "summaryChars": 326,
+            "summaryHash": "c498a85576e187d069e8e8ea4f70f81bddd57829600d385ef61c4359fd634c9e",
+            "schemaChars": 834,
+            "schemaHash": "457e8bb9f800b21be76c4fd8c0e3078bf07ee9bf93ac82f39944c171bd8f6d84",
+            "propertiesCount": 2
+          },
+          {
+            "name": "write",
+            "summaryChars": 127,
+            "summaryHash": "cdb1c46027b22d1f1b923b47bfe297821d9fe589a9f9d92994961948060a4d89",
+            "schemaChars": 225,
+            "schemaHash": "e98a2484f667cf7c22d76ca103bf2022bf9113dc63fe38b899e71c328cb1e833",
+            "propertiesCount": 2
+          },
+          {
+            "name": "exec",
+            "summaryChars": 539,
+            "summaryHash": "4825198988fbfa8ebf5c2a8fbe3946da0be639b1e3b737ceaa4364195bba3f04",
+            "schemaChars": 1187,
+            "schemaHash": "0c03eeccccb7b7e97234d2c8245c6060e2b292588f02455eae20c60b61bb8bb8",
+            "propertiesCount": 12
+          },
+          {
+            "name": "process",
+            "summaryChars": 456,
+            "summaryHash": "55297e65d460e0e1e06e7fad4cedb75ffda8fac9fa8b10aa06d6cead3c5a76ea",
+            "schemaChars": 1074,
+            "schemaHash": "a2d30a25569f409d7e8539844c89a088044535388b24031d014577b96ed27c5c",
+            "propertiesCount": 12
+          },
+          {
+            "name": "nodes",
+            "summaryChars": 143,
+            "summaryHash": "ea1b0a5498ca3c788b26d164245652e1aaa989806e0123715793ab25f9578121",
+            "schemaChars": 1764,
+            "schemaHash": "339c9b744f121ff6a5b2a8a2a7e19286c4114d8dc165a172d3708e993d8b0e55",
+            "propertiesCount": 32
+          },
+          {
+            "name": "cron",
+            "summaryChars": 3610,
+            "summaryHash": "262e6a7b421538d13ca6d79fc14616de3ea0c24fde8b050d6fa1652fe991e5c5",
+            "schemaChars": 7359,
+            "schemaHash": "a486139fdfec0cd8dc5bf05537b39f040400a8da3c04458e43a31faabef8759b",
+            "propertiesCount": 14
+          },
+          {
+            "name": "message",
+            "summaryChars": 71,
+            "summaryHash": "e43fe566f2d93be0d540da64d2a80a6e1a868757fe2fb49fa38e69fccf9fd4b0",
+            "schemaChars": 5929,
+            "schemaHash": "c177a7880d9c6689766f1df3cb74460ed707b4ffb931171f59d8b72dc8c43016",
+            "propertiesCount": 108
+          },
+          {
+            "name": "tts",
+            "summaryChars": 217,
+            "summaryHash": "652c1970c199d82b61061a40be2adddfc7e5634df5d896d776a8a0047c8a6b75",
+            "schemaChars": 264,
+            "schemaHash": "e40695f92ef72d913ee5eb13ef738a15d6f33ae3af3ec609975c45991ef99a78",
+            "propertiesCount": 3
+          },
+          {
+            "name": "gateway",
+            "summaryChars": 377,
+            "summaryHash": "61f7e422103698365bb389c00ae4c46b9630840b16971cd141e91ac8f486029d",
+            "schemaChars": 576,
+            "schemaHash": "6a5b646bf45a2297a8bf9d57815d705fb1770df3ee95d4cf406dda97c6c69143",
+            "propertiesCount": 13
+          },
+          {
+            "name": "agents_list",
+            "summaryChars": 63,
+            "summaryHash": "a7afb8adbaf98833df68160db0677ec2a6bc30b1b96f3592392c9df59e310c65",
+            "schemaChars": 33,
+            "schemaHash": "8243f0af367f188a376f2c17b5eabe872a2f7a979813e0d4e2be6d594c2aa259",
+            "propertiesCount": 0
+          },
+          {
+            "name": "sessions_list",
+            "summaryChars": 135,
+            "summaryHash": "c7e411ae02e3adff5504aaee48f02d262a8abb9152558a3172aae289e3b05faf",
+            "schemaChars": 435,
+            "schemaHash": "c29c6b82c36a2d95a88c8944f129929b2621ee2af6d17b2ab101d4d7e9633d89",
+            "propertiesCount": 9
+          },
+          {
+            "name": "sessions_history",
+            "summaryChars": 117,
+            "summaryHash": "f5d45b76f11a8ac63cc45d456fb6f675f0b1a2e191feb9671924cb5830058f03",
+            "schemaChars": 162,
+            "schemaHash": "ac33b8af2252262afe479236046f5a04bc018f1fcf24d1a8bf32743f0e867598",
+            "propertiesCount": 3
+          },
+          {
+            "name": "sessions_send",
+            "summaryChars": 224,
+            "summaryHash": "56fd935fc97400f8c60b16ae58268660a2d84d8014a60abed515576c45a6f307",
+            "schemaChars": 275,
+            "schemaHash": "f1fbaa412fe6b6aee102234c87c5aa140f39c9086f9bae6e1e9691309a602ffb",
+            "propertiesCount": 5
+          },
+          {
+            "name": "sessions_spawn",
+            "summaryChars": 332,
+            "summaryHash": "5ced554d0c09b9c71fa003139eca7871bbfdc0917a323fc17af2a9faec46c5b7",
+            "schemaChars": 1250,
+            "schemaHash": "2d1670783c8e0c6cae4a1d0a2bdcc059520837661a88702e827905e742a194c9",
+            "propertiesCount": 17
+          },
+          {
+            "name": "sessions_yield",
+            "summaryChars": 79,
+            "summaryHash": "f3782fc41c1522657e1d3494f486a2df998fed38a6b89dcf7f6934fb41424320",
+            "schemaChars": 60,
+            "schemaHash": "b1c4c753820bc3096d85ef7a266a14c9fbe12450536db58076b75bb61d14dbbb",
+            "propertiesCount": 1
+          },
+          {
+            "name": "subagents",
+            "summaryChars": 132,
+            "summaryHash": "1c2ffd38549c0444b118d43736fc4b875ea1aaabc446bbf8bc1fc4ee9180cca4",
+            "schemaChars": 122,
+            "schemaHash": "c4a241d2c3d46ba7985abfce4d3fcd63298ce81f89d49183c8f3d584c48d0c33",
+            "propertiesCount": 2
+          },
+          {
+            "name": "session_status",
+            "summaryChars": 278,
+            "summaryHash": "71177e543dc6235bad4b1a26761995681dcec27ab58dcb4f4f8a7fc9a7b2b5aa",
+            "schemaChars": 89,
+            "schemaHash": "d2995f3d69d126e98ac93eec3c2a9fe5556925bd7979a8e4b6b5a2bf62d329dd",
+            "propertiesCount": 2
+          },
+          {
+            "name": "web_search",
+            "summaryChars": 65,
+            "summaryHash": "b38e9b3c079beaa988d3c576303660b91a55c2e72f56351da04160529173273f",
+            "schemaChars": 991,
+            "schemaHash": "3879e368875d824b14e0e683f81408824e9a2a5850fa2f8514a68caebda54d18",
+            "propertiesCount": 12
+          },
+          {
+            "name": "web_fetch",
+            "summaryChars": 93,
+            "summaryHash": "8875afbb51bd63673e5e6836ca31eeda73914a464862665cd73b346e28d28fd5",
+            "schemaChars": 317,
+            "schemaHash": "d2d8ad58a1b84d849dd16142282aff6c5606f7b0e3d08405e1b740a6a79e6bcc",
+            "propertiesCount": 3
+          },
+          {
+            "name": "browser",
+            "summaryChars": 1537,
+            "summaryHash": "8a4aab8d6a66131c4f065bc2672af8fbcc19555e55fb4fbb1c24261d02e63e28",
+            "schemaChars": 3234,
+            "schemaHash": "e94e5f5a49853203b631c61e3dfcec535edad2b81bc642048de47d44cdf49605",
+            "propertiesCount": 53
+          },
+          {
+            "name": "canvas",
+            "summaryChars": 106,
+            "summaryHash": "6866a14fd046d6ce7e58de5a7f29641cc66acba740b6d337b8cbfadd910b133b",
+            "schemaChars": 724,
+            "schemaHash": "e604498279727976b36e963ca00916f5ad03b7c6118989ea471c8301b38e1c4e",
+            "propertiesCount": 18
+          },
+          {
+            "name": "file_fetch",
+            "summaryChars": 639,
+            "summaryHash": "56074a5ddb12cd8ac5801ad567f86613badf1a3484fbc8a6307033ed90742c44",
+            "schemaChars": 509,
+            "schemaHash": "f6fd9395676c46a5afb3922a55747bc8e684035206c2371f02547b5ecd55c7b5",
+            "propertiesCount": 6
+          },
+          {
+            "name": "dir_list",
+            "summaryChars": 552,
+            "summaryHash": "f1e920ed5a766c45d6b08eb31523acb0730600c6af0ec3dc605ff65f92b72a39",
+            "schemaChars": 624,
+            "schemaHash": "4d67fc8d0a4e67a566e66b9eda440e0f135851e4e4b69758e7f7d5b931ef2bdf",
+            "propertiesCount": 7
+          },
+          {
+            "name": "dir_fetch",
+            "summaryChars": 598,
+            "summaryHash": "3ca6152f2f0b6c6767f1d3679e71e5d4c938b7b9a7c0797334662f433d8e74ac",
+            "schemaChars": 667,
+            "schemaHash": "802e9b241d5a64f0b6a23f18d408bb9d3d95cda540028eb47e4aad2b77ef0687",
+            "propertiesCount": 7
+          },
+          {
+            "name": "file_write",
+            "summaryChars": 550,
+            "summaryHash": "a014f1e3cf507317ef3408d493922ddf306c5705c582f363d3a89627d64c6f34",
+            "schemaChars": 858,
+            "schemaHash": "5c98a3e1f48ca8c20c776d414731bf550274131d5efd2f2f50ff661a7f62a675",
+            "propertiesCount": 7
+          },
+          {
+            "name": "memory_search",
+            "summaryChars": 605,
+            "summaryHash": "0f918d28864d3682ae77731f149273997c84773592a466b18c7cd0121b599a05",
+            "schemaChars": 250,
+            "schemaHash": "088cd2a3d3a47b251429ff7c56844cdedd1c45c3af0fa8bfaf7aa795766976bf",
+            "propertiesCount": 4
+          },
+          {
+            "name": "memory_get",
+            "summaryChars": 239,
+            "summaryHash": "bff1141a3da31a345c550337417efc9ace4da2909004606c727c59ca1a294495",
+            "schemaChars": 241,
+            "schemaHash": "78f5d58460a82f9104deebad2f1873a8cde05d1ce7328b3ba4da6e994653e70a",
+            "propertiesCount": 4
+          }
+        ]
+      },
+      "currentTurn": {
+        "promptChars": 205,
+        "runtimeContextChars": 0
+      }
+    },
+    "finalPromptText": "WM Adapter compatibility check. Return a valid Markdown table with columns Feature, Python, JavaScript, Go and one Typing row. Then return valid nested JSON. Keep the table as real pipe-delimited Markdown.",
+    "replayInvalid": false,
+    "livenessState": "blocked",
+    "stopReason": "error",
+    "executionTrace": {
+      "winnerProvider": "vllm",
+      "winnerModel": "deepseek-chat",
+      "attempts": [
+        {
+          "provider": "vllm",
+          "model": "deepseek-chat",
+          "result": "success",
+          "stage": "assistant"
+        }
+      ],
+      "fallbackUsed": false,
+      "runner": "embedded"
+    },
+    "requestShaping": {
+      "thinking": "off"
+    },
+    "completion": {
+      "stopReason": "error",
+      "finishReason": "error"
+    }
+  }
+}

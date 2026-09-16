@@ -139,7 +139,7 @@ YAML
 provider_url() {
   case "$1" in
     deepseek) printf '%s' 'https://chat.deepseek.com/' ;;
-    qwen) printf '%s' 'https://chat.qwen.ai/' ;;
+    qwen) printf '%s' 'https://chat.qwen.ai/auth' ;;
     *) printf '%s' 'https://chat.deepseek.com/' ;;
   esac
 }
@@ -149,7 +149,7 @@ install_current_os() {
     python3 -m venv .venv
   fi
   .venv/bin/python -m pip install --upgrade pip
-  .venv/bin/pip install -e .
+  .venv/bin/pip install -e '.[test]'
 }
 ensure_browser() {
   BROWSER_EXECUTABLE="$(detect_browser || true)"

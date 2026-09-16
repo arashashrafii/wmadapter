@@ -1,5 +1,7 @@
 """Validate the supported Chat Completions subset before browser side effects."""
 import json
+import base64
+import binascii
 from fastapi import HTTPException
 from ..providers.contract import ChatRequest, normalize_tool_calls
 
@@ -11,6 +13,27 @@ _SUPPORTED_CHAT_FIELDS = {
     'response_format', 'stop', 'presence_penalty', 'frequency_penalty',
     'seed', 'n', 'reasoning_effort',
 }
+
+_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _validate_image_url(url: str, invalid) -> None:
+    """Validate the only upload shape supported by a verified web adapter."""
+    if not url.startswith("data:"):
+        invalid("Image input must be an inline data URL")
+    header, separator, encoded = url.partition(",")
+    mime = header[5:].split(";", 1)[0].lower()
+    if not separator or mime not in _IMAGE_MIME_TYPES or ";base64" not in header.lower():
+        invalid("Image input must be a base64 PNG, JPEG, WebP, or GIF data URL")
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error):
+        invalid("Image input contains invalid base64 data")
+    if not decoded:
+        invalid("Image input must not be empty")
+    if len(decoded) > _MAX_IMAGE_BYTES:
+        invalid("Image input exceeds the 10 MiB limit")
 
 
 def validate_input_limit(chat: ChatRequest, max_input_chars: int | None) -> None:
@@ -49,6 +72,8 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
             invalid(f'Unsupported sampling control: {field}')
     if chat.n != 1:
         invalid('Only n=1 is supported')
+    if chat.reasoning_effort is not None and not provider.capabilities.reasoning:
+        invalid('Reasoning is not currently supported by this provider')
     if chat.parallel_tool_calls:
         invalid('parallel_tool_calls=true is not supported by the web adapter')
     if isinstance(chat.stop, list) and (not chat.stop or not all(isinstance(item, str) and item for item in chat.stop)):
@@ -94,13 +119,14 @@ def validate_chat(chat: ChatRequest, provider, max_input_chars: int | None = Non
                 if part.get('type') == 'image_url':
                     image = part.get('image_url')
                     url = image.get('url') if isinstance(image, dict) else None
-                    if provider.capabilities.image_input and isinstance(url, str) and url.startswith('data:image/'):
+                    if provider.capabilities.image_input and isinstance(url, str):
+                        _validate_image_url(url, invalid)
                         continue
                     if not provider.capabilities.image_input:
                         invalid('Image input is not currently supported by this provider')
-                if part.get('type') in {'video_url', 'input_video', 'video'}:
-                    invalid('Unsupported video input')
-                if part.get('type') in {'file', 'file_url', 'input_file'}:
+                if part.get('type') in {'video_url', 'input_video', 'video', 'audio_url', 'input_audio', 'audio'}:
+                    invalid('Unsupported audio or video input')
+                if part.get('type') in {'file', 'file_url', 'input_file', 'document', 'pdf', 'pdf_url'}:
                     invalid('Unsupported file or PDF input')
                 invalid('Unsupported content part or image URL')
     if pending:

@@ -30,7 +30,7 @@ AUTH_TARGETS = {
         google_selectors=(),
     ),
     "qwen": AuthTarget(
-        url="https://chat.qwen.ai/",
+        url="https://chat.qwen.ai/auth",
         profile_dir=provider_profile_dir("qwen"),
         google_selectors=(
             'button:has-text("Google")',
@@ -57,6 +57,52 @@ async def _click_first_visible(page, selectors: tuple[str, ...], timeout: int = 
         except Exception:
             continue
     return False
+
+
+def _env_credentials(provider: str) -> tuple[str, str] | None:
+    """Read provider credentials from the simple block format used by .env."""
+    path = os.path.join(os.getcwd(), ".env")
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except OSError:
+        return None
+    current = None
+    values: dict[str, str] = {}
+    for raw in lines + ["provider:"]:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("provider:"):
+            if current == provider and values.get("user") and values.get("password"):
+                return values["user"], values["password"]
+            current = line.split(":", 1)[1].strip().lower()
+            values = {}
+            continue
+        if current == provider and ":" in line:
+            key, value = line.split(":", 1)
+            values[key.strip().lower()] = value.strip()
+    return None
+
+
+async def _try_env_login(page, provider: str) -> bool:
+    credentials = _env_credentials(provider)
+    if credentials is None:
+        return False
+    user, password = credentials
+    try:
+        email = page.locator('input[type="email"]').last
+        secret = page.locator('input[type="password"]').last
+        if not await email.is_visible(timeout=1000) or not await secret.is_visible(timeout=1000):
+            return False
+        await email.fill(user)
+        await secret.fill(password)
+        return await _click_first_visible(
+            page,
+            ('button:has-text("Sign in")', 'button:has-text("Log in")'),
+            timeout=1000,
+        )
+    except Exception:
+        return False
 
 
 async def _authenticated(provider: str, page, target: AuthTarget) -> bool:
@@ -297,6 +343,9 @@ async def run_manual_auth(
             if not contexts or not contexts[0].pages:
                 raise RuntimeError("The isolated Google Chrome login window has no page")
             context = contexts[0]
+            for candidate in list(context.pages):
+                if await _try_env_login(candidate, provider):
+                    break
             while asyncio.get_running_loop().time() < deadline:
                 state, page = await _probe_context_auth(provider, context, target)
                 if state == CHAT_READY:

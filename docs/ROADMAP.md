@@ -2,6 +2,12 @@
 
 This roadmap is organized so coding can continue directly from GitHub issues.
 
+Qwen Web capability baseline: see [QWEN_CAPABILITY_MATRIX.md](QWEN_CAPABILITY_MATRIX.md)
+(Issue #62). Qwen capabilities remain separately reported from DeepSeek. The
+recorded QW-M01 evidence enables the opt-in image-generation contract; image
+input, video, audio, and file capabilities remain unadvertised or unsupported
+until independently verified.
+
 ## Milestone 1 — Proof of Concept — COMPLETE
 
 Validated live on Linux with DeepSeek Web. The end-to-end browser flow returned `OK`.

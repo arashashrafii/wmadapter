@@ -22,7 +22,7 @@ jobs:
       - name: Compile source
         run: python -m compileall -q src
       - name: Run Python tests
-        run: PYTHONPATH=src python -m unittest discover -s tests
+        run: PYTHONPATH=src python -m pytest -q tests
       - name: Check shell syntax
         run: bash -n install.sh uninstall.sh tests/test_install.sh tests/test_uninstall.sh
       - name: Run shell tests

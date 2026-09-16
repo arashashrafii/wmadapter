@@ -70,6 +70,24 @@ class HTTPContractTests(unittest.TestCase):
         self.assertIsNone(models[0]['limits']['context_window'])
         self.assertIsNone(models[0]['limits']['max_output_tokens'])
 
+    def test_models_are_available_while_provider_startup_is_pending(self):
+        self.provider.ready = False
+        response = self.client.get('/v1/models')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()['data']), 2)
+
+    def test_http_binds_before_provider_startup_finishes(self):
+        pending_router = ProviderRouter({'deepseek': self.provider}, 'deepseek')
+        async def pending_start():
+            await asyncio.sleep(3600)
+        pending_router.start = AsyncMock(side_effect=pending_start)
+        with patch.object(main, 'router', pending_router):
+            with TestClient(main.app) as client:
+                self.assertEqual(client.get('/v1/models').status_code, 200)
+                readiness = client.get('/ready')
+                self.assertEqual(readiness.status_code, 503)
+                self.assertEqual(readiness.json()['startup']['state'], 'starting')
+
     def test_completion(self):
         response = self.post()
         self.assertEqual(response.status_code, 200)
@@ -174,7 +192,7 @@ class HTTPContractTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 501)
         body = response.json()
-        self.assertEqual(body['error']['code'], 'image_generation_not_supported')
+        self.assertEqual(body['error']['code'], 'image_generation_unverified')
         self.assertNotIn('data', body)
         self.provider.complete.assert_not_called()
 
@@ -188,6 +206,16 @@ class HTTPContractTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.json()['error']['message'])
         self.provider.complete.assert_not_called()
+
+    def test_images_accept_only_one_b64_image(self):
+        for body, message in (
+            ({'model': 'deepseek-chat', 'prompt': 'hello', 'n': 2}, 'Invalid request body'),
+            ({'model': 'deepseek-chat', 'prompt': 'hello', 'response_format': 'url'}, 'Only response_format=b64_json'),
+        ):
+            with self.subTest(body=body):
+                response = self.client.post('/v1/images', json=body)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.json()['error']['message'])
 
     def test_audio_and_realtime_return_explicit_unsupported_errors(self):
         requests = (

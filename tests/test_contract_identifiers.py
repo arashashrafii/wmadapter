@@ -40,6 +40,10 @@ class ContractIdentifierTests(unittest.TestCase):
                 "tool_calls": [],
                 "finish_reason": "stop",
                 "usage": None,
+                "citations": [],
+                "generated_files": [],
+                "artifacts": [],
+                "events": [],
             },
         )
 

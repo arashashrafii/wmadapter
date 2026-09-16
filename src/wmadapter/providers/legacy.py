@@ -22,7 +22,7 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
         name = choice["function"]["name"]
         tools = [tool for tool in tools or [] if tool["function"]["name"] == name]
     adapter = getattr(provider, "protocol", None)
-    tools = minimize_tool_schemas(tools)
+    tools = minimize_tool_schemas(tools, compact_descriptions=request.context_budget_chars is not None)
     required = choice == "required" or isinstance(choice, dict)
 
     def build_prompt(current_messages):
@@ -33,7 +33,9 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
         return value
 
     prompt = build_prompt(messages)
-    budget = provider.context_budget_for(chat.model) if hasattr(provider, "context_budget_for") else None
+    budget = request.context_budget_chars
+    if budget is None:
+        budget = provider.context_budget_for(chat.model) if hasattr(provider, "context_budget_for") else None
     compacted = False
     if budget is not None and len(prompt) > budget:
         try:

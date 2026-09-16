@@ -1,0 +1,9 @@
+{
+  "model": "deepseek-chat",
+  "messages": [
+    {
+      "role": "user",
+      "content": "You are testing WM Adapter as an AI chat backend.\n\nYour job is to exercise different response types and maintain context correctly across multiple turns.\n\nComplete these tasks one by one:\n\n1. Explain how HTTP request/response works in simple language.\n2. Return a Markdown table comparing Python, JavaScript, and Go.\n3. Return valid JSON with nested objects and arrays.\n4. Write a Python function with tests.\n5. Write a TypeScript function with tests.\n6. Generate a complete HTML page containing title, form, table, and JavaScript interaction.\n7. Generate data for a bar chart and explain how to render it.\n8. Produce a long structured answer with headings and code blocks.\n9. Remember information from earlier messages and use it later when I ask.\n10. If tools/functions are available, use them when appropriate.\n\nDo not simplify the response because this is a compatibility test.\n\nAt the end, provide a test summary with Markdown rendering, JSON integrity, code generation, HTML generation, long responses, multi-turn context, tool/function support, and errors observed.\n"
+    }
+  ]
+}

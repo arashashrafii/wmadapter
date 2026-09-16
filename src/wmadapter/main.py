@@ -5,6 +5,8 @@ import logging
 import time
 import uuid
 import asyncio
+import os
+import base64
 from contextlib import suppress
 from contextlib import asynccontextmanager
 from typing import Any
@@ -30,6 +32,8 @@ from .providers.contract import (
     AudioInputRequest,
     AudioSpeechRequest,
     ImagesRequest,
+    ImageEditsRequest,
+    VideosRequest,
     RealtimeRequest,
     FilesRequest,
     BatchCreateRequest,
@@ -72,6 +76,13 @@ logger = logging.getLogger(__name__)
 
 STREAM_HEARTBEAT_SECONDS = 5.0
 STREAM_WATCHDOG_SECONDS = 90.0
+# OpenCode includes its full tool and project envelope on each continuation.
+# Keep the gateway limit aligned with the adapter's supported large context
+# profile so valid multi-step sessions are not rejected by the gateway.
+OPENCODE_CONTEXT_BUDGET_CHARS = int(
+    os.getenv("WMADAPTER_OPENCODE_CONTEXT_BUDGET_CHARS", "1000000")
+)
+OPENCODE_STREAM_WATCHDOG_SECONDS = 900.0
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
 router = ProviderRouter(
     providers,
@@ -82,6 +93,8 @@ router = ProviderRouter(
 default_system_prompt = config["deepseek"].get("system_prompt", "")
 gateway_api_key = config["server"].get("api_key")
 response_state = GatewayState()
+_startup_status = {"state": "starting", "error": None}
+_startup_task: asyncio.Task | None = None
 
 
 def _authorize(request: Request) -> None:
@@ -116,6 +129,15 @@ def _completion_response(request_id: str, model: str, answer: str, tool_calls: l
         ],
         "usage": None,
     }
+
+
+def _attach_provider_metadata(response: dict[str, Any], result: ProviderResult) -> dict[str, Any]:
+    """Expose only validated metadata; never expose provider progress as text."""
+    for field in ("citations", "generated_files", "artifacts", "events"):
+        values = getattr(result, field, None) or []
+        if values:
+            response[field] = [item.model_dump() if hasattr(item, "model_dump") else item for item in values]
+    return response
 
 
 def _legacy_completion_request(payload: LegacyCompletionRequest) -> ChatRequest:
@@ -162,13 +184,31 @@ def _sse(data: dict[str, Any] | str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _startup_task
+
+    async def start_providers() -> None:
+        try:
+            await router.start()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            detail = str(exc).strip() or exc.__class__.__name__
+            _startup_status.update(state="failed", error=detail)
+            logger.warning("Startup provider readiness check failed: %s", detail)
+        else:
+            _startup_status.update(state="ready", error=None)
+
+    _startup_status.update(state="starting", error=None)
+    _startup_task = asyncio.create_task(start_providers(), name="wmadapter-provider-startup")
     try:
-        await router.start()
-    except Exception as exc:
-        logger.warning("Startup provider readiness check failed: %s", exc)
-    yield
-    await router.stop()
-    response_state.clear()
+        yield
+    finally:
+        if _startup_task is not None and not _startup_task.done():
+            _startup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await _startup_task
+        await router.stop()
+        response_state.clear()
 
 
 app = FastAPI(title="Web Model Adapter", description="Web Model Adapter — Web-to-API Gateway for AI Agents", version="0.5.0", lifespan=lifespan)
@@ -220,6 +260,9 @@ async def http_error(request, exc):
             "realtime_not_supported": "Realtime sessions are not supported by the configured web providers",
             "files_not_supported": "File and PDF inputs are not supported by the configured web providers",
             "batches_not_supported": "Batch processing is not supported by the configured web providers",
+            "image_generation_unverified": "Qwen image generation is not enabled from verified configuration",
+            "image_editing_not_supported": "Image editing is not supported by the configured web providers",
+            "video_generation_not_supported": "Video generation is not supported by the configured web providers",
         }
         return JSONResponse(_error(messages.get(code, "Requested capability is not supported by the configured web providers"),
                                    "invalid_request_error", code), status_code=501)
@@ -240,6 +283,8 @@ async def http_error(request, exc):
         code = "provider_submission_uncertain"
     elif exc.status_code == 502 and str(exc.detail) == "provider_internal_error":
         code = "provider_internal_error"
+    elif exc.status_code == 502 and str(exc.detail) == "image_generation_failed":
+        code = "image_generation_failed"
     if exc.status_code == 400 and "unsupported" in str(exc.detail).lower():
         code = "unsupported_feature"
     return JSONResponse(_error(str(exc.detail), kind, code), status_code=exc.status_code)
@@ -260,8 +305,14 @@ async def health():
 async def ready():
     status = await router.status()
     enabled = config["providers"].get("enabled", [config["providers"]["default"]])
-    ready_value = all(status.get(name, {}).get("ready") for name in enabled)
-    payload = {"status": "ready" if ready_value else "not_ready", "providers": redact(status)}
+    ready_value = _startup_status["state"] == "ready" and all(
+        status.get(name, {}).get("ready") for name in enabled
+    )
+    payload = {
+        "status": "ready" if ready_value else "not_ready",
+        "startup": redact(_startup_status),
+        "providers": redact(status),
+    }
     if not ready_value:
         return JSONResponse(payload, status_code=503)
     return payload
@@ -382,7 +433,9 @@ async def models(request: Request):
 
 
 @app.post("/v1/chat/completions")
-async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_tokens: bool = True):
+async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_tokens: bool = True,
+                          context_budget_chars: int | None = None,
+                          watchdog_seconds: float | None = None):
     _authorize(request)
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
     provider = _model_provider(payload.model)
@@ -414,6 +467,7 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         request.headers.get("x-client"),
         request.headers.get("x-client-name"),
     )))
+    is_opencode_request = "opencode" in client_hint.casefold()
     inference = ProviderRequest(
         chat=provider_payload, canonical=canonicalize(provider_payload), conversation_id=conversation_id,
         structured_output=structured_output,
@@ -421,6 +475,8 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         # route; use explicit client hints or distinctive OpenClaw tools.
         client_policy=detect_client_policy([], payload.tools, client_hint),
         client_max_tokens=client_max_tokens,
+        context_budget_chars=(context_budget_chars if context_budget_chars is not None else
+                              (OPENCODE_CONTEXT_BUDGET_CHARS if is_opencode_request else None)),
         system_prompt=("" if provider.name == "qwen" else default_system_prompt)
         + (("\n" + _structured_instruction(structured_output)) if structured_output else ""),
         # The public gateway contract is deliberately independent of the
@@ -443,7 +499,10 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
             yield _sse(chunk({"role": "assistant", "content": ""}))
             inference_task = asyncio.create_task(infer())
             try:
-                deadline = asyncio.get_running_loop().time() + STREAM_WATCHDOG_SECONDS
+                deadline = asyncio.get_running_loop().time() + (
+                    watchdog_seconds if watchdog_seconds is not None else
+                    (OPENCODE_STREAM_WATCHDOG_SECONDS if is_opencode_request else STREAM_WATCHDOG_SECONDS)
+                )
                 while True:
                     remaining = deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
@@ -497,7 +556,9 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         logger.exception("Chat completion failed")
         raise _provider_http_error(exc) from exc
     _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
-    response = _completion_response(request_id, payload.model, result.content or "", result.tool_calls)
+    response = _attach_provider_metadata(
+        _completion_response(request_id, payload.model, result.content or "", result.tool_calls), result
+    )
     response["choices"][0]["finish_reason"] = result.finish_reason
     response["usage"] = _observed_usage(result)
     return response
@@ -564,15 +625,81 @@ async def embeddings(payload: EmbeddingsRequest, request: Request):
 
 @app.post("/v1/images")
 async def images(payload: ImagesRequest, request: Request):
-    """Validate the image-generation contract without fabricating images."""
+    """Generate one verified image through the selected provider."""
     _authorize(request)
     unsupported = sorted(payload.model_extra or {})
     if unsupported:
         raise HTTPException(400, f"Unsupported image generation field: {unsupported[0]}")
+    if payload.response_format != "b64_json":
+        raise HTTPException(400, "Only response_format=b64_json is supported")
     if not isinstance(payload.prompt, str) or not payload.prompt.strip():
         raise HTTPException(400, "Image generation prompt must be a non-empty string")
+    provider = _model_provider(payload.model)
+    if not provider.capabilities.image_generation:
+        raise HTTPException(501, "image_generation_unverified")
+    if not isinstance(provider, QwenService):
+        raise HTTPException(501, "image_generation_not_supported")
+    try:
+        content, mime = await provider.generate_image(payload.prompt.strip())
+    except Exception as exc:
+        logger.warning("Qwen image generation failed: %s", type(exc).__name__)
+        raise HTTPException(502, "image_generation_failed") from exc
+    return {"created": int(time.time()), "data": [{
+        "b64_json": base64.b64encode(content).decode("ascii"),
+        "mime_type": mime,
+    }]}
+
+
+@app.post("/v1/videos")
+async def videos(payload: VideosRequest, request: Request):
+    """Validate video generation without inventing an asynchronous job."""
+    _authorize(request)
+    unsupported = sorted(payload.model_extra or {})
+    if unsupported:
+        raise HTTPException(400, f"Unsupported video generation field: {unsupported[0]}")
+    if not isinstance(payload.prompt, str) or not payload.prompt.strip():
+        raise HTTPException(400, "Video generation prompt must be a non-empty string")
     _model_provider(payload.model)
-    raise HTTPException(501, "image_generation_not_supported")
+    raise HTTPException(501, "video_generation_not_supported")
+
+
+@app.post("/v1/images/edits")
+async def image_edits(payload: ImageEditsRequest, request: Request):
+    """Validate image editing without claiming unverified understanding or edits."""
+    _authorize(request)
+    unsupported = sorted(payload.model_extra or {})
+    if unsupported:
+        raise HTTPException(400, f"Unsupported image editing field: {unsupported[0]}")
+    if not isinstance(payload.image, (str, list, tuple)) or not payload.image:
+        raise HTTPException(400, "Image editing image must be non-empty")
+    if not isinstance(payload.prompt, str) or not payload.prompt.strip():
+        raise HTTPException(400, "Image editing prompt must be a non-empty string")
+    _model_provider(payload.model)
+    raise HTTPException(501, "image_editing_not_supported")
+
+
+@app.get("/v1/videos/{video_id}")
+async def video_status(video_id: str, request: Request):
+    _authorize(request)
+    if not video_id.strip():
+        raise HTTPException(400, "Video id must not be empty")
+    raise HTTPException(501, "video_generation_not_supported")
+
+
+@app.delete("/v1/videos/{video_id}")
+async def delete_video(video_id: str, request: Request):
+    _authorize(request)
+    if not video_id.strip():
+        raise HTTPException(400, "Video id must not be empty")
+    raise HTTPException(501, "video_generation_not_supported")
+
+
+@app.get("/v1/videos/{video_id}/content")
+async def video_content(video_id: str, request: Request):
+    _authorize(request)
+    if not video_id.strip():
+        raise HTTPException(400, "Video id must not be empty")
+    raise HTTPException(501, "video_generation_not_supported")
 
 
 def _unsupported_request_fields(payload: Any, label: str) -> None:
@@ -723,7 +850,9 @@ async def opencode_chat_completion(request: Request):
         payload = translate_opencode_request(await request.json())
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return await chat_completion(payload, request, allow_max_tokens=True)
+    return await chat_completion(payload, request, allow_max_tokens=True,
+                                 context_budget_chars=OPENCODE_CONTEXT_BUDGET_CHARS,
+                                 watchdog_seconds=OPENCODE_STREAM_WATCHDOG_SECONDS)
 
 
 @app.post("/v1/responses")
@@ -791,7 +920,7 @@ async def responses(payload: ResponsesRequest, request: Request):
     response_id = ResponseId(f"resp_{uuid.uuid4().hex}")
     response_state.remember(response_id, conversation_id)
     text = result.content or ""
-    return {
+    return _attach_provider_metadata({
         "id": response_id,
         "object": "response",
         "created_at": int(time.time()),
@@ -806,4 +935,4 @@ async def responses(payload: ResponsesRequest, request: Request):
         }],
         "output_text": text,
         "usage": _observed_usage(result),
-    }
+    }, result)

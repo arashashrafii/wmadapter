@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 from wmadapter.providers.contract import ChatRequest, Message, ModelCapabilities, ProviderRequest, canonicalize
 from wmadapter.service import DeepSeekService, QwenService
 from wmadapter.config import load_config
+from wmadapter.api.validation import validate_chat
 
 TOOLS = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}]
 
@@ -60,6 +61,50 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await provider.complete('old prompt'), 'qwen answer')
         self.assertFalse(provider.capabilities.image_input)
 
+    async def test_qwen_multimodal_parts_are_rejected_before_provider_submission(self):
+        provider = QwenService(load_config('/nonexistent'))
+        for part_type, part in (
+            ('image', {'type': 'image_url', 'image_url': {'url': self.IMAGE_DATA_URL}}),
+            ('video', {'type': 'input_video', 'video': {'data': 'x'}}),
+            ('audio', {'type': 'input_audio', 'input_audio': {'data': 'x', 'format': 'wav'}}),
+            ('file', {'type': 'input_file', 'file': {'filename': 'secret.pdf', 'file_data': 'x'}}),
+            ('pdf', {'type': 'pdf', 'file': {'filename': 'secret.pdf'}}),
+        ):
+            with self.subTest(part_type=part_type):
+                with self.assertRaisesRegex(Exception, 'Unsupported audio or video|not currently supported|Unsupported file or PDF'):
+                    validate_chat(ChatRequest(model='qwen-chat', messages=[Message(role='user', content=[part])]), provider)
+
+    async def test_canonical_request_preserves_parts_without_provider_specific_rewrite(self):
+        content = [
+            {'type': 'text', 'text': 'describe this'},
+            {'type': 'image_url', 'image_url': {'url': self.IMAGE_DATA_URL}},
+        ]
+        request = ChatRequest(messages=[Message(role='user', content=content)])
+        self.assertEqual(canonicalize(request).messages[0].content, content)
+
+    async def test_verified_image_input_rejects_oversized_data_before_submission(self):
+        provider = QwenService(load_config('/nonexistent'))
+        provider.capabilities = ModelCapabilities(image_input=True)
+        oversized = 'data:image/png;base64,' + ('A' * (14 * 1024 * 1024))
+        with self.assertRaisesRegex(Exception, '10 MiB'):
+            validate_chat(ChatRequest(messages=[Message(role='user', content=[
+                {'type': 'image_url', 'image_url': {'url': oversized}}
+            ])]), provider)
+
+    async def test_qwen_error_observability_is_sanitized(self):
+        provider = QwenService(load_config('/nonexistent'))
+        error = RuntimeError('provider response secret.pdf rendered text')
+        self.assertEqual(provider._safe_error(error), 'provider_request_failed:RuntimeError')
+
+    async def test_qwen_model_ids_are_explicit_and_deterministic(self):
+        base = load_config('/nonexistent')
+        base['qwen'] = {'models': ['qwen-text', 'qwen-agent']}
+        provider = QwenService(base)
+        self.assertEqual(provider.model_ids, ('qwen-text', 'qwen-agent'))
+        base['qwen'] = {'models': ['qwen-text', 'qwen-text']}
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            QwenService(base)
+
     async def test_qwen_preserves_authenticated_page(self):
         from unittest.mock import patch
         provider = QwenService(load_config('/nonexistent'))
@@ -69,6 +114,28 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
             await provider._authenticate('session')
         page.goto.assert_not_called()
         self.assertTrue(provider.ready)
+
+    async def test_qwen_probe_rejects_logged_out_composer(self):
+        from wmadapter.providers.qwen.chat import QwenChat
+
+        class Control:
+            async def is_visible(self, timeout=0):
+                return True
+
+            async def inner_text(self):
+                return "Log in"
+
+        class Controls:
+            async def count(self):
+                return 1
+
+            def nth(self, index):
+                return Control()
+
+        page = Mock()
+        page.locator = Mock(return_value=Controls())
+        state = await QwenChat(page).probe_auth()
+        self.assertEqual(state, "SIGN_IN_VISIBLE")
 
     async def test_deepseek_image_dispatch(self):
         provider = DeepSeekService(load_config('/nonexistent'))
@@ -142,6 +209,29 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
                 await chat.send_message('hi')
             self.assertEqual(chat.submit_state, SubmitState.SUBMITTED_UNCERTAIN)
 
+    async def test_deepseek_reconciles_late_response_without_resubmitting(self):
+        from unittest.mock import patch, Mock
+        from wmadapter.providers.deepseek.chat import DeepSeekChat
+        from wmadapter.providers.submit import SubmitState
+
+        chat = DeepSeekChat(AsyncMock())
+        chat.submit_state = SubmitState.SUBMITTED_UNCERTAIN
+        chat._previous_response_count = 0
+        chat._previous_response_text = ''
+        blocks = AsyncMock()
+        blocks.count.return_value = 1
+        chat._response_locator = AsyncMock(return_value=blocks)
+        chat._response_text = AsyncMock(return_value='late answer')
+        clock = Mock()
+        clock.time.side_effect = [0, 0, 0, 0, 0, 0, 0]
+        with patch('wmadapter.providers.deepseek.chat.asyncio.get_running_loop', return_value=clock), \
+             patch('wmadapter.providers.deepseek.chat.asyncio.sleep', new=AsyncMock()):
+            answer = await chat.recover_response(1000)
+
+        self.assertEqual(answer, 'late answer')
+        self.assertEqual(chat.submit_state, SubmitState.COMPLETED)
+        chat._response_locator.assert_awaited()
+
     async def test_qwen_service_does_not_retry_uncertain_submission(self):
         from unittest.mock import patch, AsyncMock
         from wmadapter.providers.qwen.chat import QwenChat
@@ -177,3 +267,10 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
                 await provider.complete_with_attachments('hello', attachments=['data:image/png;base64,aA=='])
         chat.send_message.assert_awaited_once_with('hello', attachments=['data:image/png;base64,aA=='])
         provider.browser.restart.assert_not_awaited()
+
+    def test_deepseek_timeout_scales_for_long_opencode_prompts(self):
+        from wmadapter.service import DeepSeekService
+        provider = DeepSeekService(load_config('/nonexistent'))
+        self.assertEqual(provider._request_timeout_ms('x' * 12000), provider.timeout_ms)
+        self.assertGreater(provider._request_timeout_ms('x' * 45000), provider.timeout_ms)
+        self.assertLessEqual(provider._request_timeout_ms('x' * 1_000_000), 900000)

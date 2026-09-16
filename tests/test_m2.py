@@ -57,7 +57,7 @@ class Milestone2Tests(unittest.TestCase):
         deepseek.start = AsyncMock(side_effect=RuntimeError("provider detail"))
         qwen.start = AsyncMock()
         router = ProviderRouter({"deepseek": deepseek, "qwen": qwen}, "deepseek", ["deepseek", "qwen"])
-        with self.assertRaisesRegex(RuntimeError, "Enabled provider startup failed"):
+        with self.assertRaisesRegex(RuntimeError, "Enabled provider startup failed .*retry after fixing configuration"):
             asyncio.run(router.start())
         qwen.start.assert_awaited_once()
         self.assertEqual(deepseek.last_error, "provider_startup_failed")
@@ -384,6 +384,36 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(probe.probe_auth.await_count, 2)
         self.assertTrue(service.ready)
 
+    def test_qwen_bootstraps_blank_page_to_chat_url(self):
+        service = QwenService(load_config())
+        page = Mock(url="about:blank")
+        page.is_closed.return_value = False
+        page.goto = AsyncMock()
+        service.browser.page_for = AsyncMock(return_value=page)
+
+        self.assertIs(asyncio.run(service._page_for_conversation(None)), page)
+        page.goto.assert_awaited_once_with(service.chat_url, wait_until="domcontentloaded")
+
+    def test_qwen_does_not_reload_existing_page(self):
+        service = QwenService(load_config())
+        page = Mock(url="https://chat.qwen.ai/c/existing")
+        page.is_closed.return_value = False
+        page.goto = AsyncMock()
+        service.browser.page_for = AsyncMock(return_value=page)
+
+        self.assertIs(asyncio.run(service._page_for_conversation(None)), page)
+        page.goto.assert_not_awaited()
+
+    def test_qwen_bootstraps_new_conversation_page(self):
+        service = QwenService(load_config())
+        page = Mock(url="")
+        page.is_closed.return_value = False
+        page.goto = AsyncMock()
+        service.browser.page_for = AsyncMock(return_value=page)
+
+        self.assertIs(asyncio.run(service._page_for_conversation("new")), page)
+        page.goto.assert_awaited_once_with(service.chat_url, wait_until="domcontentloaded")
+
     def test_closed_login_page_stops_auth_watcher(self):
         page = Mock()
         page.is_closed.return_value = True
@@ -443,7 +473,7 @@ class Milestone2Tests(unittest.TestCase):
         disconnected = Mock()
         page = Mock(url="https://chat.qwen.ai/chat/secondary")
         manager = BrowserManager(
-            launch_url="https://chat.qwen.ai/",
+            launch_url="https://chat.qwen.ai/auth",
             on_disconnect=disconnected,
         )
         manager._live = True
@@ -992,7 +1022,7 @@ class Milestone2Tests(unittest.TestCase):
 
     def test_manual_auth_targets_include_qwen_google(self):
         target = AUTH_TARGETS["qwen"]
-        self.assertEqual(target.url, "https://chat.qwen.ai/")
+        self.assertEqual(target.url, "https://chat.qwen.ai/auth")
         self.assertTrue(any("Google" in selector for selector in target.google_selectors))
 
     def test_provider_router_dispatches_prefixed_model(self):
@@ -1386,7 +1416,9 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
     async def test_xvfb_handoff_probes_current_page_without_true_headless_relaunch(self):
         page = Mock(url="https://chat.deepseek.com/")
         page.is_closed.return_value = False
-        context = Mock(pages=[page], browser=None)
+        oauth_page = Mock(url="https://accounts.google.com/")
+        oauth_page.is_closed.return_value = False
+        context = Mock(pages=[oauth_page, page], browser=None)
         context.close = AsyncMock()
         chromium = Mock()
         chromium.launch_persistent_context = AsyncMock(return_value=context)
@@ -1403,6 +1435,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
                 launch_url="https://chat.deepseek.com/",
             )
             await manager.start()
+            manager._page_claims[("deepseek", "login")] = page
             result = await manager.handoff_to_headless(auth_probe=auth_probe)
 
         self.assertIs(result, context)
@@ -1618,7 +1651,7 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
     async def test_cdp_page_selection_is_provider_aware_and_order_independent(self):
         unrelated = Mock(url="https://example.com", pages=[])
         deepseek_page = Mock(url="https://chat.deepseek.com/", pages=[])
-        qwen_page = Mock(url="https://chat.qwen.ai/", pages=[])
+        qwen_page = Mock(url="https://chat.qwen.ai/auth", pages=[])
         for page in (unrelated, deepseek_page, qwen_page):
             page.is_closed.return_value = False
         context = Mock(pages=[unrelated, qwen_page, deepseek_page])

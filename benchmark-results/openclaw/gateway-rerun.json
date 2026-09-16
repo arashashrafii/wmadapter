@@ -1,0 +1,1 @@
+GatewayClientRequestError: Model override "vllm/deepseek-chat" is not allowed for agent "main" by agents.defaults.modelPolicy.allow. Add "vllm/deepseek-chat" or "vllm/*" to agents.defaults.modelPolicy.allow, or remove/empty the list to allow any model.

@@ -1,0 +1,319 @@
+{
+  "runId": "2a3f5073-e55b-4fb3-87f2-3abf3416a0f5",
+  "status": "ok",
+  "summary": "completed",
+  "result": {
+    "payloads": [
+      {
+        "text": "| Feature | Python | JavaScript | Go |\n| --- | --- | --- | --- |\n| Typing | Dynamic, optional type hints (PEP 484) | Dynamic, optional TypeScript | Static, structural interfaces |\n```json\n{\n  \"features\": [\n    {\n      \"feature\": \"Typing\",\n      \"python\": \"Dynamic, optional type hints (PEP 484)\",\n      \"javascript\": \"Dynamic, optional TypeScript\",\n      \"go\": \"Static, structural interfaces\"\n    }\n  ],\n  \"meta\": {\n    \"columns\": [\"Feature\", \"Python\", \"JavaScript\", \"Go\"],\n    \"rows\": 1\n  }\n}\n```",
+        "mediaUrl": null
+      }
+    ],
+    "meta": {
+      "durationMs": 9792,
+      "agentMeta": {
+        "sessionId": "2103b596-919f-48d5-814a-6b6e92ef404d",
+        "sessionFile": "agent:main:wmadapter-rerun-gateway3",
+        "provider": "wmadapter",
+        "model": "deepseek-chat",
+        "contextTokens": 1000000,
+        "contextTokensSource": "resolved",
+        "agentHarnessId": "openclaw",
+        "credentialSource": {
+          "kind": "direct",
+          "evidence": "provider-config",
+          "authorization": "declared"
+        },
+        "contextBudgetStatus": {
+          "schemaVersion": 1,
+          "source": "pre-prompt-estimate",
+          "updatedAt": 1789292424444,
+          "provider": "wmadapter",
+          "model": "deepseek-chat",
+          "route": "fits",
+          "shouldCompact": false,
+          "estimatedPromptTokens": 5999,
+          "contextTokenBudget": 1000000,
+          "promptBudgetBeforeReserve": 980000,
+          "reserveTokens": 20000,
+          "effectiveReserveTokens": 20000,
+          "remainingPromptBudgetTokens": 974001,
+          "overflowTokens": 0,
+          "toolResultReducibleChars": 0,
+          "messageCount": 0,
+          "unwindowedMessageCount": 0,
+          "sessionId": "2103b596-919f-48d5-814a-6b6e92ef404d"
+        },
+        "codeModeEngaged": false,
+        "assistantTurns": 1,
+        "terminalReceipt": {
+          "runId": "2a3f5073-e55b-4fb3-87f2-3abf3416a0f5",
+          "sessionId": "2103b596-919f-48d5-814a-6b6e92ef404d",
+          "turnId": "2a3f5073-e55b-4fb3-87f2-3abf3416a0f5",
+          "requested": {
+            "provider": "wmadapter",
+            "model": "deepseek-chat"
+          },
+          "effective": {
+            "provider": "wmadapter",
+            "model": "deepseek-chat",
+            "responseModel": "deepseek-chat"
+          },
+          "successfulToolNames": [],
+          "rerouted": false
+        }
+      },
+      "aborted": false,
+      "systemPromptReport": {
+        "source": "run",
+        "generatedAt": 1789292424395,
+        "sessionId": "2103b596-919f-48d5-814a-6b6e92ef404d",
+        "sessionKey": "agent:main:wmadapter-rerun-gateway3",
+        "provider": "wmadapter",
+        "model": "deepseek-chat",
+        "workspaceDir": "/home/arash/.openclaw/workspace",
+        "bootstrapMaxChars": 20000,
+        "bootstrapTotalMaxChars": 60000,
+        "bootstrapTruncation": {
+          "warningMode": "always",
+          "warningShown": false,
+          "truncatedFiles": 0,
+          "nearLimitFiles": 0,
+          "totalNearLimit": false
+        },
+        "sandbox": {
+          "mode": "off",
+          "sandboxed": false
+        },
+        "systemPrompt": {
+          "chars": 19740,
+          "hash": "3c318ebcb5ca962c6d6aee6db91bfff26a5ec9395c1c42eeb73344bafb8d2d17",
+          "projectContextChars": 12384,
+          "nonProjectContextChars": 7356
+        },
+        "injectedWorkspaceFiles": [
+          {
+            "name": "AGENTS.md",
+            "path": "/home/arash/.openclaw/workspace/AGENTS.md",
+            "missing": false,
+            "rawChars": 8946,
+            "injectedChars": 8946,
+            "truncated": false
+          },
+          {
+            "name": "SOUL.md",
+            "path": "/home/arash/.openclaw/workspace/SOUL.md",
+            "missing": false,
+            "rawChars": 1797,
+            "injectedChars": 1797,
+            "truncated": false
+          },
+          {
+            "name": "IDENTITY.md",
+            "path": "/home/arash/.openclaw/workspace/IDENTITY.md",
+            "missing": false,
+            "rawChars": 693,
+            "injectedChars": 693,
+            "truncated": false
+          },
+          {
+            "name": "USER.md",
+            "path": "/home/arash/.openclaw/workspace/USER.md",
+            "missing": false,
+            "rawChars": 534,
+            "injectedChars": 534,
+            "truncated": false
+          }
+        ],
+        "skills": {
+          "promptChars": 12100,
+          "hash": "5804f77200e2538e3dc74c4324975cb73f07b3f6a6a1cfa70e8a33a9200b834d",
+          "entries": [
+            {
+              "name": "add-model-provider",
+              "blockChars": 319
+            },
+            {
+              "name": "babysit",
+              "blockChars": 229
+            },
+            {
+              "name": "browser-automation",
+              "blockChars": 324
+            },
+            {
+              "name": "canvas",
+              "blockChars": 928
+            },
+            {
+              "name": "cloud-image-bake",
+              "blockChars": 305
+            },
+            {
+              "name": "configure-channel",
+              "blockChars": 307
+            },
+            {
+              "name": "control-ui",
+              "blockChars": 358
+            },
+            {
+              "name": "create-hook",
+              "blockChars": 275
+            },
+            {
+              "name": "create-rule",
+              "blockChars": 373
+            },
+            {
+              "name": "create-skill",
+              "blockChars": 237
+            },
+            {
+              "name": "diagnose-gateway",
+              "blockChars": 299
+            },
+            {
+              "name": "diagram-maker",
+              "blockChars": 284
+            },
+            {
+              "name": "env-setup",
+              "blockChars": 307
+            },
+            {
+              "name": "gemini",
+              "blockChars": 269
+            },
+            {
+              "name": "gh-issues",
+              "blockChars": 307
+            },
+            {
+              "name": "github",
+              "blockChars": 278
+            },
+            {
+              "name": "healthcheck",
+              "blockChars": 296
+            },
+            {
+              "name": "loop",
+              "blockChars": 223
+            },
+            {
+              "name": "meme-maker",
+              "blockChars": 269
+            },
+            {
+              "name": "node-connect",
+              "blockChars": 353
+            },
+            {
+              "name": "node-inspect-debugger",
+              "blockChars": 295
+            },
+            {
+              "name": "notion",
+              "blockChars": 290
+            },
+            {
+              "name": "obsidian",
+              "blockChars": 308
+            },
+            {
+              "name": "python-debugpy",
+              "blockChars": 283
+            },
+            {
+              "name": "sdk",
+              "blockChars": 1025
+            },
+            {
+              "name": "skill-creator",
+              "blockChars": 302
+            },
+            {
+              "name": "spike",
+              "blockChars": 269
+            },
+            {
+              "name": "split-to-prs",
+              "blockChars": 260
+            },
+            {
+              "name": "statusline",
+              "blockChars": 341
+            },
+            {
+              "name": "taskflow",
+              "blockChars": 299
+            },
+            {
+              "name": "taskflow-inbox-triage",
+              "blockChars": 309
+            },
+            {
+              "name": "update-cli-config",
+              "blockChars": 416
+            },
+            {
+              "name": "update-cursor-settings",
+              "blockChars": 386
+            },
+            {
+              "name": "weather",
+              "blockChars": 307
+            }
+          ]
+        },
+        "tools": {
+          "listChars": 0,
+          "schemaChars": 1082,
+          "entries": [
+            {
+              "name": "exec",
+              "summaryChars": 163,
+              "summaryHash": "cbfa28b6aeb92a26522c31765f988175cda712374e8c79fdbd784fb593e0c570",
+              "schemaChars": 1082,
+              "schemaHash": "dc81c5a2bfd9c8675a4d4e5557bf9d2db3cb8bd1f21cc312f712f3c532789eab",
+              "propertiesCount": 10
+            }
+          ]
+        },
+        "currentTurn": {
+          "promptChars": 127,
+          "runtimeContextChars": 0,
+          "modelOnlyPromptChars": 0
+        }
+      },
+      "finalPromptText": "Return one valid Markdown table with columns Feature, Python, JavaScript, Go and one Typing row. Then return valid nested JSON.",
+      "finalAssistantVisibleText": "| Feature | Python | JavaScript | Go |\n| --- | --- | --- | --- |\n| Typing | Dynamic, optional type hints (PEP 484) | Dynamic, optional TypeScript | Static, structural interfaces |\n```json\n{\n  \"features\": [\n    {\n      \"feature\": \"Typing\",\n      \"python\": \"Dynamic, optional type hints (PEP 484)\",\n      \"javascript\": \"Dynamic, optional TypeScript\",\n      \"go\": \"Static, structural interfaces\"\n    }\n  ],\n  \"meta\": {\n    \"columns\": [\"Feature\", \"Python\", \"JavaScript\", \"Go\"],\n    \"rows\": 1\n  }\n}\n```",
+      "finalAssistantRawText": "| Feature | Python | JavaScript | Go |\n| --- | --- | --- | --- |\n| Typing | Dynamic, optional type hints (PEP 484) | Dynamic, optional TypeScript | Static, structural interfaces |\n```json\n{\n  \"features\": [\n    {\n      \"feature\": \"Typing\",\n      \"python\": \"Dynamic, optional type hints (PEP 484)\",\n      \"javascript\": \"Dynamic, optional TypeScript\",\n      \"go\": \"Static, structural interfaces\"\n    }\n  ],\n  \"meta\": {\n    \"columns\": [\"Feature\", \"Python\", \"JavaScript\", \"Go\"],\n    \"rows\": 1\n  }\n}\n```",
+      "replayInvalid": false,
+      "livenessState": "working",
+      "stopReason": "stop",
+      "executionTrace": {
+        "winnerProvider": "wmadapter",
+        "winnerModel": "deepseek-chat",
+        "attempts": [
+          {
+            "provider": "wmadapter",
+            "model": "deepseek-chat",
+            "result": "success",
+            "stage": "assistant"
+          }
+        ],
+        "fallbackUsed": false,
+        "runner": "embedded"
+      },
+      "requestShaping": {
+        "thinking": "off"
+      },
+      "completion": {
+        "stopReason": "stop",
+        "finishReason": "stop"
+      }
+    }
+  }
+}

@@ -37,7 +37,8 @@ class ProviderRouter:
     def resolve_model(self, model: str) -> ChatProvider:
         """Strict public model resolution; provider_for_model is legacy."""
         plain = model.split(":", 1)[-1]
-        for provider in self.providers.values():
+        for provider_name in self.enabled_providers:
+            provider = self.providers[provider_name]
             if plain in getattr(provider, "model_ids", ()) and self.model_enabled(plain):
                 return provider
         raise RuntimeError(f"Unknown model {model!r}")
@@ -51,16 +52,22 @@ class ProviderRouter:
 
     async def start(self) -> None:
         failures = []
+        errors = {}
         for name in self.enabled_providers:
             provider = self.providers[name]
             try:
                 await provider.start()
-            except Exception:
+            except Exception as exc:
                 provider.ready = False
                 provider.last_error = "provider_startup_failed"
                 failures.append(name)
+                errors[name] = str(exc).strip() or exc.__class__.__name__
         if failures:
-            raise RuntimeError("Enabled provider startup failed")
+            details = ", ".join(
+                f"{name}: {errors[name]}"
+                for name in failures
+            )
+            raise RuntimeError(f"Enabled provider startup failed ({details}); retry after fixing configuration")
 
     async def stop(self) -> None:
         for name in self.enabled_providers:

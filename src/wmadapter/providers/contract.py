@@ -214,6 +214,67 @@ class CanonicalToolResult(BaseModel):
     content: Any = ""
 
 
+class ProviderCitation(BaseModel):
+    """Safe citation metadata; the gateway never fetches or trusts its content."""
+
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, max_length=4096)
+    title: str | None = Field(default=None, max_length=512)
+    snippet: str | None = Field(default=None, max_length=4000)
+
+    @model_validator(mode="after")
+    def https_only(self):
+        if not self.url.startswith("https://"):
+            raise ValueError("Citations must use HTTPS")
+        return self
+
+
+class GeneratedFile(BaseModel):
+    """Metadata-only file reference; bytes are never executed or provider-fetched."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=256)
+    filename: str | None = Field(default=None, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=127)
+    size_bytes: int | None = Field(default=None, ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+    download_url: str | None = Field(default=None, max_length=4096)
+
+    @model_validator(mode="after")
+    def safe_download_url(self):
+        if self.download_url is not None and not self.download_url.startswith("https://"):
+            raise ValueError("Generated file references must use HTTPS")
+        return self
+
+
+class ProviderArtifact(BaseModel):
+    """Metadata-only artifact reference; preview/update/export remain unsupported."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=256)
+    kind: Literal["html", "svg", "document", "table", "chart", "unknown"] = "unknown"
+    title: str | None = Field(default=None, max_length=512)
+    mime_type: str | None = Field(default=None, max_length=127)
+    size_bytes: int | None = Field(default=None, ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+    preview_url: str | None = Field(default=None, max_length=4096)
+
+    @model_validator(mode="after")
+    def safe_preview_url(self):
+        if self.preview_url is not None and not self.preview_url.startswith("https://"):
+            raise ValueError("Artifact references must use HTTPS")
+        return self
+
+
+class ProviderEvent(BaseModel):
+    """Redacted lifecycle metadata; event text is not a transcript or executable code."""
+
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["search", "extraction", "code_interpreter", "artifact", "file", "progress"]
+    status: Literal["started", "in_progress", "completed", "failed", "unsupported"]
+    detail: str | None = Field(default=None, max_length=512)
+
+
 def normalize_tool_calls(calls: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Validate and normalize calls while preserving their declared order."""
     normalized: list[dict[str, Any]] = []
@@ -362,10 +423,33 @@ class EmbeddingsRequest(BaseModel):
 
 
 class ImagesRequest(BaseModel):
-    """OpenAI-compatible image generation shape, validated but not implemented."""
+    """Supported OpenAI image-generation subset for verified Qwen Web."""
     model_config = ConfigDict(extra="allow")
-    model: str = "deepseek-chat"
+    model: str = "qwen-chat"
     prompt: Any
+    n: int = Field(default=1, ge=1, le=1)
+    response_format: str = "b64_json"
+
+
+class ImageEditsRequest(BaseModel):
+    """Validated image-editing shape; no verified Qwen edit flow is exposed."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "qwen-chat"
+    image: Any
+    prompt: Any
+    mask: Any = None
+    n: int = Field(default=1, ge=1, le=1)
+    response_format: str = "b64_json"
+
+
+class VideosRequest(BaseModel):
+    """Validated video-generation shape; no provider job is currently exposed."""
+    model_config = ConfigDict(extra="allow")
+    model: str = "qwen-chat"
+    prompt: Any
+    seconds: str | int | None = None
+    size: str | None = None
+    input_reference: Any = None
 
 
 class AudioSpeechRequest(BaseModel):
@@ -417,6 +501,13 @@ class ModelCapabilities(BaseModel):
     image_input: bool = False
     embeddings: bool = False
     image_generation: bool = False
+    web_search: bool = False
+    code_interpreter: bool = False
+    artifacts: bool = False
+    citations: bool = False
+    generated_files: bool = False
+    image_editing: bool = False
+    video_generation: bool = False
     audio_input: bool = False
     audio_output: bool = False
     realtime: bool = False
@@ -444,6 +535,9 @@ class ProviderRequest(BaseModel):
     client_policy: ClientPolicy = ClientPolicy.GENERIC
     # OpenCode-only client budget; never included in the provider chat payload.
     client_max_tokens: int | None = None
+    # Internal routing hint for clients whose system/tool envelope is larger
+    # than the ordinary chat budget. Never forwarded to the web provider.
+    context_budget_chars: int | None = None
 
 
 class ProviderResult(BaseModel):
@@ -453,6 +547,10 @@ class ProviderResult(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     finish_reason: Literal["stop", "tool_calls", "length", "content_filter"] = "stop"
     usage: dict[str, int] | None = None
+    citations: list[ProviderCitation] = Field(default_factory=list)
+    generated_files: list[GeneratedFile] = Field(default_factory=list)
+    artifacts: list[ProviderArtifact] = Field(default_factory=list)
+    events: list[ProviderEvent] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_finish_semantics(self):
@@ -460,4 +558,11 @@ class ProviderResult(BaseModel):
             raise ValueError("tool_calls require finish_reason=tool_calls")
         if self.finish_reason == "tool_calls" and not self.tool_calls:
             raise ValueError("finish_reason=tool_calls requires tool_calls")
+        return self
+
+    @model_validator(mode="after")
+    def validate_safe_metadata(self):
+        # These fields are intentionally data-only. Provider adapters may
+        # populate them after independently validating provider-owned URLs;
+        # the gateway never downloads, renders, or executes their contents.
         return self

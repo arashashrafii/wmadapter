@@ -82,6 +82,35 @@ class OpenCodeChannelTests(unittest.TestCase):
         self.assertIsNone(forwarded.canonical.max_tokens)
         self.assertEqual(forwarded.client_max_tokens, 32000)
 
+    def test_opencode_gets_a_large_multi_step_context_budget(self):
+        response = self.client.post("/v1/opencode/chat/completions", json=self.request())
+
+        self.assertEqual(response.status_code, 200)
+        forwarded = self.provider.infer.call_args.args[0]
+        self.assertEqual(forwarded.context_budget_chars, main.OPENCODE_CONTEXT_BUDGET_CHARS)
+        self.assertGreaterEqual(main.OPENCODE_CONTEXT_BUDGET_CHARS, 1_024)
+
+    def test_generic_route_detects_opencode_client(self):
+        response = self.client.post(
+            "/v1/chat/completions",
+            json=self.request(),
+            headers={"user-agent": "OpenCode/1.18.30"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        forwarded = self.provider.infer.call_args.args[0]
+        self.assertEqual(forwarded.context_budget_chars, main.OPENCODE_CONTEXT_BUDGET_CHARS)
+
+    def test_generic_route_without_opencode_identity_keeps_default_budget(self):
+        response = self.client.post("/v1/chat/completions", json=self.request())
+
+        self.assertEqual(response.status_code, 200)
+        forwarded = self.provider.infer.call_args.args[0]
+        self.assertIsNone(forwarded.context_budget_chars)
+
+    def test_opencode_uses_a_long_watchdog_for_web_generation(self):
+        self.assertGreater(main.OPENCODE_STREAM_WATCHDOG_SECONDS, main.STREAM_WATCHDOG_SECONDS)
+
     def test_openclaw_hint_selects_openclaw_policy_on_shared_route(self):
         response = self.client.post(
             "/v1/chat/completions",

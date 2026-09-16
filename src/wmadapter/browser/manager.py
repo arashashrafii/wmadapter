@@ -498,7 +498,17 @@ class BrowserManager:
         if not await self.check_liveness():
             raise RuntimeError("Headed browser is no longer running")
         if os.getenv("WMADAPTER_XVFB") == "1":
-            page = await self.page()
+            # OAuth may leave a second page in the context. Reuse the page
+            # already registered for the provider instead of probing whichever
+            # page happens to be first.
+            page = self._primary_pages.get(self.provider)
+            if page is None:
+                page = next(
+                    (candidate for (owner, _), candidate in self._page_claims.items() if owner == self.provider),
+                    None,
+                )
+            if page is None or page.is_closed():
+                page = await self.page()
             if auth_probe is not None and not await auth_probe(page):
                 raise RuntimeError("hidden headed authentication probe returned false")
             if self.context is None:  # pragma: no cover - guarded by page()

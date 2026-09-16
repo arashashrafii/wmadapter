@@ -6,7 +6,8 @@ import inspect
 from playwright.async_api import Page
 from ...browser.elements import first_visible
 
-from .selectors import CHAT_INPUTS, RESPONSE_BLOCKS
+from .images import validate_artifact_url, validate_image_bytes
+from .selectors import CHAT_INPUTS, IMAGE_ARTIFACTS, RESPONSE_BLOCKS
 from ..deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, UNKNOWN_UI
 from ..submit import PreSubmitError, SubmitState, UncertainSubmitError
 
@@ -35,6 +36,22 @@ class QwenChat:
                     return CHALLENGE_VISIBLE
             except Exception:
                 pass
+        # Qwen renders the composer even while the landing page is logged out.
+        # Check visible authentication controls before treating that composer
+        # as proof of an authenticated session.
+        for selector in ("button", "a", "[role='button']"):
+            try:
+                controls = await self._locator(self.page, selector)
+                count = await controls.count()
+                for index in range(count):
+                    control = controls.nth(index)
+                    if await control.is_visible(timeout=300):
+                        text = (await control.inner_text()).strip().lower()
+                        if text in {"log in", "login", "sign in", "sign up"}:
+                            self._ready_probe_streak = 0
+                            return SIGN_IN_VISIBLE
+            except Exception:
+                pass
         try:
             field = await self._first_visible(CHAT_INPUTS)
             if await field.is_editable(timeout=300):
@@ -55,6 +72,47 @@ class QwenChat:
 
     async def _response_counts(self) -> dict[str, int]:
         return {selector: await self.page.locator(selector).count() for selector in RESPONSE_BLOCKS}
+
+    async def latest_image_artifact(self) -> tuple[bytes, str]:
+        """Fetch the latest rendered Qwen image after validating its source."""
+        candidates = []
+        for selector in IMAGE_ARTIFACTS:
+            locator = self.page.locator(selector)
+            for index in range(await locator.count()):
+                source = await locator.nth(index).get_attribute("src")
+                if source:
+                    candidates.append(source)
+        if not candidates:
+            raise ValueError("Qwen image artifact was not rendered")
+        source = validate_artifact_url(candidates[-1])
+        request = self.page.context.request
+        response = await request.get(source, timeout=self.timeout_ms)
+        if not response.ok:
+            raise ValueError("Qwen image artifact download failed")
+        content_type = response.headers.get("content-type")
+        content = await response.body()
+        return validate_image_bytes(content, content_type)
+
+    async def send_image(self, prompt: str) -> tuple[bytes, str]:
+        """Submit an image prompt and wait for a rendered artifact."""
+        mode_button = self.page.get_by_role("button", name="Select Mode", exact=True)
+        if await mode_button.count() and await mode_button.is_visible(timeout=500):
+            await mode_button.click()
+            image_mode = self.page.get_by_text("Create Image", exact=True).last
+            if not await image_mode.count():
+                raise PreSubmitError("Qwen image-generation mode is unavailable")
+            await image_mode.click()
+        input_box = await self._first_visible(CHAT_INPUTS)
+        await input_box.click()
+        await input_box.fill(prompt)
+        await input_box.press("Enter")
+        deadline = asyncio.get_running_loop().time() + self.timeout_ms / 1000
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                return await self.latest_image_artifact()
+            except ValueError:
+                await asyncio.sleep(1)
+        raise TimeoutError("Qwen image artifact was not rendered before timeout")
 
     async def _latest_response_text(self, previous_counts: dict[str, int]) -> str:
         for selector in RESPONSE_BLOCKS:
@@ -111,7 +169,9 @@ class QwenChat:
             raise TimeoutError("Qwen response was not detected before timeout")
         except UncertainSubmitError:
             raise
-        except Exception as exc:
+        except Exception:
             if self.submit_state in (SubmitState.SUBMITTING, SubmitState.SUBMITTED_UNCERTAIN):
-                raise UncertainSubmitError(str(exc)) from exc
-            raise PreSubmitError(str(exc)) from exc
+                # Do not expose provider response text, URLs, or filenames in
+                # errors that may be retained or logged by the gateway.
+                raise UncertainSubmitError("Qwen submission outcome is uncertain") from None
+            raise PreSubmitError("Qwen request could not be submitted") from None
