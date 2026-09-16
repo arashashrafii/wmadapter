@@ -154,6 +154,8 @@ class DeepSeekChat:
             await self.page.wait_for_timeout(1500)
 
     async def send_message(self, message: str, attachments: list[str] | None = None) -> str:
+        if not isinstance(message, str) or (not message.strip() and not attachments):
+            raise PreSubmitError("DeepSeek message must not be empty")
         self.submit_state = SubmitState.NOT_SUBMITTED
         try:
             input_box = await self._first_visible(CHAT_INPUTS)
@@ -206,7 +208,12 @@ class DeepSeekChat:
                 blocks = await self._response_locator()
                 block_count = await blocks.count()
                 current_text = await self._response_text(blocks.last)
-                if block_count > previous_count or (block_count and current_text != previous_text):
+                # A previous answer can be re-rendered in place while the new
+                # turn is being submitted.  Treating a text mutation in that
+                # block as a new answer makes the gateway return the old/default
+                # response and leaves the client waiting for the real turn.
+                # A new response block is the reliable boundary in DeepSeek Web.
+                if block_count > previous_count:
                     # Read the complete rendered block, including multiline Markdown
                     # and any content that arrived after the first DOM update.
                     text = current_text
@@ -254,9 +261,7 @@ class DeepSeekChat:
                 blocks = await self._response_locator()
                 block_count = await blocks.count()
                 current_text = await self._response_text(blocks.last)
-                if block_count > self._previous_response_count or (
-                    block_count and current_text != self._previous_response_text
-                ):
+                if block_count > self._previous_response_count:
                     if current_text:
                         if current_text == last_text:
                             stable_rounds += 1
