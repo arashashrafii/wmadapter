@@ -29,6 +29,11 @@ def run_server() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="wmadapter", description="Web Model Adapter — Web-to-API Gateway for AI Agents")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="configuration file (also available as WMADAPTER_CONFIG)",
+    )
     subparsers = parser.add_subparsers(dest="command")
     auth = subparsers.add_parser("auth")
     auth.add_argument("provider", choices=["deepseek", "qwen"])
@@ -38,7 +43,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "auth":
-        config = load_config()
+        config = load_config(args.config)
         asyncio.run(
             run_manual_auth(
                 args.provider,
@@ -49,6 +54,11 @@ def main() -> None:
             )
         )
         return
+    if args.config:
+        # Keep the existing environment-based entrypoint compatible while making
+        # product/test selection explicit for local scripts and service units.
+        import os
+        os.environ["WMADAPTER_CONFIG"] = args.config
     run_server()
 
 

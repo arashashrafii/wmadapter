@@ -130,6 +130,24 @@ Then start the bridge:
 .venv/bin/wmadapter
 ```
 
+### اجرای جداگانه محصول و تست
+
+محیط محصول و تست باید با فایل تنظیمات و پروفایل مرورگر جدا اجرا شوند. محصول روی
+پورت `11555` و تست روی پورت `11556` است:
+
+```bash
+# محصول
+.venv/bin/wmadapter --config config.yaml
+
+# تست (در ترمینال جدا)
+.venv/bin/wmadapter --config config.test.yaml
+```
+
+یا از اسکریپت‌های npm استفاده کنید: `npm run start:product` و
+`npm run start:test`. فایل `config.test.yaml` از پروفایل و لاگ مستقل استفاده
+می‌کند؛ بنابراین تغییرات و اجرای تست روی سرویس محصول اثر نمی‌گذارد. برای تست‌های
+اتوماتیک نیز آدرس پایه `http://127.0.0.1:11556/v1` است.
+
 The server defaults to `http://127.0.0.1:11555` (also available as
 `http://localhost:11555`). OpenCode and OpenClaw can use the shared OpenAI-compatible
 base URL `http://127.0.0.1:11555/v1`.

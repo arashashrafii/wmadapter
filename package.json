@@ -8,7 +8,9 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "start:product": ".venv/bin/wmadapter --config config.yaml",
+    "start:test": ".venv/bin/wmadapter --config config.test.yaml"
   },
   "repository": {
     "type": "git",

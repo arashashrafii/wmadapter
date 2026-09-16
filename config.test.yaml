@@ -41,8 +41,8 @@ limits:
  max_input_chars:
  max_output_chars:
  context_budget_chars: 24000
- context_budget_profiles: {}
- deepseek-chat: 48000
+ context_budget_profiles:
+  deepseek-chat: 48000
 
 logging:
  level: INFO
