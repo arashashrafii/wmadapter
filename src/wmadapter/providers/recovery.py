@@ -11,6 +11,7 @@ from .protocol import ToolProtocolStatus
 
 logger = logging.getLogger(__name__)
 _REPAIR_CONTEXT_LIMIT = 12000
+_GENERIC_AGENT_GREETING = "i'm ready to help with software engineering tasks. what would you like me to do?"
 
 
 class ProtocolRecoveryError(ValueError):
@@ -70,7 +71,16 @@ class ToolCallRecovery:
         # Ordinary content is already a complete provider response. Only ask
         # for repair when the WebChat leaked a protocol marker or returned an
         # empty turn; this avoids changing normal answers.
-        needs_repair = status is ToolProtocolStatus.UNRESOLVED_MARKER or not visible.strip()
+        # OpenCode/DeepSeek occasionally emits its session-bootstrap greeting
+        # after a large tool context instead of answering the current turn.
+        # It is not a valid completion for an agent request; route it through
+        # the existing one-shot repair path instead of exposing it as success.
+        is_generic_agent_greeting = visible.strip().casefold() == _GENERIC_AGENT_GREETING
+        needs_repair = (
+            status is ToolProtocolStatus.UNRESOLVED_MARKER
+            or not visible.strip()
+            or (bool(tools) and is_generic_agent_greeting)
+        )
         if not needs_repair:
             _diagnostic("initial_complete", answer, "bypass")
             return None, visible

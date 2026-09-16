@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 import uuid
+import random
 from dataclasses import dataclass
 from collections.abc import AsyncIterator
 
@@ -66,7 +67,13 @@ class DeepSeekService(ChatProvider):
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
         self.recovery_timeout_ms = int(deepseek_cfg.get("recovery_timeout_ms", 120000))
         self.login_timeout_ms = int(deepseek_cfg.get("login_timeout_ms", 30000))
-        self.restart_retries = int(browser_cfg.get("restart_retries", 1))
+        self.recovery_enabled = bool(deepseek_cfg.get("recovery_enabled", True))
+        self.recovery_backoff_base_ms = int(deepseek_cfg.get("recovery_backoff_base_ms", 250))
+        self.recovery_backoff_max_ms = int(deepseek_cfg.get("recovery_backoff_max_ms", 5000))
+        self.restart_retries = min(
+            int(browser_cfg.get("restart_retries", 1)),
+            int(deepseek_cfg.get("recovery_max_attempts", 2)) - 1,
+        ) if self.recovery_enabled else 0
         self.last_error: str | None = None
         self.ready = False
         self.auth_state = "STARTING"
@@ -445,6 +452,9 @@ class DeepSeekService(ChatProvider):
                         self.ready = False
                     if attempt >= attempts or auth_failure:
                         raise
+                    delay_ms = min(self.recovery_backoff_max_ms, self.recovery_backoff_base_ms * (2 ** (attempt - 1)))
+                    if delay_ms:
+                        await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
                     self._clear_conversation_pages()
                     await self.browser.restart()
             raise RuntimeError("DeepSeek request failed")
@@ -543,7 +553,14 @@ class QwenService(ChatProvider):
             launch_url=self.chat_url,
         )
         self.timeout_ms = int(qwen_cfg.get("timeout_ms", 180000))
-        self.restart_retries = int(browser_cfg.get("restart_retries", 1))
+        self.recovery_enabled = bool(qwen_cfg.get("recovery_enabled", True))
+        self.recovery_timeout_ms = int(qwen_cfg.get("recovery_timeout_ms", 120000))
+        self.recovery_backoff_base_ms = int(qwen_cfg.get("recovery_backoff_base_ms", 250))
+        self.recovery_backoff_max_ms = int(qwen_cfg.get("recovery_backoff_max_ms", 5000))
+        self.restart_retries = min(
+            int(browser_cfg.get("restart_retries", 1)),
+            int(qwen_cfg.get("recovery_max_attempts", 2)) - 1,
+        ) if self.recovery_enabled else 0
         self.last_error: str | None = None
         self.ready = False
         self.auth_state = "STARTING"
@@ -848,7 +865,13 @@ class QwenService(ChatProvider):
                         page = await self._page_for_conversation(conversation_id)
                         if getattr(page, "url", "").rstrip("/") == self.chat_url.rstrip("/"):
                             await page.goto("https://chat.qwen.ai/", wait_until="domcontentloaded")
-                        answer = await QwenChat(page, timeout_ms=self.timeout_ms).send_message(prompt)
+                        chat = QwenChat(page, timeout_ms=self.timeout_ms)
+                        try:
+                            answer = await chat.send_message(prompt)
+                        except UncertainSubmitError:
+                            answer = await chat.recover_response(self.recovery_timeout_ms) if self.recovery_enabled else None
+                            if answer is None:
+                                raise
                     finally:
                         self._mark_page_inactive(page)
                     self.last_error = None
@@ -865,6 +888,9 @@ class QwenService(ChatProvider):
                         self.ready = False
                     if attempt >= attempts or auth_failure:
                         raise
+                    delay_ms = min(self.recovery_backoff_max_ms, self.recovery_backoff_base_ms * (2 ** (attempt - 1)))
+                    if delay_ms:
+                        await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
                     self._conversation_pages.clear()
                     await self.browser.restart()
             raise RuntimeError("Qwen request failed")

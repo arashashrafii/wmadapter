@@ -18,6 +18,7 @@ class QwenChat:
         self.timeout_ms = timeout_ms
         self.submit_state = SubmitState.NOT_SUBMITTED
         self._ready_probe_streak = 0
+        self._previous_counts: dict[str, int] = {}
 
     async def _first_visible(self, selectors: list[str]):
         return await first_visible(self.page, selectors, "Qwen")
@@ -141,6 +142,7 @@ class QwenChat:
             input_box = await self._first_visible(CHAT_INPUTS)
             await self.page.wait_for_timeout(1000)
             previous_counts = await self._response_counts()
+            self._previous_counts = previous_counts
 
             await input_box.click()
             await input_box.fill(message)
@@ -175,3 +177,33 @@ class QwenChat:
                 # errors that may be retained or logged by the gateway.
                 raise UncertainSubmitError("Qwen submission outcome is uncertain") from None
             raise PreSubmitError("Qwen request could not be submitted") from None
+
+    async def recover_response(self, timeout_ms: int = 120000) -> str | None:
+        """Reconcile the existing page after an ambiguous submission.
+
+        This method only observes the current conversation; it never edits or
+        resends the input, so a late answer cannot duplicate a user turn.
+        """
+        if timeout_ms <= 0 or self.submit_state not in (
+            SubmitState.SUBMITTING, SubmitState.SUBMITTED_UNCERTAIN
+        ):
+            return None
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
+        last_text = ""
+        stable_rounds = 0
+        try:
+            while asyncio.get_running_loop().time() < deadline:
+                text = await self._latest_response_text(self._previous_counts)
+                if text:
+                    if text == last_text:
+                        stable_rounds += 1
+                    else:
+                        stable_rounds = 0
+                        last_text = text
+                    if stable_rounds >= 2:
+                        self.submit_state = SubmitState.COMPLETED
+                        return text
+                await asyncio.sleep(1)
+        except Exception:
+            return None
+        return None

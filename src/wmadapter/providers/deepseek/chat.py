@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import inspect
 import tempfile
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -108,6 +109,33 @@ class DeepSeekChat:
             except Exception:
                 continue
         return None
+
+    async def _timeout_diagnostics(self) -> dict[str, object]:
+        """Capture bounded, non-prompt DOM state for timeout diagnosis."""
+        diagnostics: dict[str, object] = {"url": self.page.url}
+        try:
+            blocks = await self._response_locator()
+            diagnostics["response_blocks"] = await blocks.count()
+        except Exception:
+            diagnostics["response_blocks"] = "unavailable"
+        try:
+            diagnostics["send_button"] = await self._enabled_send_button() is not None
+        except Exception:
+            diagnostics["send_button"] = "unavailable"
+        try:
+            body = self.page.locator("body")
+            if inspect.isawaitable(body):
+                body = await body
+            body_text = body.inner_text(timeout=1000)
+            if inspect.isawaitable(body_text):
+                body_text = await body_text
+            text = str(body_text).lower()
+            markers = ("stop", "regenerate", "continue", "retry", "network error", "login")
+            diagnostics["markers"] = [marker for marker in markers if marker in text]
+            diagnostics["body_chars"] = len(text)
+        except Exception:
+            diagnostics["body_chars"] = "unavailable"
+        return diagnostics
 
     async def delete_remote_conversation(self) -> bool:
         """Delete the current DeepSeek Web conversation through its UI."""
@@ -230,7 +258,8 @@ class DeepSeekChat:
                             return text
                 await asyncio.sleep(1)
 
-            raise TimeoutError("DeepSeek response was not detected before timeout")
+            diagnostics = await self._timeout_diagnostics()
+            raise TimeoutError(f"DeepSeek response was not detected before timeout ({diagnostics})")
         except UncertainSubmitError:
             raise
         except Exception as exc:

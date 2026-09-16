@@ -1,0 +1,51 @@
+server:
+ host: 127.0.0.1
+ port: 11556
+ api_key:
+
+browser:
+ mode: managed
+ headless: true
+ profile_dir: /tmp/opencode/wmadapter-test/profiles/deepseek
+ executable_path: /usr/bin/google-chrome
+ cdp_endpoint:
+ restart_retries: 1
+ max_pages: 2
+ idle_timeout_ms: 60000
+
+deepseek:
+ transport: web
+ chat_url: https://chat.deepseek.com/
+ timeout_ms: 180000
+ recovery_timeout_ms: 120000
+ login_timeout_ms: 30000
+ system_prompt: Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required.
+
+qwen:
+ chat_url: https://chat.qwen.ai/auth
+ headless: true
+ auth: google
+ profile_dir: /tmp/opencode/wmadapter-test/profiles/qwen
+ models:
+ - qwen-chat
+ image_generation_verified: false
+
+providers:
+ default: deepseek
+ enabled:
+ - deepseek
+ enabled_models:
+ - deepseek-chat
+
+limits:
+ max_input_chars:
+ max_output_chars:
+ context_budget_chars: 24000
+ context_budget_profiles: {}
+ deepseek-chat: 48000
+
+logging:
+ level: INFO
+ file: /tmp/opencode/wmadapter-test/wmadapter-test.log
+ max_bytes: 1000000
+ backup_count: 3

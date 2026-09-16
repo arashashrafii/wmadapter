@@ -52,6 +52,10 @@ class DeepSeekConfig(BaseModel):
     chat_url: str = "https://chat.deepseek.com/"
     timeout_ms: int = Field(default=180000, ge=1000)
     recovery_timeout_ms: int = Field(default=120000, ge=0)
+    recovery_enabled: bool = True
+    recovery_max_attempts: int = Field(default=2, ge=1, le=5)
+    recovery_backoff_base_ms: int = Field(default=250, ge=0, le=60000)
+    recovery_backoff_max_ms: int = Field(default=5000, ge=0, le=120000)
     login_timeout_ms: int = Field(default=30000, ge=1000)
     system_prompt: str = "Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required."
 
@@ -62,6 +66,11 @@ class QwenConfig(BaseModel):
     profile_dir: str = provider_profile_dir("qwen")
     headless: bool = False
     timeout_ms: int = Field(default=180000, ge=1000)
+    recovery_timeout_ms: int = Field(default=120000, ge=0)
+    recovery_enabled: bool = True
+    recovery_max_attempts: int = Field(default=2, ge=1, le=5)
+    recovery_backoff_base_ms: int = Field(default=250, ge=0, le=60000)
+    recovery_backoff_max_ms: int = Field(default=5000, ge=0, le=120000)
     models: list[str] = Field(default_factory=lambda: ["qwen-chat"])
     # Deliberately false until a repeatable live Qwen image probe succeeds.
     image_generation_verified: bool = False

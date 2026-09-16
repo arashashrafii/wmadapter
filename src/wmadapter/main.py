@@ -77,10 +77,11 @@ logger = logging.getLogger(__name__)
 STREAM_HEARTBEAT_SECONDS = 5.0
 STREAM_WATCHDOG_SECONDS = 90.0
 # OpenCode includes its full tool and project envelope on each continuation.
-# Keep the gateway limit aligned with the adapter's supported large context
-# profile so valid multi-step sessions are not rejected by the gateway.
+# Keep the gateway limit below the practical DeepSeek Web context envelope.
+# A very large value lets OpenCode send huge tool histories that the web model
+# silently turns into a generic greeting or an invalid tool response.
 OPENCODE_CONTEXT_BUDGET_CHARS = int(
-    os.getenv("WMADAPTER_OPENCODE_CONTEXT_BUDGET_CHARS", "1000000")
+    os.getenv("WMADAPTER_OPENCODE_CONTEXT_BUDGET_CHARS", "48000")
 )
 OPENCODE_STREAM_WATCHDOG_SECONDS = 900.0
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
