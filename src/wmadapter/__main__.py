@@ -146,7 +146,7 @@ def _check_ready(config: dict, provider: str | None = None) -> int:
     return 0 if status == 200 and ready else 1
 
 
-def _service_checks(config: dict) -> tuple[bool, dict[str, str]]:
+def _service_checks(config: dict) -> tuple[bool, dict[str, object]]:
     server = config.get("server", {})
     host = server.get("host", "127.0.0.1")
     port = int(server.get("port", 11555))
@@ -160,20 +160,40 @@ def _service_checks(config: dict) -> tuple[bool, dict[str, str]]:
             result["health"] = "okay" if response.status == 200 else "not okay"
     except (urllib.error.URLError, TimeoutError, OSError):
         pass
+    ready_payload: dict = {}
     try:
         with urllib.request.urlopen(f"http://{host}:{port}/ready", timeout=5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-            result["ready"] = "okay" if response.status == 200 and payload.get("status") == "ready" else "not okay"
+            ready_payload = json.loads(response.read().decode("utf-8"))
+            result["ready"] = "okay" if response.status == 200 and ready_payload.get("status") == "ready" else "not okay"
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
         pass
-    healthy = all(value == "okay" for key, value in result.items() if key != "port")
+    providers = {}
+    for name, status in (ready_payload.get("providers") or {}).items():
+        providers[name] = {
+            "login": "okay" if status.get("ready") else "not okay",
+            "browser": status.get("browser_running", False),
+            "state": status.get("state", "unknown"),
+            "reason": status.get("reason_code") or "none",
+            "error": status.get("last_error") or "none",
+        }
+    result["providers"] = providers
+    healthy = all(value == "okay" for key, value in result.items() if key not in {"port", "providers"})
+    healthy = healthy and all(item["login"] == "okay" for item in providers.values())
     return healthy, result
 
 
 def _doctor(config: dict) -> int:
     healthy, result = _service_checks(config)
     for key, value in result.items():
-        print(f"{key}: {value}")
+        if key == "providers":
+            for provider, status in value.items():
+                print(f"provider.{provider}.login: {status['login']}")
+                print(f"provider.{provider}.browser: {status['browser']}")
+                print(f"provider.{provider}.state: {status['state']}")
+                print(f"provider.{provider}.reason: {status['reason']}")
+                print(f"provider.{provider}.error: {status['error']}")
+        else:
+            print(f"{key}: {value}")
     return 0 if healthy else 1
 
 
