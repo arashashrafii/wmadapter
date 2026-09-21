@@ -104,10 +104,17 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     else:
         document = {}
     models = list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
-    model_entries = [{"id": model, "name": model} for model in models]
     model_config = dict(document.get("models") or {})
     providers = dict(model_config.get("providers") or {})
     current = dict(providers.get("wmadapter") or {})
+    existing_models = {
+        item.get("id"): item
+        for item in (current.get("models") or [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    for model in models:
+        existing_models[model] = {"id": model, "name": model}
+    model_entries = list(existing_models.values())
     current.update({
         "baseUrl": "http://127.0.0.1:11555/v1",
         "api": "openai-completions",
