@@ -83,6 +83,12 @@ STREAM_WATCHDOG_SECONDS = 90.0
 OPENCODE_CONTEXT_BUDGET_CHARS = int(
     os.getenv("WMADAPTER_OPENCODE_CONTEXT_BUDGET_CHARS", "48000")
 )
+# The OpenClaw Control UI adds a substantial agent and tool envelope. Web-chat
+# providers do not publish stable context limits, so keep that envelope below
+# the size at which they can silently stop responding.
+OPENCLAW_CONTEXT_BUDGET_CHARS = int(
+    os.getenv("WMADAPTER_OPENCLAW_CONTEXT_BUDGET_CHARS", "12000")
+)
 OPENCODE_STREAM_WATCHDOG_SECONDS = 900.0
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
 router = ProviderRouter(
@@ -474,6 +480,7 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         request.headers.get("x-client-name"),
     )))
     is_opencode_request = "opencode" in client_hint.casefold()
+    is_openclaw_request = "openclaw" in client_hint.casefold()
     inference = ProviderRequest(
         chat=provider_payload, canonical=canonicalize(provider_payload), conversation_id=conversation_id,
         structured_output=structured_output,
@@ -482,7 +489,8 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         client_policy=detect_client_policy([], payload.tools, client_hint),
         client_max_tokens=client_max_tokens,
         context_budget_chars=(context_budget_chars if context_budget_chars is not None else
-                              (OPENCODE_CONTEXT_BUDGET_CHARS if is_opencode_request else None)),
+                              (OPENCODE_CONTEXT_BUDGET_CHARS if is_opencode_request else
+                               OPENCLAW_CONTEXT_BUDGET_CHARS if is_openclaw_request else None)),
         system_prompt=("" if provider.name == "qwen" else default_system_prompt)
         + (("\n" + _structured_instruction(structured_output)) if structured_output else ""),
         # The public gateway contract is deliberately independent of the

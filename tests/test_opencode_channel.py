@@ -121,6 +121,8 @@ class OpenCodeChannelTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         forwarded = self.provider.infer.call_args.args[0]
         self.assertEqual(forwarded.client_policy, ClientPolicy.OPENCLAW)
+        self.assertEqual(forwarded.context_budget_chars, main.OPENCLAW_CONTEXT_BUDGET_CHARS)
+        self.assertGreaterEqual(main.OPENCLAW_CONTEXT_BUDGET_CHARS, 1_024)
 
     def test_opencode_title_request_accepts_large_client_budget_without_provider_call(self):
         response = self.client.post("/v1/opencode/chat/completions", json={
