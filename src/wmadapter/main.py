@@ -306,9 +306,14 @@ async def health():
 async def ready():
     status = await router.status()
     enabled = config["providers"].get("enabled", [config["providers"]["default"]])
-    ready_value = _startup_status["state"] == "ready" and all(
-        status.get(name, {}).get("ready") for name in enabled
-    )
+    providers_ready = all(status.get(name, {}).get("ready") for name in enabled)
+    # A provider can recover asynchronously after its initial startup probe
+    # (for example, after a browser session finishes authentication). Do not
+    # keep the gateway globally unavailable once every enabled provider is
+    # actually ready.
+    ready_value = providers_ready and _startup_status["state"] in {"ready", "failed"}
+    if ready_value and _startup_status["state"] == "failed":
+        _startup_status.update(state="ready", error=None)
     payload = {
         "status": "ready" if ready_value else "not_ready",
         "startup": redact(_startup_status),
