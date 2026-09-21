@@ -4,7 +4,14 @@ import logging
 
 from .contract import ProviderRequest, ProviderResult
 from .errors import ContextLimitError
-from .protocol import _prompt, _image_attachments, _resolve_web_answer, compact_messages, minimize_tool_schemas
+from .protocol import (
+    _prompt,
+    _image_attachments,
+    _resolve_web_answer,
+    bound_tool_results,
+    compact_messages,
+    minimize_tool_schemas,
+)
 from .normalizer import ToolProtocolNormalizer
 from .recovery import ToolCallRecovery
 
@@ -37,6 +44,14 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     if budget is None:
         budget = provider.context_budget_for(chat.model) if hasattr(provider, "context_budget_for") else None
     compacted = False
+    if budget is not None:
+        # Keep a single browser-relay result from exhausting the whole
+        # context. The subsequent history compaction still owns the overall
+        # budget and may discard older results when necessary.
+        bounded = bound_tool_results(messages, max(512, min(8192, budget // 8)))
+        compacted = bounded != messages
+        messages = bounded
+        prompt = build_prompt(messages)
     if budget is not None and len(prompt) > budget:
         try:
             messages = compact_messages(messages, max(1024, budget // 2))

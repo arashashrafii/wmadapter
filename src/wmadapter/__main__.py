@@ -6,7 +6,14 @@ import asyncio
 from dotenv import load_dotenv
 import uvicorn
 
-from .config import load_config
+from .config import (
+    BUILTIN_PROVIDER_MODELS,
+    config_file_path,
+    load_config,
+    provider_profile_from_config,
+    save_config,
+    update_provider_config,
+)
 from .logging import configure_logging
 from .manual_auth import run_manual_auth
 
@@ -35,14 +42,25 @@ def main() -> None:
         help="configuration file (also available as WMADAPTER_CONFIG)",
     )
     subparsers = parser.add_subparsers(dest="command")
-    auth = subparsers.add_parser("auth")
-    auth.add_argument("provider", choices=["deepseek", "qwen"])
-    auth.add_argument("--google", action="store_true", help="Open provider login and start Google authentication when possible")
-    auth.add_argument("--external-browser", action="store_true", help="Authenticate in system Chrome, then let the hidden service verify the profile")
-    auth.add_argument("--executable-path", help="Google Chrome executable path")
+    def add_auth_parser(name: str) -> None:
+        auth = subparsers.add_parser(name)
+        auth.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+        auth.add_argument("--google", action="store_true", help="Open provider login and start Google authentication when possible")
+        auth.add_argument("--external-browser", action="store_true", help="Authenticate in system Chrome, then let the hidden service verify the profile")
+        auth.add_argument("--executable-path", help="Google Chrome executable path")
+
+    add_auth_parser("auth")
+    add_auth_parser("login")
+
+    provider = subparsers.add_parser("provider", help="Configure built-in web providers")
+    provider_commands = provider.add_subparsers(dest="provider_command", required=True)
+    provider_commands.add_parser("list", help="Show configured providers and profile locations")
+    for action in ("enable", "disable", "default"):
+        command = provider_commands.add_parser(action)
+        command.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     args = parser.parse_args()
 
-    if args.command == "auth":
+    if args.command in {"auth", "login"}:
         config = load_config(args.config)
         asyncio.run(
             run_manual_auth(
@@ -53,6 +71,27 @@ def main() -> None:
                 config=config,
             )
         )
+        return
+    if args.command == "provider":
+        config = load_config(args.config)
+        path = config_file_path(args.config)
+        if args.provider_command == "list":
+            settings = config.get("providers", {})
+            default = settings.get("default", "deepseek")
+            enabled = set(settings.get("enabled") or [])
+            print(f"config: {path}")
+            print(f"default: {default}")
+            for provider_name in sorted(BUILTIN_PROVIDER_MODELS):
+                state = "enabled" if provider_name in enabled else "disabled"
+                profile = provider_profile_from_config(config, provider_name)
+                print(f"{provider_name}: {state}; profile={profile}")
+            return
+        try:
+            updated = update_provider_config(config, args.provider_command, args.provider)
+            save_config(updated, path)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(f"Provider configuration updated: {args.provider_command} {args.provider}")
         return
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making

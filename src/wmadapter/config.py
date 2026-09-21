@@ -17,6 +17,71 @@ def provider_profile_dir(provider: str) -> str:
     return str(root / "profiles" / provider)
 
 
+BUILTIN_PROVIDER_MODELS = {
+    "deepseek": ("deepseek-chat", "deepseek-reasoner"),
+    "qwen": ("qwen-chat",),
+}
+
+
+def config_file_path(path: str | Path | None = None) -> Path:
+    return Path(path or os.getenv("WMADAPTER_CONFIG", "config.yaml"))
+
+
+def save_config(data: dict[str, Any], path: str | Path | None = None) -> Path:
+    """Persist validated gateway configuration for the local CLI."""
+    target = config_file_path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return target
+
+
+def provider_profile_from_config(config: dict[str, Any], provider: str) -> str:
+    if provider == "qwen":
+        return config.get("qwen", {}).get("profile_dir", provider_profile_dir(provider))
+    return config.get("browser", {}).get("profile_dir", provider_profile_dir(provider))
+
+
+def update_provider_config(config: dict[str, Any], action: str, provider: str) -> dict[str, Any]:
+    """Apply one safe provider lifecycle change without touching auth state."""
+    if provider not in BUILTIN_PROVIDER_MODELS:
+        raise ValueError(f"Unsupported provider: {provider}")
+    updated = dict(config)
+    providers = dict(updated.get("providers", {}))
+    enabled = list(providers.get("enabled") or [])
+    allowlist = providers.get("enabled_models")
+    if allowlist is not None:
+        allowlist = list(allowlist)
+
+    if action in {"enable", "default"}:
+        if provider not in enabled:
+            enabled.append(provider)
+        if allowlist is not None:
+            for model in BUILTIN_PROVIDER_MODELS[provider]:
+                if model not in allowlist:
+                    allowlist.append(model)
+    elif action == "disable":
+        if providers.get("default", "deepseek") == provider:
+            raise ValueError("The default provider cannot be disabled; select another default first")
+        enabled = [name for name in enabled if name != provider]
+        if allowlist is not None:
+            allowlist = [model for model in allowlist if model not in BUILTIN_PROVIDER_MODELS[provider]]
+    else:
+        raise ValueError(f"Unsupported provider action: {action}")
+
+    providers["enabled"] = enabled
+    if action == "default":
+        providers["default"] = provider
+    elif "default" not in providers:
+        providers["default"] = "deepseek"
+    if allowlist is not None:
+        providers["enabled_models"] = allowlist
+    updated["providers"] = providers
+    return updated
+
+
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=11555, ge=1, le=65535)
@@ -119,7 +184,7 @@ class AppConfig(BaseModel):
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     data: dict[str, Any] = {}
-    p = Path(path or os.getenv("WMADAPTER_CONFIG", "config.yaml"))
+    p = config_file_path(path)
     if p.exists():
         data = yaml.safe_load(p.read_text()) or {}
     try:

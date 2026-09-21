@@ -79,6 +79,38 @@ def compact_messages(messages: list[Message], max_chars: int) -> list[Message]:
     return recent
 
 
+def bound_tool_results(messages: list[Message], max_chars: int) -> list[Message]:
+    """Bound tool output before prompt compaction can reject a current result.
+
+    Browser relays can return a large DOM/accessibility snapshot or screenshot
+    metadata in a single tool message. Keep a deterministic excerpt and a
+    fingerprint so the model can continue the workflow without allowing one
+    result to consume the entire provider context window.
+    """
+    if max_chars < 512:
+        raise ValueError("tool result budget must be at least 512 characters")
+    bounded: list[Message] = []
+    for message in messages:
+        if message.role.lower() != "tool":
+            bounded.append(message)
+            continue
+        text = _content_text(message.content)
+        if len(text) <= max_chars:
+            bounded.append(message)
+            continue
+        digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+        marker = (
+            f"\n[TOOL RESULT COMPACTED: original_chars={len(text)} "
+            f"sha256={digest}]\n"
+        )
+        available = max_chars - len(marker)
+        head = max(1, (available * 3) // 4)
+        tail = max(1, available - head)
+        excerpt = text[:head] + marker + text[-tail:]
+        bounded.append(message.model_copy(update={"content": excerpt}))
+    return bounded
+
+
 def _image_attachments(messages: list[Message]) -> list[str]:
     """Return OpenAI data-URL images for upload to the Web chat.
 

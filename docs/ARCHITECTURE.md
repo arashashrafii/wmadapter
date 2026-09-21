@@ -151,9 +151,12 @@ part of the agent-facing contract.
 
 Request sizing uses `limits.context_budget_chars` (default 24000) with optional
 exact model or provider overrides in `limits.context_budget_profiles`. Small
-prompts are passed unchanged. Oversized histories receive one pre-submit
-compaction consisting of a metadata-only state ledger and recent message
-window; an oversized current message fails with `context_length_exceeded`.
+prompts are passed unchanged. Oversized tool results (including browser-relay
+snapshots) receive a deterministic head/tail excerpt with an original-length
+and SHA-256 marker before history compaction. Oversized histories then receive
+one pre-submit compaction consisting of a metadata-only state ledger and recent
+message window; an oversized non-tool current message fails with
+`context_length_exceeded`.
 Only one provider submission is allowed after compaction, and uncertain or
 completed submissions are never replayed. Sanitized request metrics contain
 provider/model, counts, prompt length, a fingerprint, and the compaction flag;
