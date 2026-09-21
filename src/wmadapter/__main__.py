@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 
@@ -59,6 +61,35 @@ def _resume_service_after_login(paused: bool) -> None:
         raise RuntimeError("Login completed but wmadapter.service could not be restarted")
 
 
+def _opencode_config_path(value: str | None) -> Path:
+    return Path(value).expanduser() if value else Path.home() / ".config" / "opencode" / "opencode.json"
+
+
+def _run_opencode(provider: str, config: dict, output: str | None) -> Path:
+    target = _opencode_config_path(output)
+    if target.exists():
+        try:
+            raw = target.read_text(encoding="utf-8").strip()
+            document = json.loads(raw) if raw else {}
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"OpenCode config is not valid JSON: {target}") from exc
+    else:
+        document = {}
+    models = list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
+    provider_id = f"wmadapter-{provider}"
+    providers = dict(document.get("provider") or {})
+    providers[provider_id] = {
+        "name": f"WM Adapter ({provider})",
+        "npm": "@ai-sdk/openai-compatible",
+        "options": {"baseURL": "http://127.0.0.1:11555/v1"},
+        "models": {model: {"name": model} for model in models},
+    }
+    document["provider"] = providers
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return target
+
+
 def run_server() -> None:
     load_dotenv()
     config = load_config()
@@ -112,6 +143,11 @@ def main() -> None:
     add_proxy = add_commands.add_parser("proxy", help="Set a proxy for one provider")
     add_proxy.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     add_proxy.add_argument("url")
+    run = subparsers.add_parser("run", help="Configure a client from WM Adapter models")
+    run_commands = run.add_subparsers(dest="client", required=True)
+    opencode = run_commands.add_parser("opencode", help="Add a WM Adapter provider to OpenCode")
+    opencode.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    opencode.add_argument("--config", dest="client_config", help="OpenCode config file path")
     args = parser.parse_args()
 
     if args.command in {"auth", "login"}:
@@ -166,6 +202,14 @@ def main() -> None:
         except ValueError as exc:
             parser.error(str(exc))
         print(f"Proxy {'removed for' if value is None else 'updated for'} {provider_name}")
+        return
+    if args.command == "run":
+        config = load_config(args.config)
+        try:
+            path = _run_opencode(args.provider, config, args.client_config)
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        print(f"OpenCode configured for {args.provider}: {path}")
         return
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making

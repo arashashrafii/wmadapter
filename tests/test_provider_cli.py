@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -52,6 +53,20 @@ class ProviderCliTests(unittest.TestCase):
                 main()
             self.assertIn("default: deepseek", output.getvalue())
             self.assertIn("qwen: enabled", output.getvalue())
+
+    def test_run_opencode_merges_provider_models_without_clobbering_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "opencode.json"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            target.write_text(json.dumps({"theme": "dark", "provider": {"other": {"models": {}}}}))
+
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "run", "opencode", "qwen", "--config", str(target)]):
+                main()
+
+            document = json.loads(target.read_text())
+            self.assertEqual(document["theme"], "dark")
+            self.assertEqual(document["provider"]["wmadapter-qwen"]["models"], {"qwen-chat": {"name": "qwen-chat"}})
 
 
 if __name__ == "__main__":

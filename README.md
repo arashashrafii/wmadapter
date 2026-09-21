@@ -127,12 +127,17 @@ wmadapter add proxy qwen http://localhost:8080
 wmadapter proxy list
 wmadapter proxy remove qwen
 
+# Generate/update an OpenCode provider from the WM Adapter model catalog
+wmadapter run opencode deepseek
+wmadapter run opencode qwen
+
 wmadapter login deepseek
 wmadapter login qwen --google
 ```
 
 Each provider uses its own persistent Chrome profile. Browser-managed session state is reused on later starts; WM Adapter does not store provider passwords or raw cookies.
 If configured, a provider proxy is used only by that provider's browser session and authentication flow.
+The OpenCode command writes to `~/.config/opencode/opencode.json`, preserves existing entries, and adds all models known for the selected WM Adapter provider.
 
 Then start the bridge:
 
