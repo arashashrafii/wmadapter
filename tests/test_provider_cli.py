@@ -114,5 +114,19 @@ class ProviderCliTests(unittest.TestCase):
             self.assertEqual(output.getvalue().strip(), "okay")
 
 
+    def test_doctor_fix_restarts_service_before_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            save_config({"server": {"host": "127.0.0.1", "port": 11555}}, source)
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "doctor", "--fix"]), patch(
+                "wmadapter.__main__._fix_service"
+            ) as fix, patch("wmadapter.__main__._doctor", return_value=0) as doctor:
+                with self.assertRaises(SystemExit) as raised:
+                    main()
+            self.assertEqual(raised.exception.code, 0)
+            fix.assert_called_once_with(load_config(source))
+            doctor.assert_called_once_with(load_config(source))
+
+
 if __name__ == "__main__":
     unittest.main()

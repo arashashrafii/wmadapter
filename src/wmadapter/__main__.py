@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
@@ -165,7 +166,12 @@ def _service_checks(config: dict) -> tuple[bool, dict[str, object]]:
         with urllib.request.urlopen(f"http://{host}:{port}/ready", timeout=5) as response:
             ready_payload = json.loads(response.read().decode("utf-8"))
             result["ready"] = "okay" if response.status == 200 and ready_payload.get("status") == "ready" else "not okay"
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+    except urllib.error.HTTPError as exc:
+        try:
+            ready_payload = json.loads(exc.read().decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            pass
+    except (urllib.error.URLError, TimeoutError, OSError):
         pass
     providers = {}
     for name, status in (ready_payload.get("providers") or {}).items():
@@ -195,6 +201,31 @@ def _doctor(config: dict) -> int:
         else:
             print(f"{key}: {value}")
     return 0 if healthy else 1
+
+
+def _fix_service(config: dict) -> None:
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        raise RuntimeError("systemctl is unavailable")
+    command = [systemctl, "restart", "wmadapter.service"]
+    if os.geteuid() != 0:
+        sudo = shutil.which("sudo")
+        if not sudo:
+            raise RuntimeError("sudo is unavailable")
+        command.insert(0, sudo)
+    result = subprocess.run(command, check=False)
+    if result.returncode != 0:
+        raise RuntimeError("could not restart wmadapter.service")
+    server = config.get("server", {})
+    health_url = f"http://{server.get('host', '127.0.0.1')}:{int(server.get('port', 11555))}/health"
+    for _ in range(20):
+        try:
+            with urllib.request.urlopen(health_url, timeout=1) as response:
+                if response.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError, OSError):
+            time.sleep(0.5)
+    raise RuntimeError("service did not become healthy after restart")
 
 
 def run_server() -> None:
@@ -254,7 +285,8 @@ def main() -> None:
     check_commands = check.add_subparsers(dest="check_command")
     ready = check_commands.add_parser("ready", help="Check whether a provider is online and authenticated")
     ready.add_argument("provider", nargs="?", choices=sorted(BUILTIN_PROVIDER_MODELS))
-    subparsers.add_parser("doctor", help="Diagnose the local WM Adapter service")
+    doctor = subparsers.add_parser("doctor", help="Diagnose the local WM Adapter service")
+    doctor.add_argument("--fix", action="store_true", help="Restart the service, then run diagnostics")
     run = subparsers.add_parser("run", help="Configure a client from WM Adapter models")
     run_commands = run.add_subparsers(dest="client", required=True)
     opencode = run_commands.add_parser("opencode", help="Add a WM Adapter provider to OpenCode")
@@ -334,7 +366,14 @@ def main() -> None:
         print("okay" if healthy else "not okay")
         raise SystemExit(0 if healthy else 1)
     if args.command == "doctor":
-        raise SystemExit(_doctor(load_config(args.config)))
+        config = load_config(args.config)
+        if args.fix:
+            try:
+                _fix_service(config)
+            except RuntimeError as exc:
+                print(f"fix: not okay ({exc})")
+                raise SystemExit(1)
+        raise SystemExit(_doctor(config))
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making
         # product/test selection explicit for local scripts and service units.
