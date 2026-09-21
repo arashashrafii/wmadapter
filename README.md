@@ -55,21 +55,19 @@ upstream throttling, and provider availability can change without notice.
 
 ## Web Model Adapter installer
 
-Interactive setup:
+Installation:
 
 ```bash
 ./install.sh
 ```
 
-The installer sets up a local Python environment, lets you choose DeepSeek Web or Qwen Web, opens system Google Chrome for manual authentication, runs a smoke test, and prints the local OpenAI-compatible API URL. If Google Chrome is unavailable, it stops and asks the user to install it. No paid API key is required.
+The installer sets up a local Python environment, installs the system service, and writes a provider-independent configuration without opening a login window. Provider authentication is performed afterward with the CLI, one provider at a time. If Google Chrome is unavailable, installation stops and asks the user to install it. No paid API key is required.
 
-The installer uses one browser process only: the installed system Google Chrome.
-It does not download Playwright's separate browser binary. Playwright is used
-only as the Python library that controls the already-running Chrome session.
-It prints a command that starts local Chrome with an isolated profile and a
-loopback-only debugging endpoint. Complete login in that Chrome window and
-leave it open while Web Model Adapter runs. Web Model Adapter attaches to that session; it does
-not launch a second browser or attempt to bypass the site's CAPTCHA.
+The installer uses the installed system Google Chrome and does not download
+Playwright's separate browser binary. Playwright is used only as the Python
+library that controls each provider's isolated persistent profile. Login is a
+separate CLI operation after installation; Web Model Adapter does not automate
+CAPTCHA or provider passwords.
 On Linux, the background service uses Xvfb so Chrome has no visible window while
 retaining the headed browser behavior required by some providers. Install Xvfb
 before running the installer if it is not already present.
@@ -90,7 +88,7 @@ profile where possible, and reports the handoff failure. CDP mode remains a
 separate operator-selected attach path and does not use this handoff or close
 the user's browser.
 
-The local installer creates a user-level systemd service named
+The local installer creates a system-wide systemd service named
 `wmadapter.service` for compatibility. Remove the local installation
 with `./uninstall.sh`; systemd teardown is bounded and best-effort, so failures
 are reported while safe local cleanup continues.
@@ -116,13 +114,19 @@ pip install -e .
 cp config.example.yaml config.yaml
 ```
 
-For DeepSeek Web:
+Provider configuration and login:
 
 ```bash
-./.venv/bin/wmadapter auth deepseek
+./.venv/bin/wmadapter provider list
+./.venv/bin/wmadapter provider enable deepseek
+./.venv/bin/wmadapter provider enable qwen
+./.venv/bin/wmadapter provider default deepseek
+
+./.venv/bin/wmadapter login deepseek
+./.venv/bin/wmadapter login qwen --google
 ```
 
-Complete login in the opened browser. No DeepSeek API key is required.
+Each provider uses its own persistent Chrome profile. Browser-managed session state is reused on later starts; WM Adapter does not store provider passwords or raw cookies.
 
 Then start the bridge:
 
@@ -152,9 +156,10 @@ The server defaults to `http://127.0.0.1:11555` (also available as
 `http://localhost:11555`). OpenCode and OpenClaw can use the shared OpenAI-compatible
 base URL `http://127.0.0.1:11555/v1`.
 
-The installer creates a system-wide systemd service under `/etc/systemd/system`.
-Run `./install.sh` directly; it elevates itself with `sudo` when needed and may
-ask for the password once. The service itself does not prompt for a root password.
+The installer creates a system-wide systemd service under `/etc/systemd/system`
+but does not start it or require login. Run `./install.sh` directly; it elevates
+itself with `sudo` when needed and may ask for the password once. After login,
+start the service with `sudo systemctl start wmadapter.service`.
 
 Authentication is browser-only. Web Model Adapter never accepts, stores, or
 automates provider usernames or passwords; only the isolated Chrome profile
@@ -198,10 +203,10 @@ Canonical environment variables use the `WMADAPTER_*` prefix, including
 Create a persistent Qwen browser session with manual or Google authentication:
 
 ```bash
-.venv/bin/wmadapter auth qwen --google
+.venv/bin/wmadapter login qwen --google
 ```
 
-Complete Google authentication in the opened browser, then press Enter in the terminal. The Qwen profile is stored under `.wmadapter-profile/qwen`.
+Complete Google authentication in the opened browser. The Qwen profile is stored under `~/.local/share/wmadapter/profiles/qwen` by default.
 
 ## Test
 

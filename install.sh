@@ -94,7 +94,7 @@ resolve_browser_path() {
   fi
 }
 write_config() {
-  local provider="$1" chat_url="$2" headless="$3" executable_path="$4" server_host="$5" cdp_endpoint="$6"
+  local executable_path="$1" server_host="$2"
   cat > config.yaml <<YAML
 server:
   host: ${server_host}
@@ -102,20 +102,20 @@ server:
 
 browser:
   mode: managed
-  headless: ${headless}
-  profile_dir: ${TARGET_HOME}/.local/share/wmadapter/profiles/${provider}
+  headless: true
+  profile_dir: ${TARGET_HOME}/.local/share/wmadapter/profiles/deepseek
   executable_path: ${executable_path}
-  cdp_endpoint: ${cdp_endpoint:-null}
+  cdp_endpoint: null
   restart_retries: 1
 
-# Provider selected by the installer.
-provider_choice: ${provider}
-
 qwen:
-  chat_url: ${chat_url}
+  chat_url: https://chat.qwen.ai/auth
   auth: google
   profile_dir: ${TARGET_HOME}/.local/share/wmadapter/profiles/qwen
-  headless: ${headless}
+  headless: true
+  models:
+    - qwen-chat
+  image_generation_verified: false
 
 deepseek:
   transport: web
@@ -125,9 +125,14 @@ deepseek:
   system_prompt: Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required.
 
 providers:
-  default: ${provider}
+  default: deepseek
   enabled:
-    - ${provider}
+    - deepseek
+  enabled_models:
+    - deepseek-chat
+
+limits:
+  context_budget_chars: 24000
 
 logging:
   level: INFO
@@ -135,13 +140,6 @@ logging:
   max_bytes: 1000000
   backup_count: 3
 YAML
-}
-provider_url() {
-  case "$1" in
-    deepseek) printf '%s' 'https://chat.deepseek.com/' ;;
-    qwen) printf '%s' 'https://chat.qwen.ai/auth' ;;
-    *) printf '%s' 'https://chat.deepseek.com/' ;;
-  esac
 }
 install_current_os() {
   need python3
@@ -205,58 +203,15 @@ prepare_runtime_display() {
     *) USE_XVFB=0 ;;
   esac
 }
-start_service() {
-  local login_mode="$1"
-  write_service "$login_mode"
-  say "Created system service: ${SERVICE_FILE}"
-  systemctl daemon-reload
-  systemctl enable "$SERVICE_NAME"
-  if ! systemctl restart "$SERVICE_NAME"; then
-    echo "The service was created but could not be started." >&2
-    systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
-    echo "Unit file: ${SERVICE_FILE}" >&2
-    exit 1
-  fi
-}
-run_foreground_auth() {
-  if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
-    echo "interactive_session_unavailable: DISPLAY or WAYLAND_DISPLAY is not set" >&2
-    return 1
-  fi
-  if [[ "$TARGET_USER" == "root" ]]; then
-    WMADAPTER_LOGIN=1 HOME="$TARGET_HOME" .venv/bin/wmadapter auth "$PROVIDER" --external-browser
-  else
-    command -v runuser >/dev/null 2>&1 || {
-      echo "runuser is required to launch browser authentication as ${TARGET_USER}." >&2
-      return 1
-    }
-    runuser -u "$TARGET_USER" -- env \
-      HOME="$TARGET_HOME" \
-      DISPLAY="${DISPLAY:-}" \
-      WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
-      XAUTHORITY="${XAUTHORITY:-}" \
-      XDG_RUNTIME_DIR="/run/user/${TARGET_UID}" \
-      DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
-      WMADAPTER_LOGIN=1 \
-      "${PROJECT_DIR}/.venv/bin/wmadapter" auth "$PROVIDER" --external-browser
-  fi
-}
 stop_service() {
   systemctl disable --now "$SERVICE_NAME" 2>/dev/null || true
 }
 cleanup_previous_install() {
-  local profile_root="$TARGET_HOME/.local/share/wmadapter/profiles"
   stop_service
-  pkill -TERM -f "$PROJECT_DIR/.venv/bin/wmadapter auth " 2>/dev/null || true
-  local pids
-  pids="$(ps -eo pid=,args= | awk -v root="$profile_root" 'index($0,"--user-data-dir=" root "/") > 0 {print $1}')"
-  if [ -n "$pids" ]; then
-    kill $pids 2>/dev/null || true
-  fi
-  rm -rf -- "$profile_root"
-  rm -f -- "$SERVICE_FILE" "$PROJECT_DIR/config.yaml"
+  # Reinstalling must not destroy browser-managed sessions or local config.
+  rm -f -- "$SERVICE_FILE"
   systemctl daemon-reload 2>/dev/null || true
-  say "Previous Web Model Adapter runtime and profile cleaned up."
+  say "Previous Web Model Adapter service stopped; provider profiles were preserved."
 }
 cleanup_failed_install() {
   local status=$?
@@ -267,89 +222,28 @@ cleanup_failed_install() {
   fi
   return "$status"
 }
-wait_service_ready() {
-  local i health_response ready_response
-  for i in $(seq 1 60); do
-    health_response="$(curl -sS "http://${API_HOST}:${API_PORT}/health" 2>/dev/null || true)"
-    ready_response="$(curl -sS "http://${API_HOST}:${API_PORT}/ready" 2>/dev/null || true)"
-    if printf '%s' "$health_response" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' \
-      && printf '%s' "$ready_response" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"'; then
-      return 0
-    fi
-    sleep 2
-  done
-  if [ -n "$health_response" ]; then
-    say "API health is not ready: $health_response"
-  fi
-  if [ -n "$ready_response" ]; then
-    say "Provider is not ready: $ready_response"
-  fi
-  return 1
-}
-run_smoke() {
-  curl -fsS "http://${API_HOST}:${API_PORT}/v1/chat/completions" \
-    -H 'Content-Type: application/json' \
-    -d "{\"model\":\"${SMOKE_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply exactly: WMADAPTER_OK\"}]}" >/tmp/wmadapter-smoke.json
-  grep -q 'WMADAPTER_OK' /tmp/wmadapter-smoke.json
-}
-need curl
 need systemctl
 trap cleanup_failed_install EXIT
-API_URL="http://${API_HOST}:${API_PORT}/v1"
-export API_PORT
 
 say "Web Model Adapter — Web-to-API Gateway for AI Agents installer"
 say "Local installation"
 
-say "Choose free chatbot provider:"
-echo "  1) deepseek web (free)"
-echo "  2) qwen (implemented)"
-CHOICE=$(ask "Provider number" "1")
-case "$CHOICE" in
-  1|deepseek) PROVIDER="deepseek" ;;
-  2|qwen) PROVIDER="qwen" ;;
-  *) echo "Invalid provider: $CHOICE" >&2; exit 1 ;;
-esac
 cleanup_previous_install
-SMOKE_MODEL="$PROVIDER-chat"
-if [ "$PROVIDER" != "deepseek" ]; then
-  say "Using the $PROVIDER browser-backed runtime adapter."
-fi
 
 install_current_os
-CHAT_URL="$(provider_url "$PROVIDER")"
-HEADLESS="false"
 SERVER_HOST="$API_HOST"
 ensure_browser
-write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_HOST" ""
-
-say "Manual browser authentication selected; no chatbot credentials will be stored."
-
-stop_service
-say "Web Model Adapter will open a dedicated system Google Chrome app window for login."
-if ! run_foreground_auth; then
-  echo "Interactive authentication failed; service was not started." >&2
-  exit 1
-fi
-HEADLESS="true"
-write_config "$PROVIDER" "$CHAT_URL" "$HEADLESS" "$BROWSER_EXECUTABLE" "$SERVER_HOST" ""
+write_config "$BROWSER_EXECUTABLE" "$SERVER_HOST"
+chown -- "$TARGET_USER:$TARGET_GROUP" config.yaml
 prepare_runtime_display
-start_service 0
-say "Waiting for API health and provider readiness after login..."
-if ! wait_service_ready; then
-  echo "Server did not become healthy after login. Check the legacy wmadapter.install.log." >&2
-  exit 1
-fi
-
-say "Running complete smoke test..."
-if run_smoke; then
-say "Web Model Adapter — Web-to-API Gateway for AI Agents: ${REPO_URL}"
-  say "API URL: ${API_URL}"
-  say "Health: http://${API_HOST}:${API_PORT}/health"
-  say "Models: http://${API_HOST}:${API_PORT}/v1/models"
-else
-  echo "Smoke test failed. API is up, but provider/chat test did not complete." >&2
-  echo "API URL: ${API_URL}" >&2
-  exit 1
-fi
+write_service 0
+systemctl daemon-reload
+say "Web Model Adapter installed without provider authentication."
+say "Provider profiles are preserved across reinstalls."
+say "Next steps:"
+say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml provider list"
+say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml login deepseek"
+say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml login qwen --google"
+say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml provider enable qwen"
+say "  systemctl start ${SERVICE_NAME}"
 INSTALL_SUCCESS=1
