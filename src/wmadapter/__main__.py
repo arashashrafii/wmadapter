@@ -118,6 +118,7 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     current.update({
         "baseUrl": "http://127.0.0.1:11555/v1",
         "api": "openai-completions",
+        "timeoutSeconds": 300,
         "models": model_entries,
     })
     providers["wmadapter"] = current

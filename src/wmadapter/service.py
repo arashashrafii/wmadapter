@@ -173,6 +173,7 @@ class DeepSeekService(ChatProvider):
                         verify_page = await self.browser.page()
                         if await DeepSeekLogin(verify_page, self.chat_url).probe_auth() == CHAT_READY:
                             self.ready = True
+                            self.last_error = None
                             self._set_auth_state("READY", "authenticated")
                             return
                 else:
@@ -670,6 +671,7 @@ class QwenService(ChatProvider):
                                 verified_streak += 1
                                 if verified_streak >= 2:
                                     self.ready = True
+                                    self.last_error = None
                                     self._set_auth_state("READY", "authenticated")
                                     return
                             else:

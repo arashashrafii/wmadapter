@@ -451,7 +451,7 @@ class HTTPContractTests(unittest.TestCase):
         with patch.object(main, 'STREAM_HEARTBEAT_SECONDS', 0.005), patch.object(main, 'STREAM_WATCHDOG_SECONDS', 0.2):
             response = self.post(stream=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn(': keep-alive\n\n', response.text)
+        self.assertIn('"delta":{}', response.text)
         self.assertEqual(response.text.count('data: [DONE]\n\n'), 1)
         self.provider.infer.assert_awaited_once()
 

@@ -523,7 +523,11 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
                         if inference_task.done():
                             result = inference_task.result()
                             break
-                        yield ": keep-alive\n\n"
+                        # Some OpenAI-compatible clients ignore SSE comments
+                        # when tracking an idle streamed response. Emit a
+                        # protocol-valid empty delta so long web-chat turns
+                        # remain visibly active to those clients.
+                        yield _sse(chunk({}))
                 _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
                 delta = {"content": result.content or ""}
                 if result.tool_calls:
