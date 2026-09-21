@@ -283,5 +283,7 @@ say "  wmadapter provider list"
 say "  wmadapter login deepseek"
 say "  wmadapter login qwen --google"
 say "  wmadapter provider enable qwen"
+say "  wmadapter add proxy qwen http://localhost:8080"
+say "  wmadapter proxy list"
 say "  Service is already running; use wmadapter provider list to inspect providers."
 INSTALL_SUCCESS=1

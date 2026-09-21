@@ -63,6 +63,7 @@ class DeepSeekService(ChatProvider):
             mode=browser_cfg.get("mode"),
             on_disconnect=self._on_browser_disconnect,
             launch_url=self.chat_url,
+            proxy=deepseek_cfg.get("proxy"),
         )
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
         self.recovery_timeout_ms = int(deepseek_cfg.get("recovery_timeout_ms", 120000))
@@ -551,6 +552,7 @@ class QwenService(ChatProvider):
             mode=browser_cfg.get("mode"),
             on_disconnect=self._on_browser_disconnect,
             launch_url=self.chat_url,
+            proxy=qwen_cfg.get("proxy"),
         )
         self.timeout_ms = int(qwen_cfg.get("timeout_ms", 180000))
         self.recovery_enabled = bool(qwen_cfg.get("recovery_enabled", True))

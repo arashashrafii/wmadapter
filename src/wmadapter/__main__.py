@@ -15,6 +15,7 @@ from .config import (
     load_config,
     provider_profile_from_config,
     save_config,
+    update_provider_proxy,
     update_provider_config,
 )
 from .logging import configure_logging
@@ -98,6 +99,19 @@ def main() -> None:
     for action in ("enable", "disable", "default"):
         command = provider_commands.add_parser(action)
         command.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    proxy = subparsers.add_parser("proxy", help="Configure provider-specific proxies")
+    proxy_commands = proxy.add_subparsers(dest="proxy_command", required=True)
+    proxy_add = proxy_commands.add_parser("add", help="Set a proxy for one provider")
+    proxy_add.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    proxy_add.add_argument("url")
+    proxy_remove = proxy_commands.add_parser("remove", help="Remove a provider proxy")
+    proxy_remove.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    proxy_commands.add_parser("list", help="Show provider proxies")
+    add = subparsers.add_parser("add", help="Compatibility command group")
+    add_commands = add.add_subparsers(dest="add_command", required=True)
+    add_proxy = add_commands.add_parser("proxy", help="Set a proxy for one provider")
+    add_proxy.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    add_proxy.add_argument("url")
     args = parser.parse_args()
 
     if args.command in {"auth", "login"}:
@@ -136,6 +150,22 @@ def main() -> None:
         except ValueError as exc:
             parser.error(str(exc))
         print(f"Provider configuration updated: {args.provider_command} {args.provider}")
+        return
+    if args.command in {"proxy", "add"}:
+        config = load_config(args.config)
+        path = config_file_path(args.config)
+        if args.command == "proxy" and args.proxy_command == "list":
+            for provider_name in sorted(BUILTIN_PROVIDER_MODELS):
+                value = config.get(provider_name, {}).get("proxy") or "none"
+                print(f"{provider_name}: {value}")
+            return
+        provider_name = args.provider
+        value = None if args.command == "proxy" and args.proxy_command == "remove" else args.url
+        try:
+            save_config(update_provider_proxy(config, provider_name, value), path)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(f"Proxy {'removed for' if value is None else 'updated for'} {provider_name}")
         return
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making

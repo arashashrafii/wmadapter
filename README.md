@@ -122,11 +122,17 @@ wmadapter provider enable deepseek
 wmadapter provider enable qwen
 wmadapter provider default deepseek
 
+# Proxies are stored separately for each provider
+wmadapter add proxy qwen http://localhost:8080
+wmadapter proxy list
+wmadapter proxy remove qwen
+
 wmadapter login deepseek
 wmadapter login qwen --google
 ```
 
 Each provider uses its own persistent Chrome profile. Browser-managed session state is reused on later starts; WM Adapter does not store provider passwords or raw cookies.
+If configured, a provider proxy is used only by that provider's browser session and authentication flow.
 
 Then start the bridge:
 

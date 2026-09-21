@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -82,6 +83,28 @@ def update_provider_config(config: dict[str, Any], action: str, provider: str) -
     return updated
 
 
+def validate_proxy(value: str) -> str:
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https", "socks5", "socks5h"} or not parsed.hostname:
+        raise ValueError("Proxy must be a URL such as http://localhost:8080 or socks5://localhost:1080")
+    return value
+
+
+def update_provider_proxy(config: dict[str, Any], provider: str, proxy: str | None) -> dict[str, Any]:
+    if provider not in BUILTIN_PROVIDER_MODELS:
+        raise ValueError(f"Unsupported provider: {provider}")
+    if proxy is not None:
+        validate_proxy(proxy)
+    updated = dict(config)
+    provider_config = dict(updated.get(provider, {}))
+    if proxy is None:
+        provider_config.pop("proxy", None)
+    else:
+        provider_config["proxy"] = proxy
+    updated[provider] = provider_config
+    return updated
+
+
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=11555, ge=1, le=65535)
@@ -123,6 +146,7 @@ class DeepSeekConfig(BaseModel):
     recovery_backoff_max_ms: int = Field(default=5000, ge=0, le=120000)
     login_timeout_ms: int = Field(default=30000, ge=1000)
     system_prompt: str = "Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required."
+    proxy: str | None = None
 
 
 class QwenConfig(BaseModel):
@@ -139,6 +163,7 @@ class QwenConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: ["qwen-chat"])
     # Deliberately false until a repeatable live Qwen image probe succeeds.
     image_generation_verified: bool = False
+    proxy: str | None = None
 
 
 class ProviderConfig(BaseModel):

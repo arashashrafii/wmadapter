@@ -394,6 +394,7 @@ async def run_manual_auth(
         headless=False,
         executable_path=configured_executable,
         launch_url=target.url,
+        proxy=config.get(provider, {}).get("proxy"),
         on_disconnect=lambda reason: interruption.update(state="LOGIN_INTERRUPTED", reason=reason),
     )
     try:

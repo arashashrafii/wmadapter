@@ -42,6 +42,7 @@ class BrowserManager:
         mode: str | None = None,
         on_disconnect: Callable[[str], None] | None = None,
         launch_url: str | None = None,
+        proxy: str | None = None,
     ):
         self.profile_path = Path(canonical_path(profile_path))
         login_mode = os.getenv("WMADAPTER_LOGIN") == "1"
@@ -57,6 +58,7 @@ class BrowserManager:
         self.cdp_endpoint = cdp_endpoint if self.mode == "cdp" else None
         self.on_disconnect = on_disconnect
         self.launch_url = launch_url
+        self.proxy = proxy
         self.launch_info: dict[str, object] = {}
         self.page_event_count = 0
         self._launch_page_ids: set[int] = set()
@@ -436,6 +438,8 @@ class BrowserManager:
                     "--use-mock-keychain",
                 ],
             }
+            if self.proxy:
+                launch_kwargs["proxy"] = {"server": self.proxy}
             if not self.headless:
                 # Keep interactive login in a normal browser window. Google OAuth
                 # rejects app/embedded windows even when the Chromium sandbox is on.
