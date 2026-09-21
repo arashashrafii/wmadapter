@@ -7,6 +7,7 @@ from .errors import ContextLimitError
 from .protocol import _prompt, _image_attachments, _resolve_web_answer, compact_messages, minimize_tool_schemas
 from .normalizer import ToolProtocolNormalizer
 from .recovery import ToolCallRecovery
+from .retry import recovery_context
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +57,13 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     if images:
         if not provider.capabilities.image_input:
             raise ValueError("This provider does not support image input")
-        answer = await provider.complete_with_attachments(
-            prompt, conversation_id=request.conversation_id, attachments=images
-        )
+        with recovery_context(has_tools_or_side_effects=bool(tools)):
+            answer = await provider.complete_with_attachments(
+                prompt, conversation_id=request.conversation_id, attachments=images
+            )
     else:
-        answer = await provider.complete(prompt, conversation_id=request.conversation_id)
+        with recovery_context(has_tools_or_side_effects=bool(tools)):
+            answer = await provider.complete(prompt, conversation_id=request.conversation_id)
     call, visible = await (adapter.resolve(provider, answer, messages, tools, request.conversation_id, prompt)
                            if adapter else ToolCallRecovery().resolve(
                                provider, answer, messages, tools, request.conversation_id, prompt

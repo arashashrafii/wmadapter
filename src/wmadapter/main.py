@@ -56,6 +56,7 @@ from .providers.errors import (
     ProviderUnavailableError,
 )
 from .providers.submit import PreSubmitError, UncertainSubmitError
+from .providers.retry import safe_failure
 from .providers.protocol import (
     _content_text,
     _image_attachments,
@@ -193,7 +194,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            detail = str(exc).strip() or exc.__class__.__name__
+            detail = safe_failure(exc)
             _startup_status.update(state="failed", error=detail)
             logger.warning("Startup provider readiness check failed: %s", detail)
         else:
@@ -240,7 +241,33 @@ def _provider_http_error(exc: Exception) -> HTTPException:
     message = str(exc).lower()
     if any(marker in message for marker in ("rate limit", "rate_limited", "too many requests", "40029")):
         return HTTPException(429, "provider_rate_limited")
+    if any(marker in message for marker in (
+        "provider_login_required", "challenge_visible", "sign_in_visible",
+        "unknown_ui", "session_pending", "account_suspended", "login_required",
+    )):
+        code = "provider_login_required" if any(marker in message for marker in ("provider_login_required", "sign_in_visible", "login_required")) else "provider_not_ready"
+        return HTTPException(503, code)
     return HTTPException(502, "provider_internal_error")
+
+
+def _stream_provider_error(exc: Exception) -> dict[str, Any]:
+    """Translate provider failures to the same stable codes as non-streaming."""
+    mapped = _provider_http_error(exc)
+    detail = str(mapped.detail)
+    messages = {
+        "provider_timeout": ("Provider request timed out", "provider_error"),
+        "provider_submission_uncertain": ("Provider submission outcome is uncertain; retry only after reconciliation", "provider_error"),
+        "provider_rate_limited": ("Provider rate limit reached", "rate_limit_error"),
+        "provider_login_required": ("Provider login is required", "provider_error"),
+        "provider_not_ready": ("Provider is not ready; complete login or challenge verification and retry", "provider_error"),
+        "provider_unavailable": ("Provider is temporarily unavailable", "provider_error"),
+        "provider_capacity": ("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_error"),
+        "protocol_recovery_failed": ("Provider response could not be recovered safely", "provider_error"),
+        "context_length_exceeded": ("Request exceeds the configured context budget", "invalid_request_error"),
+    }
+    message, kind = messages.get(detail, ("Web provider failed to produce a valid completion", "provider_error"))
+    code = "context_length_exceeded" if detail.startswith("context_length_exceeded") else detail
+    return _error(message, kind, code)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -540,21 +567,21 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
                 yield _sse(_error("Request exceeds the configured context budget", "invalid_request_error", "context_length_exceeded"))
             except ProtocolRecoveryError:
                 yield _sse(_error("Provider response could not be recovered safely", "provider_error", "protocol_recovery_failed"))
-            except Exception:
-                logger.exception("Streaming chat completion failed")
-                yield _sse(_error("Web provider failed to produce a valid completion", "provider_error", "provider_error"))
+            except Exception as exc:
+                logger.warning("Streaming chat completion failed: %s", safe_failure(exc))
+                yield _sse(_stream_provider_error(exc))
             yield _sse("[DONE]")
         return StreamingResponse(events(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "Connection": "close", "X-Accel-Buffering": "no"})
     try:
         result = await infer()
     except PageCapacityError as exc:
-        logger.warning("Chat completion blocked by provider page capacity: %s", exc)
+        logger.warning("Chat completion blocked by provider page capacity: %s", safe_failure(exc))
         raise _provider_http_error(exc) from exc
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("Chat completion failed")
+        logger.warning("Chat completion failed: %s", safe_failure(exc))
         raise _provider_http_error(exc) from exc
     _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
     response = _attach_provider_metadata(

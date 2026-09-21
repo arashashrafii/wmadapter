@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 import uuid
-import random
 from dataclasses import dataclass
 from collections.abc import AsyncIterator
 
@@ -19,6 +18,14 @@ from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
 from .providers.submit import PreSubmitError, UncertainSubmitError
 from .providers.errors import ProviderRateLimitError
+from .providers.retry import (
+    FailureClass,
+    RecoveryPolicy,
+    bounded_observe,
+    classify_failure,
+    current_recovery_context,
+    safe_failure,
+)
 from .config import provider_profile_dir
 
 logger = logging.getLogger(__name__)
@@ -70,10 +77,15 @@ class DeepSeekService(ChatProvider):
         self.recovery_enabled = bool(deepseek_cfg.get("recovery_enabled", True))
         self.recovery_backoff_base_ms = int(deepseek_cfg.get("recovery_backoff_base_ms", 250))
         self.recovery_backoff_max_ms = int(deepseek_cfg.get("recovery_backoff_max_ms", 5000))
-        self.restart_retries = min(
-            int(browser_cfg.get("restart_retries", 1)),
-            int(deepseek_cfg.get("recovery_max_attempts", 2)) - 1,
-        ) if self.recovery_enabled else 0
+        self.recovery_policy = RecoveryPolicy(
+            enabled=self.recovery_enabled,
+            max_attempts=int(deepseek_cfg.get("recovery_max_attempts", 2)),
+            backoff_base_ms=self.recovery_backoff_base_ms,
+            backoff_max_ms=self.recovery_backoff_max_ms,
+            deadline_ms=int(deepseek_cfg.get("recovery_deadline_ms", self.recovery_timeout_ms)),
+            allow_resend=bool(deepseek_cfg.get("recovery_allow_resend", False)),
+        )
+        self.restart_retries = self.recovery_policy.max_attempts - 1 if self.recovery_enabled else 0
         self.last_error: str | None = None
         self.ready = False
         self.auth_state = "STARTING"
@@ -188,7 +200,7 @@ class DeepSeekService(ChatProvider):
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("DeepSeek auth watcher failed")
+            logger.warning("DeepSeek auth watcher failed")
         finally:
             self._watcher_running = False
 
@@ -304,7 +316,7 @@ class DeepSeekService(ChatProvider):
         try:
             deleted = await DeepSeekChat(page, timeout_ms=self.timeout_ms).delete_remote_conversation()
         except Exception as exc:
-            logger.warning("DeepSeek remote conversation deletion failed: %s", exc)
+            logger.warning("DeepSeek remote conversation deletion failed: %s", safe_failure(exc))
             deleted = False
         finally:
             self.browser.release_page(page)
@@ -412,7 +424,7 @@ class DeepSeekService(ChatProvider):
                 if "challenge_visible" in message:
                     self._set_auth_state("AUTHENTICATING", "challenge_visible")
                 elif "unknown_ui" in message or "session_pending" in message:
-                    self._set_auth_state("AUTHENTICATING", message.rsplit("(", 1)[-1].rstrip(")"))
+                    self._set_auth_state("AUTHENTICATING", "unknown_ui" if "unknown_ui" in message else "session_pending")
                 else:
                     self._set_auth_state("LOGIN_REQUIRED", "provider_login_required")
             raise exc
@@ -422,7 +434,8 @@ class DeepSeekService(ChatProvider):
 
     async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
         async with self._request_lock:
-            attempts = self.restart_retries + 1
+            attempts = self.recovery_policy.max_attempts if self.recovery_policy.enabled else 1
+            recovery_deadline = None
             for attempt in range(1, attempts + 1):
                 try:
                     page = await self._page_for_conversation(conversation_id)
@@ -433,7 +446,21 @@ class DeepSeekService(ChatProvider):
                         try:
                             answer = await chat.send_message(prompt)
                         except UncertainSubmitError:
-                            answer = await chat.recover_response(self.recovery_timeout_ms)
+                            recovery_deadline = recovery_deadline or self.recovery_policy.deadline()
+                            answer = await bounded_observe(
+                                chat.recover_response,
+                                timeout_ms=self.recovery_timeout_ms,
+                                deadline=recovery_deadline,
+                            ) if self.recovery_policy.enabled else None
+                            if answer is None and self.recovery_policy.can_retry(
+                                FailureClass.SUBMITTED_UNOBSERVED,
+                                has_tools_or_side_effects=current_recovery_context().has_tools_or_side_effects,
+                            ) and recovery_deadline > time.monotonic():
+                                logger.warning(
+                                    "recovery provider=%s attempt=%d/%d classification=%s outcome=explicit_resend",
+                                    self.name, attempt, attempts, FailureClass.SUBMITTED_UNOBSERVED,
+                                )
+                                answer = await chat.send_message(prompt)
                             if answer is None:
                                 raise
                     finally:
@@ -441,20 +468,37 @@ class DeepSeekService(ChatProvider):
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
-                    self.last_error = str(exc)
-                    logger.warning("DeepSeek submission is uncertain: %s", exc)
+                    self.last_error = safe_failure(exc)
+                    logger.warning(
+                        "recovery provider=%s attempt=%d/%d classification=%s outcome=terminal",
+                        self.name, attempt, attempts, FailureClass.SUBMITTED_UNOBSERVED,
+                    )
                     raise
                 except Exception as exc:
-                    self.last_error = str(exc)
-                    logger.warning("DeepSeek request failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    auth_failure = self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc)
+                    self.last_error = safe_failure(exc)
+                    classification = classify_failure(exc)
+                    auth_failure = classification == FailureClass.AUTHENTICATION
+                    if self.auth_state == "LOGIN_INTERRUPTED":
+                        classification = FailureClass.AUTHENTICATION
+                        auth_failure = True
                     if auth_failure:
                         self.ready = False
-                    if attempt >= attempts or auth_failure:
+                    recovery_deadline = recovery_deadline or self.recovery_policy.deadline()
+                    if (
+                        attempt >= attempts
+                        or auth_failure
+                        or not self.recovery_policy.can_retry(classification)
+                        or not await self.recovery_policy.wait_before_retry(attempt, recovery_deadline)
+                    ):
+                        logger.warning(
+                            "recovery provider=%s attempt=%d/%d classification=%s outcome=terminal",
+                            self.name, attempt, attempts, classification,
+                        )
                         raise
-                    delay_ms = min(self.recovery_backoff_max_ms, self.recovery_backoff_base_ms * (2 ** (attempt - 1)))
-                    if delay_ms:
-                        await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
+                    logger.info(
+                        "recovery provider=%s attempt=%d/%d classification=%s outcome=retry",
+                        self.name, attempt, attempts, classification,
+                    )
                     self._clear_conversation_pages()
                     await self.browser.restart()
             raise RuntimeError("DeepSeek request failed")
@@ -463,7 +507,8 @@ class DeepSeekService(ChatProvider):
         self, prompt: str, conversation_id: str | None = None, attachments: list[str] | None = None
     ) -> str:
         async with self._request_lock:
-            attempts = self.restart_retries + 1
+            attempts = self.recovery_policy.max_attempts if self.recovery_policy.enabled else 1
+            recovery_deadline = None
             for attempt in range(1, attempts + 1):
                 try:
                     page = await self._page_for_conversation(conversation_id)
@@ -474,7 +519,21 @@ class DeepSeekService(ChatProvider):
                         try:
                             answer = await chat.send_message(prompt, attachments=attachments or [])
                         except UncertainSubmitError:
-                            answer = await chat.recover_response(self.recovery_timeout_ms)
+                            recovery_deadline = recovery_deadline or self.recovery_policy.deadline()
+                            answer = await bounded_observe(
+                                chat.recover_response,
+                                timeout_ms=self.recovery_timeout_ms,
+                                deadline=recovery_deadline,
+                            ) if self.recovery_policy.enabled else None
+                            if answer is None and self.recovery_policy.can_retry(
+                                FailureClass.SUBMITTED_UNOBSERVED,
+                                has_tools_or_side_effects=current_recovery_context().has_tools_or_side_effects,
+                            ) and recovery_deadline > time.monotonic():
+                                logger.warning(
+                                    "recovery provider=%s attempt=%d/%d classification=%s outcome=explicit_resend",
+                                    self.name, attempt, attempts, FailureClass.SUBMITTED_UNOBSERVED,
+                                )
+                                answer = await chat.send_message(prompt, attachments=attachments or [])
                             if answer is None:
                                 raise
                     finally:
@@ -482,17 +541,37 @@ class DeepSeekService(ChatProvider):
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
-                    self.last_error = str(exc)
-                    logger.warning("DeepSeek attachment submission is uncertain: %s", exc)
+                    self.last_error = safe_failure(exc)
+                    logger.warning(
+                        "recovery provider=%s attempt=%d/%d classification=%s outcome=terminal",
+                        self.name, attempt, attempts, FailureClass.SUBMITTED_UNOBSERVED,
+                    )
                     raise
                 except Exception as exc:
-                    self.last_error = str(exc)
-                    logger.warning("DeepSeek request with attachments failed on attempt %s/%s: %s", attempt, attempts, exc)
-                    auth_failure = self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc)
+                    self.last_error = safe_failure(exc)
+                    classification = classify_failure(exc)
+                    auth_failure = classification == FailureClass.AUTHENTICATION
+                    if self.auth_state == "LOGIN_INTERRUPTED":
+                        classification = FailureClass.AUTHENTICATION
+                        auth_failure = True
                     if auth_failure:
                         self.ready = False
-                    if attempt >= attempts or auth_failure:
+                    recovery_deadline = recovery_deadline or self.recovery_policy.deadline()
+                    if (
+                        attempt >= attempts
+                        or auth_failure
+                        or not self.recovery_policy.can_retry(classification)
+                        or not await self.recovery_policy.wait_before_retry(attempt, recovery_deadline)
+                    ):
+                        logger.warning(
+                            "recovery provider=%s attempt=%d/%d classification=%s outcome=terminal",
+                            self.name, attempt, attempts, classification,
+                        )
                         raise
+                    logger.info(
+                        "recovery provider=%s attempt=%d/%d classification=%s outcome=retry",
+                        self.name, attempt, attempts, classification,
+                    )
                     self._clear_conversation_pages()
                     await self.browser.restart()
             raise RuntimeError("DeepSeek request with attachments failed")
@@ -557,10 +636,15 @@ class QwenService(ChatProvider):
         self.recovery_timeout_ms = int(qwen_cfg.get("recovery_timeout_ms", 120000))
         self.recovery_backoff_base_ms = int(qwen_cfg.get("recovery_backoff_base_ms", 250))
         self.recovery_backoff_max_ms = int(qwen_cfg.get("recovery_backoff_max_ms", 5000))
-        self.restart_retries = min(
-            int(browser_cfg.get("restart_retries", 1)),
-            int(qwen_cfg.get("recovery_max_attempts", 2)) - 1,
-        ) if self.recovery_enabled else 0
+        self.recovery_policy = RecoveryPolicy(
+            enabled=self.recovery_enabled,
+            max_attempts=int(qwen_cfg.get("recovery_max_attempts", 2)),
+            backoff_base_ms=self.recovery_backoff_base_ms,
+            backoff_max_ms=self.recovery_backoff_max_ms,
+            deadline_ms=int(qwen_cfg.get("recovery_deadline_ms", self.recovery_timeout_ms)),
+            allow_resend=bool(qwen_cfg.get("recovery_allow_resend", False)),
+        )
+        self.restart_retries = self.recovery_policy.max_attempts - 1 if self.recovery_enabled else 0
         self.last_error: str | None = None
         self.ready = False
         self.auth_state = "STARTING"
@@ -687,7 +771,7 @@ class QwenService(ChatProvider):
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Qwen auth watcher failed")
+            logger.warning("Qwen auth watcher failed")
         finally:
             self._watcher_running = False
 
@@ -854,7 +938,8 @@ class QwenService(ChatProvider):
 
     async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
         async with self._request_lock:
-            attempts = self.restart_retries + 1
+            attempts = self.recovery_policy.max_attempts if self.recovery_policy.enabled else 1
+            recovery_deadline = None
             for attempt in range(1, attempts + 1):
                 try:
                     page = await self._page_for_conversation(conversation_id)
@@ -863,13 +948,28 @@ class QwenService(ChatProvider):
                         if not self.ready:
                             await self._authenticate(conversation_id)
                         page = await self._page_for_conversation(conversation_id)
-                        if getattr(page, "url", "").rstrip("/") == self.chat_url.rstrip("/"):
+                        page_url = getattr(page, "url", "")
+                        if isinstance(page_url, str) and page_url.rstrip("/") == self.chat_url.rstrip("/"):
                             await page.goto("https://chat.qwen.ai/", wait_until="domcontentloaded")
                         chat = QwenChat(page, timeout_ms=self.timeout_ms)
                         try:
                             answer = await chat.send_message(prompt)
                         except UncertainSubmitError:
-                            answer = await chat.recover_response(self.recovery_timeout_ms) if self.recovery_enabled else None
+                            recovery_deadline = recovery_deadline or self.recovery_policy.deadline()
+                            answer = await bounded_observe(
+                                chat.recover_response,
+                                timeout_ms=self.recovery_timeout_ms,
+                                deadline=recovery_deadline,
+                            ) if self.recovery_policy.enabled else None
+                            if answer is None and self.recovery_policy.can_retry(
+                                FailureClass.SUBMITTED_UNOBSERVED,
+                                has_tools_or_side_effects=current_recovery_context().has_tools_or_side_effects,
+                            ) and recovery_deadline > time.monotonic():
+                                logger.warning(
+                                    "recovery provider=%s attempt=%d/%d classification=%s outcome=explicit_resend",
+                                    self.name, attempt, attempts, FailureClass.SUBMITTED_UNOBSERVED,
+                                )
+                                answer = await chat.send_message(prompt)
                             if answer is None:
                                 raise
                     finally:
@@ -878,19 +978,36 @@ class QwenService(ChatProvider):
                     return answer
                 except UncertainSubmitError as exc:
                     self.last_error = self._safe_error(exc)
-                    logger.warning("Qwen submission is uncertain (%s)", type(exc).__name__)
+                    logger.warning(
+                        "recovery provider=%s attempt=%d/%d classification=%s outcome=terminal",
+                        self.name, attempt, attempts, FailureClass.SUBMITTED_UNOBSERVED,
+                    )
                     raise
                 except Exception as exc:
                     self.last_error = self._safe_error(exc)
-                    logger.warning("Qwen request failed on attempt %s/%s (%s)", attempt, attempts, type(exc).__name__)
-                    auth_failure = self.auth_state == "LOGIN_INTERRUPTED" or self._is_auth_failure(exc)
+                    classification = classify_failure(exc)
+                    auth_failure = classification == FailureClass.AUTHENTICATION
+                    if self.auth_state == "LOGIN_INTERRUPTED":
+                        classification = FailureClass.AUTHENTICATION
+                        auth_failure = True
                     if auth_failure:
                         self.ready = False
-                    if attempt >= attempts or auth_failure:
+                    recovery_deadline = recovery_deadline or self.recovery_policy.deadline()
+                    if (
+                        attempt >= attempts
+                        or auth_failure
+                        or not self.recovery_policy.can_retry(classification)
+                        or not await self.recovery_policy.wait_before_retry(attempt, recovery_deadline)
+                    ):
+                        logger.warning(
+                            "recovery provider=%s attempt=%d/%d classification=%s outcome=terminal",
+                            self.name, attempt, attempts, classification,
+                        )
                         raise
-                    delay_ms = min(self.recovery_backoff_max_ms, self.recovery_backoff_base_ms * (2 ** (attempt - 1)))
-                    if delay_ms:
-                        await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
+                    logger.info(
+                        "recovery provider=%s attempt=%d/%d classification=%s outcome=retry",
+                        self.name, attempt, attempts, classification,
+                    )
                     self._conversation_pages.clear()
                     await self.browser.restart()
             raise RuntimeError("Qwen request failed")

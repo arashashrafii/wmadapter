@@ -56,6 +56,9 @@ class DeepSeekConfig(BaseModel):
     recovery_max_attempts: int = Field(default=2, ge=1, le=5)
     recovery_backoff_base_ms: int = Field(default=250, ge=0, le=60000)
     recovery_backoff_max_ms: int = Field(default=5000, ge=0, le=120000)
+    recovery_deadline_ms: int = Field(default=120000, ge=0, le=900000)
+    # Ambiguous browser submissions are never replayed by default.
+    recovery_allow_resend: bool = False
     login_timeout_ms: int = Field(default=30000, ge=1000)
     system_prompt: str = "Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required."
 
@@ -71,6 +74,8 @@ class QwenConfig(BaseModel):
     recovery_max_attempts: int = Field(default=2, ge=1, le=5)
     recovery_backoff_base_ms: int = Field(default=250, ge=0, le=60000)
     recovery_backoff_max_ms: int = Field(default=5000, ge=0, le=120000)
+    recovery_deadline_ms: int = Field(default=120000, ge=0, le=900000)
+    recovery_allow_resend: bool = False
     models: list[str] = Field(default_factory=lambda: ["qwen-chat"])
     # Deliberately false until a repeatable live Qwen image probe succeeds.
     image_generation_verified: bool = False

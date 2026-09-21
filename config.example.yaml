@@ -22,6 +22,13 @@ deepseek:
   timeout_ms: 180000
   # After a post-submit timeout, observe the same conversation without resending.
   recovery_timeout_ms: 120000
+  recovery_enabled: true
+  recovery_max_attempts: 2
+  recovery_backoff_base_ms: 250
+  recovery_backoff_max_ms: 5000
+  recovery_deadline_ms: 120000
+  # Ambiguous browser submissions are never replayed by default.
+  recovery_allow_resend: false
   login_timeout_ms: 30000
   system_prompt: Absolute mode. Answer briefly. No fluff, no hedging, no follow-up questions unless required.
 
@@ -34,6 +41,12 @@ qwen:
     - qwen-chat
   # Enable only after the live Qwen image UI/artifact probe succeeds.
   image_generation_verified: true
+  recovery_enabled: true
+  recovery_max_attempts: 2
+  recovery_backoff_base_ms: 250
+  recovery_backoff_max_ms: 5000
+  recovery_deadline_ms: 120000
+  recovery_allow_resend: false
 
 providers:
   default: deepseek

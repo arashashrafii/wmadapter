@@ -190,6 +190,16 @@ disabled when reconciliation cannot establish the result, avoiding duplicate
 tool actions. A timeout in one turn does not represent the total time already
 spent on earlier turns.
 
+DeepSeek and Qwen use the same conservative recovery policy. Pre-submit
+transient failures may be retried with bounded exponential jitter; authentication,
+challenge, rate-limit, protocol, and submitted-but-unobserved failures remain
+terminal. Recovery attempts share a configurable deadline and emit only the
+provider, attempt, classification, and outcome in logs. Configure
+`recovery_enabled`, `recovery_max_attempts`, `recovery_backoff_base_ms`,
+`recovery_backoff_max_ms`, `recovery_deadline_ms`, and
+`recovery_allow_resend` under each provider. Resend is disabled by default and
+does not override the no-duplicate safety rule for ambiguous browser submits.
+
 Canonical environment variables use the `WMADAPTER_*` prefix, including
 `WMADAPTER_CONFIG`, `WMADAPTER_LOGIN`, `WMADAPTER_XVFB`, and `WMADAPTER_URL`.
 
