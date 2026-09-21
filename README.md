@@ -124,6 +124,25 @@ For DeepSeek Web:
 
 Complete login in the opened browser. No DeepSeek API key is required.
 
+Provider registration is configuration-only and safe to repeat. It discovers the
+provider's built-in model list and preserves existing settings:
+
+```bash
+wmadapter add-provider deepseek
+wmadapter add-provider qwen
+wmadapter list-providers
+wmadapter list-models
+wmadapter remove-model qwen qwen-chat
+wmadapter remove-provider qwen
+```
+
+Use `--config config.test.yaml` for test configuration. `add-provider` extends an
+explicit `providers.enabled_models` allowlist without replacing it; leaving that
+allowlist unset exposes all discovered models from enabled providers. The HTTP
+`/v1/models` catalog reports each model's provider, chat/image-generation
+capabilities, readiness, and default status. A provider that is not ready does not
+prevent healthy enabled providers from serving their own models.
+
 Then start the bridge:
 
 ```bash

@@ -394,8 +394,13 @@ async def _infer_structured(provider, inference, spec):
 
 
 def _model_provider(model):
-    # OpenClaw commonly prefixes the public model with the local gateway name.
-    normalized_model = model.split("/", 1)[-1]
+    # OpenClaw may send either a local gateway prefix or an explicit provider
+    # prefix. Preserve the latter so provider selection cannot depend on order.
+    if "/" in model:
+        prefix, plain = model.split("/", 1)
+        normalized_model = f"{prefix}:{plain}" if prefix in router.providers else plain
+    else:
+        normalized_model = model
     try:
         return router.resolve_model(normalized_model)
     except RuntimeError as exc:
@@ -425,12 +430,18 @@ async def props(model: str, autoload: bool = False):
 @app.get("/v1/models")
 async def models(request: Request):
     _authorize(request)
-    return {"object": "list", "data": [
-        {"id": model, "object": "model", "created": 0, "owned_by": name + "-web",
-         "provider": name, "capabilities": _public_capabilities(router.providers[name]),
-         "limits": _model_limits(router.providers[name])}
-        for model, name in _model_catalog().items() if name in router.providers
-    ]}
+    data = []
+    for entry in router.model_catalog():
+        provider = router.providers[entry["provider"]]
+        data.append({
+            **entry,
+            "object": "model",
+            "created": 0,
+            "owned_by": entry["provider"] + "-web",
+            "capabilities": _public_capabilities(provider),
+            "limits": _model_limits(provider),
+        })
+    return {"object": "list", "data": data}
 
 
 @app.post("/v1/chat/completions")

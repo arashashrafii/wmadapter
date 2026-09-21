@@ -39,9 +39,11 @@ providers:
   default: deepseek
   enabled:
     - deepseek
+    - qwen
   # Optional model allowlist. Omit to expose every model from enabled providers.
   enabled_models:
     - deepseek-chat
+    - qwen-chat
 
 limits:
   # Measurable gateway safeguards; upstream token limits remain unknown.

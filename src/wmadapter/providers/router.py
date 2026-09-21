@@ -36,8 +36,17 @@ class ProviderRouter:
 
     def resolve_model(self, model: str) -> ChatProvider:
         """Strict public model resolution; provider_for_model is legacy."""
-        plain = model.split(":", 1)[-1]
-        for provider_name in self.enabled_providers:
+        provider_name, separator, plain = model.partition(":")
+        if not separator:
+            plain = model
+            matches = [name for name in self.enabled_providers
+                       if plain in getattr(self.providers[name], "model_ids", ())
+                       and self.model_enabled(plain)]
+            if len(matches) == 1:
+                return self.providers[matches[0]]
+            if len(matches) > 1:
+                raise RuntimeError(f"Ambiguous model {model!r}; use provider:model")
+        elif provider_name in self.enabled_providers:
             provider = self.providers[provider_name]
             if plain in getattr(provider, "model_ids", ()) and self.model_enabled(plain):
                 return provider
@@ -68,6 +77,31 @@ class ProviderRouter:
                 for name in failures
             )
             raise RuntimeError(f"Enabled provider startup failed ({details}); retry after fixing configuration")
+
+    def model_catalog(self) -> list[dict]:
+        """Build a stable public catalog while keeping provider failures isolated."""
+        catalog = []
+        for name in self.enabled_providers:
+            provider = self.providers[name]
+            ready = bool(getattr(provider, "ready", False))
+            # status is async for real providers; the synchronous attribute is
+            # intentionally the source for discovery, so catalog construction
+            # never performs I/O or blocks on a browser.
+            models = self.models_for_provider(name)
+            default_model = models[0] if models else None
+            for model in models:
+                capabilities = provider.model_capabilities(model)
+                catalog.append({
+                    "id": model,
+                    "model": model,
+                    "provider": name,
+                    "capability": capabilities,
+                    "capabilities": provider.capabilities.model_dump(),
+                    "readiness": ready,
+                    "ready": ready,
+                    "default": name == self.default_provider and model == default_model,
+                })
+        return catalog
 
     async def stop(self) -> None:
         for name in self.enabled_providers:

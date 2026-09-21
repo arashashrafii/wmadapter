@@ -51,6 +51,14 @@ The client agent owns tool execution and sends the result on its next request.
   or in-flight pages are protected, and a full cap returns a capacity error.
 - Model discovery comes from registered provider model_ids and capabilities.
   GPT Web/OX Alpha are extension targets only; no dummy adapters are registered.
+- Provider configuration and model registration are separate. The CLI's
+  `add-provider`/`remove-provider` and `add-model`/`remove-model` operations are
+  idempotent and preserve provider-specific settings. An explicit model allowlist
+  is extended rather than replaced. `/v1/models` includes provider-owned model
+  metadata, independent readiness, chat/image-generation capability flags, and
+  the configured default marker. Routing accepts an explicit `provider:model`
+  selector; an unprefixed duplicate is rejected as ambiguous instead of being
+  selected by enabled-provider order.
 
 ## Contract scope
 

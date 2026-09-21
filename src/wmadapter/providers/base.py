@@ -15,6 +15,13 @@ class ChatProvider(ABC):
     context_budget_chars: int | None = None
     context_budget_profiles: dict[str, int] = {}
 
+    def model_capabilities(self, model: str) -> dict[str, bool]:
+        """Capabilities for one discovered model, kept provider-owned."""
+        return {
+            "chat": True,
+            "image_generation": bool(self.capabilities.image_generation),
+        }
+
     def context_budget_for(self, model: str) -> int | None:
         return self.context_budget_profiles.get(
             model, self.context_budget_profiles.get(self.name, self.context_budget_chars)
