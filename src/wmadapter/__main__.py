@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 
 from dotenv import load_dotenv
 import uvicorn
@@ -118,6 +120,28 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     return target
 
 
+def _check_ready(config: dict) -> int:
+    server = config.get("server", {})
+    host = server.get("host", "127.0.0.1")
+    port = int(server.get("port", 11555))
+    url = f"http://{host}:{port}/ready"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = {"status": "not_ready", "error": str(exc)}
+        status = exc.code
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        print(f"not ready: {url} ({exc})")
+        return 1
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0 if status == 200 and payload.get("status") == "ready" else 1
+
+
 def run_server() -> None:
     load_dotenv()
     config = load_config()
@@ -171,6 +195,9 @@ def main() -> None:
     add_proxy = add_commands.add_parser("proxy", help="Set a proxy for one provider")
     add_proxy.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     add_proxy.add_argument("url")
+    check = subparsers.add_parser("check", help="Check service state")
+    check_commands = check.add_subparsers(dest="check_command", required=True)
+    check_commands.add_parser("ready", help="Check whether all enabled providers are ready")
     run = subparsers.add_parser("run", help="Configure a client from WM Adapter models")
     run_commands = run.add_subparsers(dest="client", required=True)
     opencode = run_commands.add_parser("opencode", help="Add a WM Adapter provider to OpenCode")
@@ -242,6 +269,8 @@ def main() -> None:
             parser.error(str(exc))
         print(f"{args.client.title()} configured for {args.provider}: {path}")
         return
+    if args.command == "check" and args.check_command == "ready":
+        raise SystemExit(_check_ready(load_config(args.config)))
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making
         # product/test selection explicit for local scripts and service units.

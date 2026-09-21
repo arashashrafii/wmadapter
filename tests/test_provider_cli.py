@@ -84,6 +84,15 @@ class ProviderCliTests(unittest.TestCase):
             self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11555/v1")
             self.assertEqual(provider["models"], [{"id": "qwen-chat", "name": "qwen-chat"}])
 
+    def test_check_ready_returns_nonzero_for_unready_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            save_config({"server": {"host": "127.0.0.1", "port": 1}}, source)
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "check", "ready"]):
+                with self.assertRaises(SystemExit) as raised:
+                    main()
+            self.assertEqual(raised.exception.code, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
