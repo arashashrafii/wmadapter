@@ -104,16 +104,7 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     else:
         document = {}
     models = list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
-    model_entries = [
-        {
-            "id": model,
-            "name": model,
-            "contextWindow": 32768,
-            "contextTokens": 24576,
-            "maxTokens": 4096,
-        }
-        for model in models
-    ]
+    model_entries = [{"id": model, "name": model} for model in models]
     model_config = dict(document.get("models") or {})
     providers = dict(model_config.get("providers") or {})
     current = dict(providers.get("wmadapter") or {})

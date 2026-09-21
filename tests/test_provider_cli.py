@@ -82,10 +82,7 @@ class ProviderCliTests(unittest.TestCase):
             self.assertEqual(document["agents"]["defaults"]["model"], "wmadapter/qwen-chat")
             provider = document["models"]["providers"]["wmadapter"]
             self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11555/v1")
-            self.assertEqual(provider["models"], [{
-                "id": "qwen-chat", "name": "qwen-chat", "contextWindow": 32768,
-                "contextTokens": 24576, "maxTokens": 4096,
-            }])
+            self.assertEqual(provider["models"], [{"id": "qwen-chat", "name": "qwen-chat"}])
 
     def test_check_ready_returns_nonzero_for_unready_service(self):
         with tempfile.TemporaryDirectory() as directory:
