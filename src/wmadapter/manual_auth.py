@@ -407,10 +407,16 @@ async def run_manual_auth(
                 print("Google sign-in button was not detected automatically. Click it manually in the browser.")
         print(f"Complete {provider} authentication in the opened browser; Web Model Adapter will continue automatically.")
         await _wait_for_auth(provider, page, target, interruption=interruption)
-        async def auth_probe(page) -> bool:
-            return await _stable_auth_probe(provider, page, target)
+        # Qwen can expose its composer before the OAuth session is fully
+        # usable. A second probe during a headed-to-headless handoff can
+        # therefore reject a valid login. The headed auth loop already
+        # verified the session; let the service perform its normal probe
+        # after restarting in its configured hidden display.
+        if provider != "qwen":
+            async def auth_probe(page) -> bool:
+                return await _stable_auth_probe(provider, page, target)
 
-        await browser.handoff_to_headless(auth_probe=auth_probe)
+            await browser.handoff_to_headless(auth_probe=auth_probe)
         await browser.stop()
     finally:
         await browser.stop()

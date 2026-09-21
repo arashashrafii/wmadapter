@@ -560,6 +560,8 @@ class Milestone2Tests(unittest.TestCase):
         self.assertEqual(kwargs["executable_path"], str(Path("./chrome").resolve()))
         self.assertEqual(kwargs["launch_url"], "https://chat.qwen.ai/custom")
         page.goto.assert_not_awaited()
+        manager.handoff_to_headless.assert_not_awaited()
+        manager.stop.assert_awaited()
 
     def test_manual_auth_rejects_cross_provider_url_before_launch(self):
         config = load_config('/nonexistent')
