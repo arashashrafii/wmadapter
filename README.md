@@ -127,6 +127,7 @@ wmadapter add proxy qwen http://localhost:8080
 wmadapter proxy list
 wmadapter proxy remove qwen
 wmadapter check ready
+wmadapter check ready deepseek
 
 # Generate/update an OpenCode provider from the WM Adapter model catalog
 wmadapter run opencode deepseek

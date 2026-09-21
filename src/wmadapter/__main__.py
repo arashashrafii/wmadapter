@@ -120,7 +120,7 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     return target
 
 
-def _check_ready(config: dict) -> int:
+def _check_ready(config: dict, provider: str | None = None) -> int:
     server = config.get("server", {})
     host = server.get("host", "127.0.0.1")
     port = int(server.get("port", 11555))
@@ -136,10 +136,14 @@ def _check_ready(config: dict) -> int:
             payload = {"status": "not_ready", "error": str(exc)}
         status = exc.code
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        print(f"not ready: {url} ({exc})")
+        print("not okay")
         return 1
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-    return 0 if status == 200 and payload.get("status") == "ready" else 1
+    if provider:
+        ready = payload.get("providers", {}).get(provider, {}).get("ready") is True
+    else:
+        ready = payload.get("status") == "ready"
+    print("okay" if status == 200 and ready else "not okay")
+    return 0 if status == 200 and ready else 1
 
 
 def run_server() -> None:
@@ -197,7 +201,8 @@ def main() -> None:
     add_proxy.add_argument("url")
     check = subparsers.add_parser("check", help="Check service state")
     check_commands = check.add_subparsers(dest="check_command", required=True)
-    check_commands.add_parser("ready", help="Check whether all enabled providers are ready")
+    ready = check_commands.add_parser("ready", help="Check whether a provider is online and authenticated")
+    ready.add_argument("provider", nargs="?", choices=sorted(BUILTIN_PROVIDER_MODELS))
     run = subparsers.add_parser("run", help="Configure a client from WM Adapter models")
     run_commands = run.add_subparsers(dest="client", required=True)
     opencode = run_commands.add_parser("opencode", help="Add a WM Adapter provider to OpenCode")
@@ -270,7 +275,7 @@ def main() -> None:
         print(f"{args.client.title()} configured for {args.provider}: {path}")
         return
     if args.command == "check" and args.check_command == "ready":
-        raise SystemExit(_check_ready(load_config(args.config)))
+        raise SystemExit(_check_ready(load_config(args.config), args.provider))
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making
         # product/test selection explicit for local scripts and service units.

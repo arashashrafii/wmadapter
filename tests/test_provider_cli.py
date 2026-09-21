@@ -90,8 +90,28 @@ class ProviderCliTests(unittest.TestCase):
             save_config({"server": {"host": "127.0.0.1", "port": 1}}, source)
             with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "check", "ready"]):
                 with self.assertRaises(SystemExit) as raised:
-                    main()
+                    with patch("wmadapter.__main__.urllib.request.urlopen", side_effect=OSError("offline")):
+                        main()
             self.assertEqual(raised.exception.code, 1)
+
+    def test_check_ready_prints_only_okay_for_ready_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            save_config({"server": {"host": "127.0.0.1", "port": 11555}}, source)
+            response = type("Response", (), {
+                "status": 200,
+                "__enter__": lambda self: self,
+                "__exit__": lambda self, *args: None,
+                "read": lambda self: b'{"status":"ready","providers":{"deepseek":{"ready":true}}}',
+            })()
+            output = io.StringIO()
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "check", "ready", "deepseek"]), patch(
+                "wmadapter.__main__.urllib.request.urlopen", return_value=response
+            ), contextlib.redirect_stdout(output):
+                with self.assertRaises(SystemExit) as raised:
+                    main()
+            self.assertEqual(raised.exception.code, 0)
+            self.assertEqual(output.getvalue().strip(), "okay")
 
 
 if __name__ == "__main__":
