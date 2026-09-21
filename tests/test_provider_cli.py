@@ -80,6 +80,7 @@ class ProviderCliTests(unittest.TestCase):
 
             document = json.loads(target.read_text())
             self.assertEqual(document["agents"]["defaults"]["model"], "wmadapter/qwen-chat")
+            self.assertTrue(document["agents"]["defaults"]["experimental"]["localModelLean"])
             provider = document["models"]["providers"]["wmadapter"]
             self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11555/v1")
             self.assertEqual(provider["timeoutSeconds"], 300)

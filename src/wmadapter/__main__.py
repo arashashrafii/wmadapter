@@ -124,6 +124,15 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     providers["wmadapter"] = current
     model_config["providers"] = providers
     document["models"] = model_config
+    agents = dict(document.get("agents") or {})
+    defaults = dict(agents.get("defaults") or {})
+    experimental = dict(defaults.get("experimental") or {})
+    # Web-chat providers have smaller, undisclosed context budgets. Keep the
+    # OpenClaw tool surface compact so a fresh UI session fits reliably.
+    experimental["localModelLean"] = True
+    defaults["experimental"] = experimental
+    agents["defaults"] = defaults
+    document["agents"] = agents
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return target
