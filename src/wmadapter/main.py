@@ -480,13 +480,14 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         request.headers.get("x-client-name"),
     )))
     is_opencode_request = "opencode" in client_hint.casefold()
-    is_openclaw_request = "openclaw" in client_hint.casefold()
+    client_policy = detect_client_policy([], payload.tools, client_hint)
+    is_openclaw_request = client_policy.name == "OPENCLAW"
     inference = ProviderRequest(
         chat=provider_payload, canonical=canonicalize(provider_payload), conversation_id=conversation_id,
         structured_output=structured_output,
         # Do not infer client policy from ordinary prompt text on the public
         # route; use explicit client hints or distinctive OpenClaw tools.
-        client_policy=detect_client_policy([], payload.tools, client_hint),
+        client_policy=client_policy,
         client_max_tokens=client_max_tokens,
         context_budget_chars=(context_budget_chars if context_budget_chars is not None else
                               (OPENCODE_CONTEXT_BUDGET_CHARS if is_opencode_request else

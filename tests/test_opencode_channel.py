@@ -115,7 +115,6 @@ class OpenCodeChannelTests(unittest.TestCase):
         response = self.client.post(
             "/v1/chat/completions",
             json=self.request(tools=[{"type": "function", "function": {"name": "computer", "parameters": {}}}]),
-            headers={"User-Agent": "OpenClaw/2026.8.1"},
         )
 
         self.assertEqual(response.status_code, 200)

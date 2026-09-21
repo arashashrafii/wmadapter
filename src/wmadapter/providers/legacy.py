@@ -14,6 +14,7 @@ from .protocol import (
 )
 from .normalizer import ToolProtocolNormalizer
 from .recovery import ToolCallRecovery
+from .policy import ClientPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,9 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     tools = minimize_tool_schemas(tools, compact_descriptions=request.context_budget_chars is not None)
     required = choice == "required" or isinstance(choice, dict)
 
-    def build_prompt(current_messages):
-        value = (adapter.prompt(current_messages, request.system_prompt, tools, request.client_policy)
-                 if adapter else _prompt(current_messages, request.system_prompt, tools, request.client_policy))
+    def build_prompt(current_messages, policy=request.client_policy):
+        value = (adapter.prompt(current_messages, request.system_prompt, tools, policy)
+                 if adapter else _prompt(current_messages, request.system_prompt, tools, policy))
         if required:
             value += "\nTOOL CHOICE: You must return one of the listed tool calls, not a final text answer."
         return value
@@ -43,6 +44,11 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     budget = request.context_budget_chars
     if budget is None:
         budget = provider.context_budget_for(chat.model) if hasattr(provider, "context_budget_for") else None
+    if budget is not None and request.client_policy is ClientPolicy.OPENCLAW:
+        # The Control UI already supplies its own operating instructions.
+        # Avoid duplicating WM Adapter's long OpenClaw playbook in the limited
+        # Web-chat prompt before any user content or tool schema is sent.
+        prompt = build_prompt(messages, ClientPolicy.GENERIC)
     compacted = False
     if budget is not None:
         # Keep a single browser-relay result from exhausting the whole
@@ -59,6 +65,11 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
             raise ContextLimitError(len(prompt), budget) from exc
         prompt = build_prompt(messages)
         compacted = True
+        # OpenClaw's verbose operational guidance is useful for large-context
+        # API models, but it can exceed the unknown Web-chat envelope before
+        # the user's request or callable tool schemas are considered.
+        if len(prompt) > budget and request.client_policy is ClientPolicy.OPENCLAW:
+            prompt = build_prompt(messages, ClientPolicy.GENERIC)
         if len(prompt) > budget:
             raise ContextLimitError(len(prompt), budget)
     logger.info(

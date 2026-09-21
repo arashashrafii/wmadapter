@@ -29,6 +29,24 @@ def _content_text(content: Any) -> str:
     return str(content)
 
 
+def _compact_parameter_schema(value: Any) -> Any:
+    """Preserve callable parameter shape while removing documentation bulk."""
+    if isinstance(value, list):
+        return [_compact_parameter_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    allowed = {"type", "properties", "required", "items", "enum", "additionalProperties", "anyOf", "oneOf"}
+    compacted = {}
+    for key, item in value.items():
+        if key not in allowed:
+            continue
+        if key == "properties" and isinstance(item, dict):
+            compacted[key] = {name: _compact_parameter_schema(schema) for name, schema in item.items()}
+        else:
+            compacted[key] = _compact_parameter_schema(item)
+    return compacted
+
+
 def minimize_tool_schemas(tools: list[dict[str, Any]] | None, *, compact_descriptions: bool = False) -> list[dict[str, Any]] | None:
     """Keep only callable function shape; omit non-executable metadata."""
     if not tools:
@@ -41,9 +59,11 @@ def minimize_tool_schemas(tools: list[dict[str, Any]] | None, *, compact_descrip
             if key in function:
                 item = function[key]
                 if key == "description" and compact_descriptions and isinstance(item, str):
-                    item = item[:1200].rstrip()
+                    item = item[:160].rstrip()
                     if len(function[key]) > 1200:
                         item += " [description compacted]"
+                elif key == "parameters" and compact_descriptions:
+                    item = _compact_parameter_schema(item)
                 value["function"][key] = item
         minimized.append(value)
     return minimized
