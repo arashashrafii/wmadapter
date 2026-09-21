@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "purpose": "Issue #82 deterministic image-generation boundary cassette",
+  "source": "synthetic fixture; no network or provider payload",
+  "success": {
+    "request": {
+      "model": "qwen-chat",
+      "prompt": "a small blue square on white",
+      "n": 1,
+      "response_format": "b64_json"
+    },
+    "response": {
+      "created": 0,
+      "data": [
+        {
+          "b64_json": "iVBORw0KGgpmaXh0dXJl",
+          "mime_type": "image/png"
+        }
+      ]
+    },
+    "expected": {
+      "status": 200,
+      "image_count": 1,
+      "decoded_prefix_hex": "89504e470d0a1a0a",
+      "decoded_suffix": "fixture"
+    }
+  },
+  "negative_cases": [
+    {
+      "id": "unverified-capability",
+      "request": {
+        "model": "qwen-chat",
+        "prompt": "a small blue square on white"
+      },
+      "expected": {
+        "status": 501,
+        "error_code": "image_generation_unverified",
+        "data": null
+      }
+    },
+    {
+      "id": "unsupported-size-option",
+      "request": {
+        "model": "qwen-chat",
+        "prompt": "a small blue square on white",
+        "size": "1024x1024"
+      },
+      "expected": {
+        "status": 400,
+        "detail_prefix": "Unsupported image generation field:"
+      }
+    },
+    {
+      "id": "empty-prompt",
+      "request": {
+        "model": "qwen-chat",
+        "prompt": "   "
+      },
+      "expected": {
+        "status": 400,
+        "detail": "Image generation prompt must be a non-empty string"
+      }
+    }
+  ],
+  "artifact_validation": {
+    "accepted": {
+      "mime_type": "image/png",
+      "prefix_hex": "89504e470d0a1a0a"
+    },
+    "rejected": [
+      "empty-bytes",
+      "mime-magic-mismatch",
+      "unsupported-mime",
+      "over-limit-bytes",
+      "non-provider-https-url"
+    ]
+  }
+}
