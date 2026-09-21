@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 from wmadapter.providers.base import ChatProvider
 from wmadapter.providers.contract import ChatRequest, Message, ProviderRequest
 from wmadapter.providers.errors import ContextLimitError
-from wmadapter.providers.protocol import compact_messages, minimize_tool_schemas
+from wmadapter.providers.protocol import bound_tool_results, compact_messages, minimize_tool_schemas
 
 
 class BudgetProvider(ChatProvider):
@@ -61,6 +61,51 @@ class ContextBudgetTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ContextLimitError, r"prompt_length=\d+, budget=2000"):
             await provider.infer(request)
         provider.complete.assert_not_awaited()
+
+    def test_browser_relay_tool_result_keeps_bounded_excerpt_and_fingerprint(self):
+        result = "BEGIN profile facts\n" + ("middle-noise " * 5000) + "\nEND relay status"
+        message = Message(role="tool", tool_call_id="browser-1", content=result)
+
+        bounded = bound_tool_results([message], 1800)[0]
+
+        self.assertEqual(bounded.tool_call_id, "browser-1")
+        self.assertLessEqual(len(bounded.content), 1800)
+        self.assertIn("BEGIN profile facts", bounded.content)
+        self.assertIn("END relay status", bounded.content)
+        self.assertIn("[TOOL RESULT COMPACTED:", bounded.content)
+        self.assertIn("original_chars=", bounded.content)
+        self.assertNotIn("middle-noise " * 100, bounded.content)
+
+    async def test_oversized_browser_relay_result_is_submitted_within_budget(self):
+        provider = BudgetProvider()
+        provider.context_budget_chars = 12000
+        provider.complete = AsyncMock(return_value="ok")
+        messages = [
+            Message(role="user", content="Continue the Instagram profile audit."),
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=[{"id": "browser-1", "type": "function", "function": {
+                    "name": "browser", "arguments": "{\"action\":\"snapshot\"}"
+                }}],
+            ),
+            Message(
+                role="tool",
+                tool_call_id="browser-1",
+                content="BEGIN snapshot\n" + ("relay-output " * 20000) + "\nEND snapshot",
+            ),
+        ]
+        request = ProviderRequest(chat=ChatRequest(model="deepseek-chat", messages=messages, tools=[{
+            "type": "function", "function": {"name": "browser", "description": "Use the browser relay.",
+                                                    "parameters": {"type": "object"}},
+        }]))
+
+        await provider.infer(request)
+
+        prompt = provider.complete.call_args.args[0]
+        self.assertLessEqual(len(prompt), 12000)
+        self.assertIn("[TOOL RESULT COMPACTED:", prompt)
+        provider.complete.assert_awaited_once()
 
     def test_tool_schema_minimization_preserves_callable_fields(self):
         tool = {"type": "function", "function": {
