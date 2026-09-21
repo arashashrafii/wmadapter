@@ -90,6 +90,34 @@ def _run_opencode(provider: str, config: dict, output: str | None) -> Path:
     return target
 
 
+def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
+    target = Path(output).expanduser() if output else Path.home() / ".openclaw" / "openclaw.json"
+    if target.exists():
+        try:
+            raw = target.read_text(encoding="utf-8").strip()
+            document = json.loads(raw) if raw else {}
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"OpenClaw config is not valid JSON: {target}") from exc
+    else:
+        document = {}
+    models = list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
+    model_entries = [{"id": model, "name": model} for model in models]
+    model_config = dict(document.get("models") or {})
+    providers = dict(model_config.get("providers") or {})
+    current = dict(providers.get("wmadapter") or {})
+    current.update({
+        "baseUrl": "http://127.0.0.1:11555/v1",
+        "api": "openai-completions",
+        "models": model_entries,
+    })
+    providers["wmadapter"] = current
+    model_config["providers"] = providers
+    document["models"] = model_config
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return target
+
+
 def run_server() -> None:
     load_dotenv()
     config = load_config()
@@ -148,6 +176,9 @@ def main() -> None:
     opencode = run_commands.add_parser("opencode", help="Add a WM Adapter provider to OpenCode")
     opencode.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     opencode.add_argument("--config", dest="client_config", help="OpenCode config file path")
+    openclaw = run_commands.add_parser("openclaw", help="Add WM Adapter models to OpenClaw")
+    openclaw.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    openclaw.add_argument("--config", dest="client_config", help="OpenClaw config file path")
     args = parser.parse_args()
 
     if args.command in {"auth", "login"}:
@@ -206,10 +237,10 @@ def main() -> None:
     if args.command == "run":
         config = load_config(args.config)
         try:
-            path = _run_opencode(args.provider, config, args.client_config)
+            path = (_run_opencode if args.client == "opencode" else _run_openclaw)(args.provider, config, args.client_config)
         except RuntimeError as exc:
             parser.error(str(exc))
-        print(f"OpenCode configured for {args.provider}: {path}")
+        print(f"{args.client.title()} configured for {args.provider}: {path}")
         return
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making

@@ -68,6 +68,22 @@ class ProviderCliTests(unittest.TestCase):
             self.assertEqual(document["theme"], "dark")
             self.assertEqual(document["provider"]["wmadapter-qwen"]["models"], {"qwen-chat": {"name": "qwen-chat"}})
 
+    def test_run_openclaw_merges_provider_models_without_clobbering_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "openclaw.json"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            target.write_text(json.dumps({"agents": {"defaults": {"model": "wmadapter/qwen-chat"}}}))
+
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "run", "openclaw", "qwen", "--config", str(target)]):
+                main()
+
+            document = json.loads(target.read_text())
+            self.assertEqual(document["agents"]["defaults"]["model"], "wmadapter/qwen-chat")
+            provider = document["models"]["providers"]["wmadapter"]
+            self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11555/v1")
+            self.assertEqual(provider["models"], [{"id": "qwen-chat", "name": "qwen-chat"}])
+
 
 if __name__ == "__main__":
     unittest.main()
