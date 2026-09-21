@@ -15,6 +15,10 @@ class ChatProvider(ABC):
     context_budget_chars: int | None = None
     context_budget_profiles: dict[str, int] = {}
 
+    def capabilities_for_model(self, model: str):
+        """Return public capabilities for one registered model."""
+        return self.capabilities
+
     def context_budget_for(self, model: str) -> int | None:
         return self.context_budget_profiles.get(
             model, self.context_budget_profiles.get(self.name, self.context_budget_chars)

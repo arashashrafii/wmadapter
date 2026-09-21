@@ -20,7 +20,7 @@ Verified capabilities:
 - `/v1/chat/completions` (ordinary responses and buffered SSE)
 - `/v1/completions` (supported legacy text-completion subset)
 - `/v1/embeddings` (contract validation; vectors are not currently supported)
-- `/v1/images` (validated Qwen image generation with base64 artifact serialization when enabled by verified configuration)
+- `/v1/images` (validated Qwen image generation with base64 artifact serialization when enabled by verified configuration; Qwen Image 3 accepts explicit aspect-ratio or `widthxheight` parameters)
 - `/v1/images/edits` (validated contract; image understanding/editing is not currently verified or supported)
 - `/v1/audio/*` and `/v1/realtime` (validated contracts; audio/realtime are not currently supported)
 - `/v1/files` (validated contract; file/PDF handling is not currently supported)
@@ -28,9 +28,10 @@ Verified capabilities:
 - OpenAI-compatible chat requests, buffered SSE, model capabilities, and
   preservation of tools and tool results through the provider contract.
 - DeepSeek/Qwen provider routing; Qwen image generation is advertised only when
-  the verified configuration flag is enabled. DeepSeek image input is not
-  advertised until live model/UI verification establishes observable vision
-  support.
+  the verified configuration flags are enabled. Qwen Image 3 is registered as
+  `qwen-image-3.0` but remains unadvertised as capable until its own model/UI
+  flow is verified. DeepSeek image input is not advertised until live
+  model/UI verification establishes observable vision support.
 - Sampling controls are validated; shared Chat Completions and OpenClaw reject
   them, while OpenCode accepts positive `max_tokens` only as a client-requested
   budget. It is used for local context/headroom diagnostics and is never sent

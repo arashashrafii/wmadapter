@@ -423,12 +423,14 @@ class EmbeddingsRequest(BaseModel):
 
 
 class ImagesRequest(BaseModel):
-    """Supported OpenAI image-generation subset for verified Qwen Web."""
+    """Provider-neutral image-generation request for verified Qwen models."""
     model_config = ConfigDict(extra="allow")
     model: str = "qwen-chat"
     prompt: Any
     n: int = Field(default=1, ge=1, le=1)
     response_format: str = "b64_json"
+    size: str | None = None
+    aspect_ratio: str | None = None
 
 
 class ImageEditsRequest(BaseModel):

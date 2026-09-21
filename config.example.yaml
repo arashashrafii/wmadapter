@@ -32,8 +32,13 @@ qwen:
   profile_dir: ~/.local/share/wmadapter/profiles/qwen
   models:
     - qwen-chat
+    - qwen-image-3.0
   # Enable only after the live Qwen image UI/artifact probe succeeds.
   image_generation_verified: true
+  # Keep qwen-image-3.0 unadvertised until its own Create Image flow is
+  # verified; the legacy flag above preserves qwen-chat behavior.
+  image_generation_verified_models:
+    - qwen-chat
 
 providers:
   default: deepseek

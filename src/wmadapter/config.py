@@ -71,9 +71,12 @@ class QwenConfig(BaseModel):
     recovery_max_attempts: int = Field(default=2, ge=1, le=5)
     recovery_backoff_base_ms: int = Field(default=250, ge=0, le=60000)
     recovery_backoff_max_ms: int = Field(default=5000, ge=0, le=120000)
-    models: list[str] = Field(default_factory=lambda: ["qwen-chat"])
+    models: list[str] = Field(default_factory=lambda: ["qwen-chat", "qwen-image-3.0"])
     # Deliberately false until a repeatable live Qwen image probe succeeds.
     image_generation_verified: bool = False
+    # Existing configurations retain qwen-chat behavior. Qwen Image 3 must be
+    # explicitly verified as well before its capability is advertised.
+    image_generation_verified_models: list[str] | None = None
 
 
 class ProviderConfig(BaseModel):

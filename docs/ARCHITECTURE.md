@@ -98,7 +98,9 @@ unsupported, and no tool is executed by the gateway.
 
 The images route validates a single non-empty text prompt and model selection.
 For Qwen, the capability is opt-in through the verified configuration flag;
-the adapter selects the provider-owned image mode, accepts only a provider-owned
+`qwen-image-3.0` additionally accepts one normalized aspect-ratio or pixel-size
+value and maps it to the provider's Image 3 request shape. The adapter selects
+the provider-owned image mode, accepts only a provider-owned
 HTTPS artifact, validates MIME/magic bytes and size, and serializes one
 `b64_json` result. Unverified providers return `501
 image_generation_unverified`; provider failures return a safe `502

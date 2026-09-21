@@ -7,6 +7,7 @@ from playwright.async_api import Page
 from ...browser.elements import first_visible
 
 from .images import validate_artifact_url, validate_image_bytes
+from .image_contract import QWEN_IMAGE_MODEL, qwen_image_aspect_for_size
 from .selectors import CHAT_INPUTS, IMAGE_ARTIFACTS, RESPONSE_BLOCKS
 from ..deepseek.login import CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, SESSION_PENDING, UNKNOWN_UI
 from ..submit import PreSubmitError, SubmitState, UncertainSubmitError
@@ -94,8 +95,25 @@ class QwenChat:
         content = await response.body()
         return validate_image_bytes(content, content_type)
 
-    async def send_image(self, prompt: str) -> tuple[bytes, str]:
+    async def _select_image_aspect(self, size: str) -> None:
+        if size == "auto":
+            return
+        aspect = qwen_image_aspect_for_size(size)
+        current = self.page.get_by_text("Auto", exact=True).last
+        if not await current.count() or not await current.is_visible(timeout=500):
+            raise PreSubmitError("Qwen image aspect-ratio control is unavailable")
+        await current.click()
+        option = self.page.get_by_text(aspect, exact=True).last
+        if not await option.count() or not await option.is_visible(timeout=500):
+            raise PreSubmitError("Qwen image aspect-ratio option is unavailable")
+        await option.click()
+
+    async def send_image(
+        self, prompt: str, *, size: str = "auto", model: str = QWEN_IMAGE_MODEL,
+    ) -> tuple[bytes, str]:
         """Submit an image prompt and wait for a rendered artifact."""
+        if model not in {"qwen-chat", QWEN_IMAGE_MODEL}:
+            raise PreSubmitError("Qwen image model is unsupported")
         mode_button = self.page.get_by_role("button", name="Select Mode", exact=True)
         if await mode_button.count() and await mode_button.is_visible(timeout=500):
             await mode_button.click()
@@ -103,6 +121,7 @@ class QwenChat:
             if not await image_mode.count():
                 raise PreSubmitError("Qwen image-generation mode is unavailable")
             await image_mode.click()
+        await self._select_image_aspect(size)
         input_box = await self._first_visible(CHAT_INPUTS)
         await input_box.click()
         await input_box.fill(prompt)

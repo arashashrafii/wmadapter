@@ -48,10 +48,13 @@ class QwenImageValidationTests(unittest.TestCase):
 
 class QwenImageContractTests(unittest.TestCase):
     def setUp(self):
-        self.provider = QwenService(load_config('/nonexistent'))
-        self.provider.capabilities = self.provider.capabilities.model_copy(
-            update={'image_generation': True}
-        )
+        config = load_config('/nonexistent')
+        config['qwen'].update({
+            'models': ['qwen-chat', 'qwen-image-3.0'],
+            'image_generation_verified': True,
+            'image_generation_verified_models': ['qwen-chat', 'qwen-image-3.0'],
+        })
+        self.provider = QwenService(config)
         self.patch = patch.object(
             main, 'router', ProviderRouter({'qwen': self.provider}, 'qwen')
         )
@@ -89,6 +92,49 @@ class QwenImageContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 501)
         self.assertEqual(response.json()['error']['code'], 'image_generation_unverified')
         self.assertFalse(response.json().get('data'))
+
+    def test_qwen_image_model_maps_aspect_ratio_and_normalizes_response(self):
+        content = b"\x89PNG\r\n\x1a\nfixture"
+        self.provider.generate_image = AsyncMock(return_value=(content, 'image/png'))
+        response = self.client.post('/v1/images', json={
+            'model': 'qwen-image-3.0', 'prompt': 'a fixture', 'aspect_ratio': '16:9',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.provider.generate_image.assert_awaited_once_with(
+            'a fixture', model='qwen-image-3.0', size='1280x720',
+        )
+        self.assertEqual(response.json()['data'][0]['mime_type'], 'image/png')
+
+    def test_models_report_image3_capability_separately(self):
+        models = {
+            item['id']: item['capabilities']['image_generation']
+            for item in self.client.get('/v1/models').json()['data']
+        }
+        self.assertTrue(models['qwen-chat'])
+        self.assertTrue(models['qwen-image-3.0'])
+
+    def test_qwen_image_rejects_ambiguous_size_and_ratio(self):
+        response = self.client.post('/v1/images', json={
+            'model': 'qwen-image-3.0', 'prompt': 'a fixture',
+            'size': '1024x1024', 'aspect_ratio': '1:1',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('only one', response.json()['error']['message'].lower())
+
+    def test_qwen_image_rejects_pixel_size_without_a_web_preset(self):
+        response = self.client.post('/v1/images', json={
+            'model': 'qwen-image-3.0', 'prompt': 'a fixture', 'size': '1024x1536',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('supported Qwen Studio aspect-ratio preset', response.json()['error']['message'])
+
+    def test_invalid_provider_artifact_is_rejected_at_http_boundary(self):
+        self.provider.generate_image = AsyncMock(return_value=(b'not-an-image', 'image/png'))
+        response = self.client.post('/v1/images', json={
+            'model': 'qwen-image-3.0', 'prompt': 'a fixture', 'size': '1024x1024',
+        })
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()['error']['code'], 'image_generation_failed')
 
 
 if __name__ == "__main__":

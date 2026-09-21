@@ -17,6 +17,7 @@ from .providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_V
 from .providers.qwen.chat import QwenChat
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
+from .providers.qwen.image_contract import QWEN_IMAGE_MODEL
 from .providers.submit import PreSubmitError, UncertainSubmitError
 from .providers.errors import ProviderRateLimitError
 from .config import provider_profile_dir
@@ -539,6 +540,16 @@ class QwenService(ChatProvider):
         if len(set(configured_models)) != len(configured_models):
             raise ValueError("qwen.models must not contain duplicate model IDs")
         self.model_ids = configured_models
+        verified_models = qwen_cfg.get("image_generation_verified_models")
+        if verified_models is None:
+            # Backward-compatible interpretation of the old global flag:
+            # only the existing qwen-chat flow is verified by that flag.
+            self._verified_image_models = {"qwen-chat"} if self.capabilities.image_generation else set()
+        else:
+            self._verified_image_models = {
+                model for model in verified_models
+                if isinstance(model, str) and model in self.model_ids
+            } if self.capabilities.image_generation else set()
         limits = config.get("limits", {})
         self.context_budget_chars = limits.get("context_budget_chars")
         self.context_budget_profiles = limits.get("context_budget_profiles", {})
@@ -579,6 +590,14 @@ class QwenService(ChatProvider):
         self._last_probe_at: float | None = None
         self._last_probe_result: str | None = None
         self._initial_start_available = True
+
+    def capabilities_for_model(self, model: str):
+        capabilities = self.capabilities
+        if model in {"qwen-chat", QWEN_IMAGE_MODEL}:
+            return capabilities.model_copy(update={
+                "image_generation": capabilities.image_generation and model in self._verified_image_models,
+            })
+        return capabilities.model_copy(update={"image_generation": False})
 
     async def _bootstrap_page(self, page):
         """Navigate only a newly-created blank page to Qwen."""
@@ -898,8 +917,13 @@ class QwenService(ChatProvider):
     async def stream_complete(self, prompt: str, conversation_id: str | None = None):
         yield await self.complete(prompt, conversation_id=conversation_id)
 
-    async def generate_image(self, prompt: str, conversation_id: str | None = None) -> tuple[bytes, str]:
+    async def generate_image(
+        self, prompt: str, conversation_id: str | None = None, *,
+        model: str = "qwen-chat", size: str = "auto",
+    ) -> tuple[bytes, str]:
         """Generate one verified Qwen image; capability gating is enforced by the API."""
+        if model not in self.model_ids:
+            raise ValueError("Qwen image model is not configured")
         async with self._request_lock:
             page = await self._page_for_conversation(conversation_id)
             self._mark_page_active(page)
@@ -907,6 +931,9 @@ class QwenService(ChatProvider):
                 if not self.ready:
                     await self._authenticate(conversation_id)
                 page = await self._page_for_conversation(conversation_id)
-                return await QwenChat(page, timeout_ms=self.timeout_ms).send_image(prompt)
+                chat = QwenChat(page, timeout_ms=self.timeout_ms)
+                if model == "qwen-chat":
+                    return await chat.send_image(prompt)
+                return await chat.send_image(prompt, size=size, model=model)
             finally:
                 self._mark_page_inactive(page)
