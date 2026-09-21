@@ -31,6 +31,9 @@ service_line=$(grep -n '^write_service 0$' "$script" | tail -1 | cut -d: -f1)
 grep -q 'provider list' "$script"
 grep -q 'profiles were preserved' "$script"
 grep -q 'chown -- "\$TARGET_USER:\$TARGET_GROUP" config.yaml' "$script"
+grep -q 'WMADAPTER_INSTALL_MARKER' "$script"
+grep -q 'CLI_FILE="\${BIN_DIR}/wmadapter"' "$script"
+grep -q 'say "  wmadapter provider list"' "$script"
 ! grep -q 'rm -rf -- "\$profile_root"' "$script"
 
 echo "install orchestration tests passed"

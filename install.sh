@@ -9,6 +9,8 @@ SCRIPT_PATH="${PROJECT_DIR}/$(basename -- "${BASH_SOURCE[0]}")"
 SERVICE_NAME="wmadapter.service"
 SERVICE_DIR="/etc/systemd/system"
 SERVICE_FILE="${SERVICE_DIR}/${SERVICE_NAME}"
+BIN_DIR="${WMADAPTER_BIN_DIR:-/usr/local/bin}"
+CLI_FILE="${BIN_DIR}/wmadapter"
 DISPLAY_VALUE="${DISPLAY:-}"
 BROWSER_EXECUTABLE=""
 INSTALL_SUCCESS=0
@@ -158,6 +160,25 @@ ensure_browser() {
   BROWSER_EXECUTABLE="$(resolve_browser_path "$BROWSER_EXECUTABLE")"
   say "Using system Google Chrome executable: ${BROWSER_EXECUTABLE}"
 }
+install_cli_command() {
+  if [ -e "$CLI_FILE" ] && [ ! -f "$CLI_FILE" ]; then
+    echo "Cannot install ${CLI_FILE}: an existing non-file entry is present." >&2
+    return 1
+  fi
+  if [ -f "$CLI_FILE" ] && ! grep -q "WMADAPTER_INSTALL_MARKER" "$CLI_FILE"; then
+    echo "Cannot install ${CLI_FILE}: an unrelated command already exists there." >&2
+    return 1
+  fi
+  mkdir -p "$BIN_DIR"
+  cat > "$CLI_FILE" <<WRAPPER
+#!/usr/bin/env bash
+# WMADAPTER_INSTALL_MARKER
+export WMADAPTER_CONFIG="${PROJECT_DIR}/config.yaml"
+exec "${PROJECT_DIR}/.venv/bin/wmadapter" "\$@"
+WRAPPER
+  chmod 755 "$CLI_FILE"
+  chown -- "$TARGET_USER:$TARGET_GROUP" "$CLI_FILE"
+}
 write_service() {
   local login_mode="$1"
   local exec_start="${PROJECT_DIR}/.venv/bin/wmadapter"
@@ -235,15 +256,16 @@ SERVER_HOST="$API_HOST"
 ensure_browser
 write_config "$BROWSER_EXECUTABLE" "$SERVER_HOST"
 chown -- "$TARGET_USER:$TARGET_GROUP" config.yaml
+install_cli_command
 prepare_runtime_display
 write_service 0
 systemctl daemon-reload
 say "Web Model Adapter installed without provider authentication."
 say "Provider profiles are preserved across reinstalls."
 say "Next steps:"
-say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml provider list"
-say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml login deepseek"
-say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml login qwen --google"
-say "  ${PROJECT_DIR}/.venv/bin/wmadapter --config ${PROJECT_DIR}/config.yaml provider enable qwen"
+say "  wmadapter provider list"
+say "  wmadapter login deepseek"
+say "  wmadapter login qwen --google"
+say "  wmadapter provider enable qwen"
 say "  systemctl start ${SERVICE_NAME}"
 INSTALL_SUCCESS=1

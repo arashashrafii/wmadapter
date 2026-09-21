@@ -117,13 +117,13 @@ cp config.example.yaml config.yaml
 Provider configuration and login:
 
 ```bash
-./.venv/bin/wmadapter provider list
-./.venv/bin/wmadapter provider enable deepseek
-./.venv/bin/wmadapter provider enable qwen
-./.venv/bin/wmadapter provider default deepseek
+wmadapter provider list
+wmadapter provider enable deepseek
+wmadapter provider enable qwen
+wmadapter provider default deepseek
 
-./.venv/bin/wmadapter login deepseek
-./.venv/bin/wmadapter login qwen --google
+wmadapter login deepseek
+wmadapter login qwen --google
 ```
 
 Each provider uses its own persistent Chrome profile. Browser-managed session state is reused on later starts; WM Adapter does not store provider passwords or raw cookies.
@@ -131,7 +131,7 @@ Each provider uses its own persistent Chrome profile. Browser-managed session st
 Then start the bridge:
 
 ```bash
-.venv/bin/wmadapter
+wmadapter
 ```
 
 ### اجرای جداگانه محصول و تست
