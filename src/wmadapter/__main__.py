@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import shutil
+import subprocess
 
 from dotenv import load_dotenv
 import uvicorn
@@ -16,6 +19,43 @@ from .config import (
 )
 from .logging import configure_logging
 from .manual_auth import run_manual_auth
+
+
+def _pause_service_for_login() -> bool:
+    """Stop the system service only when it owns the login profile."""
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        return False
+    active = subprocess.run([systemctl, "is-active", "--quiet", "wmadapter.service"], check=False)
+    if active.returncode != 0:
+        return False
+    command = [systemctl, "stop", "wmadapter.service"]
+    if os.geteuid() != 0:
+        sudo = shutil.which("sudo")
+        if not sudo:
+            raise RuntimeError("Login requires sudo to pause the running wmadapter.service")
+        command.insert(0, sudo)
+    result = subprocess.run(command, check=False)
+    if result.returncode != 0:
+        raise RuntimeError("Could not stop wmadapter.service before login")
+    return True
+
+
+def _resume_service_after_login(paused: bool) -> None:
+    if not paused:
+        return
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        raise RuntimeError("systemctl is unavailable; start wmadapter.service manually")
+    command = [systemctl, "start", "wmadapter.service"]
+    if os.geteuid() != 0:
+        sudo = shutil.which("sudo")
+        if not sudo:
+            raise RuntimeError("Login completed but sudo is unavailable to restart wmadapter.service")
+        command.insert(0, sudo)
+    result = subprocess.run(command, check=False)
+    if result.returncode != 0:
+        raise RuntimeError("Login completed but wmadapter.service could not be restarted")
 
 
 def run_server() -> None:
@@ -62,15 +102,19 @@ def main() -> None:
 
     if args.command in {"auth", "login"}:
         config = load_config(args.config)
-        asyncio.run(
-            run_manual_auth(
-                args.provider,
-                use_google=args.google,
-                external_browser=args.external_browser,
-                executable_path=args.executable_path,
-                config=config,
+        paused = _pause_service_for_login()
+        try:
+            asyncio.run(
+                run_manual_auth(
+                    args.provider,
+                    use_google=args.google,
+                    external_browser=args.external_browser,
+                    executable_path=args.executable_path,
+                    config=config,
+                )
             )
-        )
+        finally:
+            _resume_service_after_login(paused)
         return
     if args.command == "provider":
         config = load_config(args.config)

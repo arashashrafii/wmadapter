@@ -34,6 +34,8 @@ grep -q 'chown -- "\$TARGET_USER:\$TARGET_GROUP" config.yaml' "$script"
 grep -q 'WMADAPTER_INSTALL_MARKER' "$script"
 grep -q 'CLI_FILE="\${BIN_DIR}/wmadapter"' "$script"
 grep -q 'say "  wmadapter provider list"' "$script"
+grep -q 'systemctl enable --now "\$SERVICE_NAME"' "$script"
+grep -q 'health endpoint did not become ready' "$script"
 ! grep -q 'rm -rf -- "\$profile_root"' "$script"
 
 echo "install orchestration tests passed"

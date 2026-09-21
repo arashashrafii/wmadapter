@@ -157,9 +157,11 @@ The server defaults to `http://127.0.0.1:11555` (also available as
 base URL `http://127.0.0.1:11555/v1`.
 
 The installer creates a system-wide systemd service under `/etc/systemd/system`
-but does not start it or require login. Run `./install.sh` directly; it elevates
-itself with `sudo` when needed and may ask for the password once. After login,
-start the service with `sudo systemctl start wmadapter.service`.
+and starts it with a health check, but does not require provider login. Run
+`./install.sh` directly; it elevates itself with `sudo` when needed and may ask
+for the password once. The `wmadapter login ...` command temporarily pauses
+the service while the provider profile is authenticated, then starts the
+service again automatically.
 
 Authentication is browser-only. Web Model Adapter never accepts, stores, or
 automates provider usernames or passwords; only the isolated Chrome profile

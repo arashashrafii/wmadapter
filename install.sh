@@ -244,6 +244,7 @@ cleanup_failed_install() {
   return "$status"
 }
 need systemctl
+need curl
 trap cleanup_failed_install EXIT
 
 say "Web Model Adapter — Web-to-API Gateway for AI Agents installer"
@@ -260,12 +261,27 @@ install_cli_command
 prepare_runtime_display
 write_service 0
 systemctl daemon-reload
+systemctl enable --now "$SERVICE_NAME"
+health_ready=0
+for _ in $(seq 1 30); do
+  if curl -fsS "http://${API_HOST}:${API_PORT}/health" >/dev/null 2>&1; then
+    health_ready=1
+    break
+  fi
+  sleep 1
+done
+if [ "$health_ready" -ne 1 ]; then
+  echo "The service was installed but its health endpoint did not become ready." >&2
+  systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
+  exit 1
+fi
 say "Web Model Adapter installed without provider authentication."
 say "Provider profiles are preserved across reinstalls."
+say "Service started and health check passed. Provider readiness still requires login."
 say "Next steps:"
 say "  wmadapter provider list"
 say "  wmadapter login deepseek"
 say "  wmadapter login qwen --google"
 say "  wmadapter provider enable qwen"
-say "  systemctl start ${SERVICE_NAME}"
+say "  Service is already running; use wmadapter provider list to inspect providers."
 INSTALL_SUCCESS=1
