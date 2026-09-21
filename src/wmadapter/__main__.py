@@ -218,13 +218,27 @@ def _fix_service(config: dict) -> None:
         raise RuntimeError("could not restart wmadapter.service")
     server = config.get("server", {})
     health_url = f"http://{server.get('host', '127.0.0.1')}:{int(server.get('port', 11555))}/health"
-    for _ in range(20):
+    ready_url = f"http://{server.get('host', '127.0.0.1')}:{int(server.get('port', 11555))}/ready"
+    health_seen = False
+    for _ in range(60):
         try:
             with urllib.request.urlopen(health_url, timeout=1) as response:
                 if response.status == 200:
-                    return
+                    health_seen = True
+                    try:
+                        with urllib.request.urlopen(ready_url, timeout=1) as ready_response:
+                            payload = json.loads(ready_response.read().decode("utf-8"))
+                    except urllib.error.HTTPError as exc:
+                        payload = json.loads(exc.read().decode("utf-8"))
+                    providers = payload.get("providers") or {}
+                    transient = {"STARTING", "CHECKING_SESSION", "AUTHENTICATING", "HANDOFF", "VERIFYING_SESSION"}
+                    if payload.get("status") == "ready" or not any(item.get("state") in transient for item in providers.values()):
+                        return
         except (urllib.error.URLError, TimeoutError, OSError):
-            time.sleep(0.5)
+            pass
+        time.sleep(1)
+    if health_seen:
+        return
     raise RuntimeError("service did not become healthy after restart")
 
 
