@@ -146,6 +146,37 @@ def _check_ready(config: dict, provider: str | None = None) -> int:
     return 0 if status == 200 and ready else 1
 
 
+def _service_checks(config: dict) -> tuple[bool, dict[str, str]]:
+    server = config.get("server", {})
+    host = server.get("host", "127.0.0.1")
+    port = int(server.get("port", 11555))
+    result = {"service": "unknown", "port": f"{host}:{port}", "health": "not okay", "ready": "not okay"}
+    systemctl = shutil.which("systemctl")
+    if systemctl:
+        active = subprocess.run([systemctl, "is-active", "--quiet", "wmadapter.service"], check=False)
+        result["service"] = "okay" if active.returncode == 0 else "not okay"
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=5) as response:
+            result["health"] = "okay" if response.status == 200 else "not okay"
+    except (urllib.error.URLError, TimeoutError, OSError):
+        pass
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/ready", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            result["ready"] = "okay" if response.status == 200 and payload.get("status") == "ready" else "not okay"
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+        pass
+    healthy = all(value == "okay" for key, value in result.items() if key != "port")
+    return healthy, result
+
+
+def _doctor(config: dict) -> int:
+    healthy, result = _service_checks(config)
+    for key, value in result.items():
+        print(f"{key}: {value}")
+    return 0 if healthy else 1
+
+
 def run_server() -> None:
     load_dotenv()
     config = load_config()
@@ -200,9 +231,10 @@ def main() -> None:
     add_proxy.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     add_proxy.add_argument("url")
     check = subparsers.add_parser("check", help="Check service state")
-    check_commands = check.add_subparsers(dest="check_command", required=True)
+    check_commands = check.add_subparsers(dest="check_command")
     ready = check_commands.add_parser("ready", help="Check whether a provider is online and authenticated")
     ready.add_argument("provider", nargs="?", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    subparsers.add_parser("doctor", help="Diagnose the local WM Adapter service")
     run = subparsers.add_parser("run", help="Configure a client from WM Adapter models")
     run_commands = run.add_subparsers(dest="client", required=True)
     opencode = run_commands.add_parser("opencode", help="Add a WM Adapter provider to OpenCode")
@@ -274,8 +306,15 @@ def main() -> None:
             parser.error(str(exc))
         print(f"{args.client.title()} configured for {args.provider}: {path}")
         return
-    if args.command == "check" and args.check_command == "ready":
-        raise SystemExit(_check_ready(load_config(args.config), args.provider))
+    if args.command == "check":
+        config = load_config(args.config)
+        if args.check_command == "ready":
+            raise SystemExit(_check_ready(config, args.provider))
+        healthy, _ = _service_checks(config)
+        print("okay" if healthy else "not okay")
+        raise SystemExit(0 if healthy else 1)
+    if args.command == "doctor":
+        raise SystemExit(_doctor(load_config(args.config)))
     if args.config:
         # Keep the existing environment-based entrypoint compatible while making
         # product/test selection explicit for local scripts and service units.
