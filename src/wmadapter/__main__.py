@@ -127,8 +127,8 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     agents = dict(document.get("agents") or {})
     defaults = dict(agents.get("defaults") or {})
     experimental = dict(defaults.get("experimental") or {})
-    # Web-chat providers have smaller, undisclosed context budgets. Keep the
-    # OpenClaw tool surface compact so a fresh UI session fits reliably.
+    # Keep the initial tool catalog compact; browser remains discoverable via
+    # OpenClaw's tool_search/tool_call flow.
     experimental["localModelLean"] = True
     defaults["experimental"] = experimental
     agents["defaults"] = defaults
