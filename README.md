@@ -123,7 +123,7 @@ wmadapter provider enable qwen
 wmadapter provider default deepseek
 
 # Proxies are stored separately for each provider
-wmadapter add proxy qwen http://localhost:8080
+wmadapter proxy add qwen http://localhost:8080
 wmadapter proxy list
 wmadapter proxy remove qwen
 wmadapter check ready
@@ -138,6 +138,48 @@ wmadapter run openclaw qwen
 wmadapter login deepseek
 wmadapter login qwen --google
 ```
+
+## CLI command reference
+
+The CLI has one canonical spelling for each operation. Authentication uses
+`login`; provider proxies use `proxy add`, `proxy remove`, and `proxy list`.
+The old overlapping spellings `auth` and `add proxy` are not supported.
+
+Every command with an example:
+
+```bash
+# Authenticate a provider (add --google for Google sign-in)
+wmadapter login deepseek
+
+# List providers, profiles, and the current default
+wmadapter provider list
+
+# Enable or disable a provider, or select the default provider
+wmadapter provider enable qwen
+wmadapter provider disable qwen
+wmadapter provider default deepseek
+
+# Manage a provider-specific proxy
+wmadapter proxy add qwen http://localhost:8080
+wmadapter proxy remove qwen
+wmadapter proxy list
+
+# Check the gateway, or check one provider's authentication/readiness
+wmadapter check
+wmadapter check ready
+wmadapter check ready qwen
+
+# Print detailed service/provider diagnostics; --fix restarts the service first
+wmadapter doctor
+wmadapter doctor --fix
+
+# Generate/update client configuration without replacing unrelated settings
+wmadapter run opencode qwen
+wmadapter run openclaw deepseek
+```
+
+Use `--config` before the command to target a specific configuration file, for
+example `wmadapter --config config.test.yaml check ready`.
 
 Each provider uses its own persistent Chrome profile. Browser-managed session state is reused on later starts; WM Adapter does not store provider passwords or raw cookies.
 If configured, a provider proxy is used only by that provider's browser session and authentication flow.

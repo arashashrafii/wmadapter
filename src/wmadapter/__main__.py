@@ -276,7 +276,20 @@ def run_server() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="wmadapter", description="Web Model Adapter — Web-to-API Gateway for AI Agents")
+    parser = argparse.ArgumentParser(
+        prog="wmadapter",
+        description="Web Model Adapter — Web-to-API Gateway for AI Agents",
+        epilog=(
+            "Examples:\n"
+            "  wmadapter login deepseek\n"
+            "  wmadapter provider enable qwen\n"
+            "  wmadapter proxy add qwen http://localhost:8080\n"
+            "  wmadapter check ready qwen\n"
+            "  wmadapter doctor --fix\n"
+            "  wmadapter run opencode qwen"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--config",
         default=None,
@@ -284,36 +297,30 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command")
     def add_auth_parser(name: str) -> None:
-        auth = subparsers.add_parser(name)
+        auth = subparsers.add_parser(name, help="Authenticate a provider in its browser profile")
         auth.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
         auth.add_argument("--google", action="store_true", help="Open provider login and start Google authentication when possible")
         auth.add_argument("--external-browser", action="store_true", help="Authenticate in system Chrome, then let the hidden service verify the profile")
         auth.add_argument("--executable-path", help="Google Chrome executable path")
 
-    add_auth_parser("auth")
     add_auth_parser("login")
 
     provider = subparsers.add_parser("provider", help="Configure built-in web providers")
-    provider_commands = provider.add_subparsers(dest="provider_command", required=True)
+    provider_commands = provider.add_subparsers(dest="provider_command", required=True, title="provider commands")
     provider_commands.add_parser("list", help="Show configured providers and profile locations")
     for action in ("enable", "disable", "default"):
         command = provider_commands.add_parser(action)
         command.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     proxy = subparsers.add_parser("proxy", help="Configure provider-specific proxies")
-    proxy_commands = proxy.add_subparsers(dest="proxy_command", required=True)
+    proxy_commands = proxy.add_subparsers(dest="proxy_command", required=True, title="proxy commands")
     proxy_add = proxy_commands.add_parser("add", help="Set a proxy for one provider")
     proxy_add.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     proxy_add.add_argument("url")
     proxy_remove = proxy_commands.add_parser("remove", help="Remove a provider proxy")
     proxy_remove.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     proxy_commands.add_parser("list", help="Show provider proxies")
-    add = subparsers.add_parser("add", help="Compatibility command group")
-    add_commands = add.add_subparsers(dest="add_command", required=True)
-    add_proxy = add_commands.add_parser("proxy", help="Set a proxy for one provider")
-    add_proxy.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
-    add_proxy.add_argument("url")
     check = subparsers.add_parser("check", help="Check service state")
-    check_commands = check.add_subparsers(dest="check_command")
+    check_commands = check.add_subparsers(dest="check_command", title="check commands")
     ready = check_commands.add_parser("ready", help="Check whether a provider is online and authenticated")
     ready.add_argument("provider", nargs="?", choices=sorted(BUILTIN_PROVIDER_MODELS))
     doctor = subparsers.add_parser("doctor", help="Diagnose the local WM Adapter service")
@@ -328,7 +335,7 @@ def main() -> None:
     openclaw.add_argument("--config", dest="client_config", help="OpenClaw config file path")
     args = parser.parse_args()
 
-    if args.command in {"auth", "login"}:
+    if args.command == "login":
         config = load_config(args.config)
         paused = _pause_service_for_login()
         try:
@@ -365,7 +372,7 @@ def main() -> None:
             parser.error(str(exc))
         print(f"Provider configuration updated: {args.provider_command} {args.provider}")
         return
-    if args.command in {"proxy", "add"}:
+    if args.command == "proxy":
         config = load_config(args.config)
         path = config_file_path(args.config)
         if args.command == "proxy" and args.proxy_command == "list":
@@ -374,7 +381,7 @@ def main() -> None:
                 print(f"{provider_name}: {value}")
             return
         provider_name = args.provider
-        value = None if args.command == "proxy" and args.proxy_command == "remove" else args.url
+        value = None if args.proxy_command == "remove" else args.url
         try:
             save_config(update_provider_proxy(config, provider_name, value), path)
         except ValueError as exc:
