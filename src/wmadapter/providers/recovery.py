@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import asyncio
 import hashlib
 import logging
 import uuid
@@ -50,8 +51,10 @@ class ToolCallRecovery:
     a compatibility wrapper for direct legacy callers.
     """
 
-    def __init__(self, validate_call: Callable[[dict[str, Any] | None], bool] | None = None):
+    def __init__(self, validate_call: Callable[[dict[str, Any] | None], bool] | None = None,
+                 timeout_ms: int = 120000):
         self.validate_call = validate_call or (lambda call: True)
+        self.timeout_ms = max(0, int(timeout_ms))
 
     async def resolve(
         self,
@@ -101,15 +104,17 @@ class ToolCallRecovery:
                 "protocol_recovery_context original=%s repair=%s isolation=fallback",
                 _conversation_fingerprint(conversation_id), _conversation_fingerprint(repair_id),
             )
-            repaired = await provider.complete(repair_prompt, conversation_id=repair_id)
+            repair = provider.complete(repair_prompt, conversation_id=repair_id)
+            repaired = await asyncio.wait_for(repair, self.timeout_ms / 1000) if self.timeout_ms else await repair
         else:
             logger.info(
                 "protocol_recovery_context original=%s isolation=provider_api",
                 _conversation_fingerprint(conversation_id),
             )
-            repaired = await provider.repair_complete(
+            repair = provider.repair_complete(
                 repair_prompt, conversation_id=conversation_id
             )
+            repaired = await asyncio.wait_for(repair, self.timeout_ms / 1000) if self.timeout_ms else await repair
         status, call, visible = normalizer.normalize_with_status(repaired, tools)
         if call is not None and not self.validate_call(call):
             _diagnostic("repair_invalid_tool_call", repaired, "fail_closed")

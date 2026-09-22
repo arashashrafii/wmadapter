@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 import uuid
-import random
 from dataclasses import dataclass
 from collections.abc import AsyncIterator
 
@@ -46,7 +45,6 @@ class DeepSeekService(ChatProvider):
     # Image upload is implemented, but vision is not advertised until a live
     # probe verifies the current DeepSeek model/UI behavior.
     capabilities = ModelCapabilities(image_input=False)
-    protocol = DeepSeekTextAdapter()
 
     def __init__(self, config: dict):
         browser_cfg = config["browser"]
@@ -67,6 +65,7 @@ class DeepSeekService(ChatProvider):
         )
         self.timeout_ms = int(deepseek_cfg.get("timeout_ms", 180000))
         self.recovery_timeout_ms = int(deepseek_cfg.get("recovery_timeout_ms", 120000))
+        self.protocol = DeepSeekTextAdapter(self.recovery_timeout_ms)
         self.login_timeout_ms = int(deepseek_cfg.get("login_timeout_ms", 30000))
         self.recovery_enabled = bool(deepseek_cfg.get("recovery_enabled", True))
         self.recovery_backoff_base_ms = int(deepseek_cfg.get("recovery_backoff_base_ms", 250))
@@ -456,7 +455,7 @@ class DeepSeekService(ChatProvider):
                         raise
                     delay_ms = min(self.recovery_backoff_max_ms, self.recovery_backoff_base_ms * (2 ** (attempt - 1)))
                     if delay_ms:
-                        await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
+                        await asyncio.sleep(delay_ms / 1000)
                     self._clear_conversation_pages()
                     await self.browser.restart()
             raise RuntimeError("DeepSeek request failed")
@@ -513,7 +512,6 @@ class DeepSeekService(ChatProvider):
 class QwenService(ChatProvider):
     name = "qwen"
     capabilities = ModelCapabilities(image_input=False)
-    protocol = QwenTextAdapter()
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:
@@ -558,6 +556,7 @@ class QwenService(ChatProvider):
         self.timeout_ms = int(qwen_cfg.get("timeout_ms", 180000))
         self.recovery_enabled = bool(qwen_cfg.get("recovery_enabled", True))
         self.recovery_timeout_ms = int(qwen_cfg.get("recovery_timeout_ms", 120000))
+        self.protocol = QwenTextAdapter(self.recovery_timeout_ms)
         self.recovery_backoff_base_ms = int(qwen_cfg.get("recovery_backoff_base_ms", 250))
         self.recovery_backoff_max_ms = int(qwen_cfg.get("recovery_backoff_max_ms", 5000))
         self.restart_retries = min(
@@ -894,7 +893,7 @@ class QwenService(ChatProvider):
                         raise
                     delay_ms = min(self.recovery_backoff_max_ms, self.recovery_backoff_base_ms * (2 ** (attempt - 1)))
                     if delay_ms:
-                        await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
+                        await asyncio.sleep(delay_ms / 1000)
                     self._conversation_pages.clear()
                     await self.browser.restart()
             raise RuntimeError("Qwen request failed")

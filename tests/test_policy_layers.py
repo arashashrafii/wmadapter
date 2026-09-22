@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from wmadapter.providers.normalizer import ToolProtocolNormalizer
@@ -64,3 +65,12 @@ class PolicyLayerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await recovery.resolve(provider, '<tool_call>{"name":"blocked","arguments":{}}</tool_call>', [],
                                    [{"type":"function","function":{"name":"blocked","parameters":{}}}], "s", "prompt")
+
+    async def test_recovery_deadline_is_bounded(self):
+        async def late(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return "late"
+        provider = type("Provider", (), {})()
+        provider.complete = late
+        with self.assertRaises(asyncio.TimeoutError):
+            await ToolCallRecovery(timeout_ms=1).resolve(provider, "", [], None, "session", "USER: hi")
