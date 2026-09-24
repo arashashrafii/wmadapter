@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from wmadapter.__main__ import main
-from wmadapter.config import load_config, save_config, update_provider_config
+from wmadapter.config import load_config, mark_provider_authenticated, save_config, update_provider_config
 
 
 class ProviderCliTests(unittest.TestCase):
@@ -22,7 +22,13 @@ class ProviderCliTests(unittest.TestCase):
         updated = update_provider_config(config, "enable", "qwen")
 
         self.assertEqual(updated["providers"]["enabled"], ["deepseek", "qwen"])
-        self.assertEqual(updated["providers"]["enabled_models"], ["deepseek-chat", "qwen-chat"])
+        self.assertEqual(updated["providers"]["enabled_models"], [
+            "deepseek-chat",
+            "qwen-chat",
+            "qwen3.7-plus",
+            "qwen3.8-max",
+            "qwen3.8-omni-flash",
+        ])
         self.assertEqual(config["providers"]["enabled"], ["deepseek"])
 
     def test_default_provider_is_enabled_and_cannot_be_disabled(self):
@@ -34,6 +40,15 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(updated["providers"]["enabled"], ["deepseek", "qwen"])
         with self.assertRaisesRegex(ValueError, "default provider cannot be disabled"):
             update_provider_config(updated, "disable", "qwen")
+
+    def test_successful_login_enables_provider_unless_explicitly_disabled(self):
+        config = {"providers": {"enabled": ["deepseek"]}}
+        updated = mark_provider_authenticated(config, "qwen")
+        self.assertEqual(updated["providers"]["enabled"], ["deepseek", "qwen"])
+
+        disabled = {"providers": {"enabled": ["deepseek"], "disabled": ["qwen"]}}
+        unchanged = mark_provider_authenticated(disabled, "qwen")
+        self.assertEqual(unchanged["providers"]["enabled"], ["deepseek"])
 
     def test_cli_persists_provider_changes_and_lists_profiles(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -80,11 +95,64 @@ class ProviderCliTests(unittest.TestCase):
 
             document = json.loads(target.read_text())
             self.assertEqual(document["agents"]["defaults"]["model"], "wmadapter/qwen-chat")
-            self.assertTrue(document["agents"]["defaults"]["experimental"]["localModelLean"])
+            self.assertFalse(document["agents"]["defaults"]["experimental"]["localModelLean"])
+            self.assertEqual(document["tools"]["toolSearch"], {"mode": "directory"})
             provider = document["models"]["providers"]["wmadapter"]
             self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11555/v1")
-            self.assertEqual(provider["timeoutSeconds"], 300)
+            self.assertEqual(provider["timeoutSeconds"], 900)
+            self.assertEqual(provider["models"], [{
+                "id": "qwen-chat", "name": "qwen-chat",
+                "compat": {"supportsTools": True},
+            }])
+
+    def test_run_openclaw_targets_selected_environment_and_qwen_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.test.yaml"
+            target = Path(directory) / "openclaw.json"
+            save_config({
+                "server": {"host": "127.0.0.1", "port": 11556},
+                "qwen": {"models": [
+                    "qwen-chat", "qwen3.7-plus", "qwen3.8-max", "qwen3.8-omni-flash"
+                ]},
+            }, source)
+
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "run", "openclaw", "qwen", "--config", str(target)]):
+                main()
+
+            provider = json.loads(target.read_text())["models"]["providers"]["wmadapter"]
+            self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11556/v1")
+            self.assertEqual([item["id"] for item in provider["models"]], [
+                "qwen-chat", "qwen3.7-plus", "qwen3.8-max", "qwen3.8-omni-flash"
+            ])
+
+    def test_run_pi_writes_openai_compatible_provider_and_preserves_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "models.json"
+            save_config({"server": {"port": 11556}, "qwen": {"models": ["qwen-chat"]}}, source)
+            target.write_text(json.dumps({"defaultProvider": "other", "providers": {"other": {}}}))
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "run", "pi", "qwen", "--config", str(target)]):
+                main()
+            document = json.loads(target.read_text())
+            self.assertEqual(document["defaultProvider"], "other")
+            provider = document["providers"]["wmadapter-qwen"]
+            self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11556/v1")
             self.assertEqual(provider["models"], [{"id": "qwen-chat", "name": "qwen-chat"}])
+
+    def test_run_dsh_merges_pi_ai_provider_patch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "cordis.patch.yml"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            target.write_text("- id: existing\n  config: {enabled: true}\n", encoding="utf-8")
+            with patch.object(sys, "argv", ["wmadapter", "--config", str(source), "run", "dsh", "qwen", "--config", str(target)]):
+                main()
+            import yaml
+            document = yaml.safe_load(target.read_text())
+            self.assertEqual(document[0]["id"], "existing")
+            provider = document[1]["config"]["providers"]["wmadapter-qwen"]
+            self.assertEqual(provider["baseURL"], "http://127.0.0.1:11555/v1")
+            self.assertEqual(provider["models"], [{"id": "qwen-chat"}])
 
     def test_check_ready_returns_nonzero_for_unready_service(self):
         with tempfile.TemporaryDirectory() as directory:

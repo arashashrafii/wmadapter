@@ -121,6 +121,135 @@ class ProtocolRecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(text, answer)
         provider.complete.assert_not_awaited()
 
+    async def test_qwen_unknown_tool_sentence_triggers_one_structured_repair(self):
+        provider = AsyncMock()
+        provider.complete.return_value = '<tool_call>{"name":"tool_search","arguments":{"query":"Browser"}}</tool_call>'
+        tools = [{"type": "function", "function": {"name": "tool_search"}}]
+
+        call, text = await _resolve_web_answer(
+            provider, "Tool tool_search does not exists.", [], tools, "qwen-session", "context",
+        )
+
+        self.assertEqual(call["function"]["name"], "tool_search")
+        self.assertEqual(text, "")
+        provider.complete.assert_awaited_once()
+
+    async def test_openclaw_browser_marker_recovers_type_after_successful_navigation(self):
+        from wmadapter.providers.recovery import ToolCallRecovery
+
+        tools = [
+            {"type": "function", "function": {"name": "tool_search"}},
+            {"type": "function", "function": {"name": "tool_call"}},
+        ]
+        messages = [
+            Message(role="user", content='Open https://google.com and type “last news of AI” in the search field.'),
+            Message(
+                role="assistant",
+                tool_calls=[{
+                    "id": "navigate-1",
+                    "function": {
+                        "name": "tool_call",
+                        "arguments": json.dumps({
+                            "id": "openclaw:browser:browser",
+                            "args": {"action": "navigate", "url": "https://google.com"},
+                        }),
+                    },
+                }],
+            ),
+            Message(
+                role="tool",
+                tool_call_id="navigate-1",
+                content='{"ok": true, "url": "https://www.google.com/", "targetId": "tab-1"}',
+            ),
+        ]
+        provider = AsyncMock()
+        call, text = await ToolCallRecovery().resolve(
+            provider, "Tool tool_search does not exists.", messages, tools,
+            "qwen-session", "context",
+        )
+
+        self.assertEqual(call["function"]["name"], "tool_call")
+        arguments = json.loads(call["function"]["arguments"])
+        self.assertEqual(arguments["args"]["targetId"], "tab-1")
+        self.assertEqual(arguments["args"]["request"]["kind"], "type")
+        self.assertEqual(arguments["args"]["request"]["text"], "last news of AI")
+        self.assertEqual(text, "")
+        provider.complete.assert_not_awaited()
+
+    async def test_openclaw_browser_marker_finishes_after_successful_type_result(self):
+        from wmadapter.providers.recovery import ToolCallRecovery
+
+        tools = [{"type": "function", "function": {"name": "tool_call"}}]
+        messages = [
+            Message(role="user", content='Type “last news of AI” in the search field.'),
+            Message(
+                role="assistant",
+                tool_calls=[{
+                    "id": "act-1",
+                    "function": {
+                        "name": "tool_call",
+                        "arguments": json.dumps({
+                            "id": "openclaw:browser:browser",
+                            "args": {
+                                "action": "act",
+                                "targetId": "tab-1",
+                                "request": {"kind": "type", "text": "last news of AI"},
+                            },
+                        }),
+                    },
+                }],
+            ),
+            Message(
+                role="tool",
+                tool_call_id="act-1",
+                content='{"ok": true, "value": "last news of AI"}',
+            ),
+        ]
+        provider = AsyncMock()
+        call, text = await ToolCallRecovery().resolve(
+            provider, "Tool tool_search does not exists.", messages, tools,
+            "qwen-session", "context",
+        )
+
+        self.assertIsNone(call)
+        self.assertIn("last news of AI", text)
+        provider.complete.assert_not_awaited()
+
+    async def test_openclaw_browser_success_blocks_duplicate_followup_call(self):
+        from wmadapter.providers.recovery import ToolCallRecovery
+
+        tools = [{"type": "function", "function": {"name": "tool_call"}}]
+        messages = [
+            Message(role="user", content='Type “last news of AI” in the search field.'),
+            Message(
+                role="assistant",
+                tool_calls=[{
+                    "id": "act-1",
+                    "function": {
+                        "name": "tool_call",
+                        "arguments": json.dumps({
+                            "id": "openclaw:browser:browser",
+                            "args": {"action": "act", "targetId": "tab-1"},
+                        }),
+                    },
+                }],
+            ),
+            Message(
+                role="tool",
+                tool_call_id="act-1",
+                content='{"ok": true, "value": "last news of AI"}',
+            ),
+        ]
+        follow_up = '<tool_call>{"name":"tool_call","arguments":{"id":"openclaw:browser:browser","args":{"action":"snapshot","targetId":"tab-1"}}}</tool_call>'
+        provider = AsyncMock()
+        call, text = await ToolCallRecovery().resolve(
+            provider, follow_up, messages, tools, "qwen-session", "context",
+        )
+
+        self.assertIsNone(call)
+        self.assertIn("last news of AI", text)
+        provider.complete.assert_not_awaited()
+
     async def test_normal_bypass_emits_redacted_observability_without_payload(self):
         provider = AsyncMock()
         answer = "ordinary private-looking response"

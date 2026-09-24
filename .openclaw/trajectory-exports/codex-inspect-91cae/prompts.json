@@ -1,0 +1,15 @@
+{
+  "traceSchema": "openclaw-trajectory",
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T11:10:30.143Z",
+  "traceId": "4d11c574-d81c-4c96-b55c-3c12feb75340",
+  "sessionId": "4d11c574-d81c-4c96-b55c-3c12feb75340",
+  "sessionKey": "agent:main:dashboard:91cae46a-0ec5-44f1-8278-f94e12df2e13",
+  "system": "[Malformed diagnostic JSON redacted]",
+  "submittedPrompts": [
+    "Use the browser tool to open Google and search for: latest AI news.\nAfter the Google results page is loaded, return exactly the titles of the first three news results and their source names. Do not explain your plan.",
+    "can use toggele browser",
+    "[Queued user message from a previous active turn; preserved as context only. Continue with the active prompt below.]\ncan use toggele browser\n\nContinue the current task from the existing transcript, preserving completed work. If an action was interrupted, inspect its state before deciding whether to retry it. Do not restart the task or repeat completed actions."
+  ],
+  "latestSubmittedPrompt": "[Queued user message from a previous active turn; preserved as context only. Continue with the active prompt below.]\ncan use toggele browser\n\nContinue the current task from the existing transcript, preserving completed work. If an action was interrupted, inspect its state before deciding whether to retry it. Do not restart the task or repeat completed actions."
+}

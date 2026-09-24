@@ -2,7 +2,7 @@ import unittest
 
 from wmadapter.providers.normalizer import ToolProtocolNormalizer
 from wmadapter.providers.policy import ClientPolicy, detect_client_policy
-from wmadapter.providers.protocol import _prompt
+from wmadapter.providers.protocol import _normalize_tool_arguments, _prompt
 from wmadapter.providers.contract import Message
 from wmadapter.providers.recovery import ToolCallRecovery
 
@@ -23,6 +23,51 @@ class PolicyLayerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(call["function"]["name"], "lookup")
         self.assertEqual(visible, "")
+
+    def test_browser_act_repairs_nested_action_discriminator(self):
+        arguments = _normalize_tool_arguments("browser", {
+            "action": "act",
+            "request": {"action": "type", "ref": "e6", "text": "last news of AI", "submit": True},
+        })
+        self.assertEqual(arguments["request"], {
+            "kind": "type", "ref": "e6", "text": "last news of AI", "submit": True,
+        })
+
+    def test_tool_search_repairs_flattened_qwen_browser_act(self):
+        arguments = _normalize_tool_arguments("tool_call", {
+            "id": "openclaw:browser:browser",
+            "args": {
+                "action": "act", "targetId": "tab-1", "type": "type", "text": "last news of AI",
+            },
+        })
+        self.assertEqual(arguments["args"]["request"], {
+            "kind": "type", "selector": "textarea[name='q'], input[name='q']", "text": "last news of AI",
+        })
+
+    def test_tool_search_repairs_qwen_browser_actions_array(self):
+        arguments = _normalize_tool_arguments("tool_call", {
+            "id": "openclaw:browser:browser",
+            "args": {
+                "action": "act", "targetId": "tab-1",
+                "actions": [{"type": "type", "text": "last news of AI"}],
+            },
+        })
+        self.assertEqual(arguments["args"]["request"]["kind"], "type")
+        self.assertEqual(arguments["args"]["request"]["text"], "last news of AI")
+
+    def test_tool_search_repairs_qwen_browser_act_alias(self):
+        arguments = _normalize_tool_arguments("tool_call", {
+            "id": "openclaw:browser:browser",
+            "args": {
+                "action": "act", "targetId": "tab-1",
+                "act": "type", "text": "last news of AI",
+                "selector": "input[name='q']",
+            },
+        })
+        self.assertEqual(arguments["args"]["request"], {
+            "kind": "type", "selector": "textarea[name='q'], input[name='q']",
+            "text": "last news of AI",
+        })
 
     def test_explicit_generic_policy_is_brand_neutral(self):
         messages = [Message(role="user", content="OpenClaw should use computer.act")]

@@ -123,7 +123,7 @@ persistent job store.
 
 Only providers listed in `providers.enabled` are started at application launch;
 an enabled-provider startup failure leaves the application running with that
-provider not ready while other enabled providers are still attempted. Qwen's
+provider not ready while other configured providers are still attempted. Qwen's
 observable contract is text-first: Qwen image generation is separately
 capability-gated, while image input and other multimodal features are not
 advertised without their own verified evidence.

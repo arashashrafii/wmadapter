@@ -1,0 +1,40 @@
+{
+  "traceSchema": "openclaw-trajectory",
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T11:10:30.143Z",
+  "traceId": "4d11c574-d81c-4c96-b55c-3c12feb75340",
+  "sessionId": "4d11c574-d81c-4c96-b55c-3c12feb75340",
+  "sessionKey": "agent:main:dashboard:91cae46a-0ec5-44f1-8278-f94e12df2e13",
+  "finalStatus": "error",
+  "aborted": false,
+  "externalAbort": false,
+  "timedOut": false,
+  "idleTimedOut": false,
+  "timedOutDuringCompaction": false,
+  "timedOutDuringToolExecution": false,
+  "timedOutByRunBudget": false,
+  "promptErrorSource": null,
+  "compactionCount": 0,
+  "assistantTexts": [],
+  "stopReason": "error",
+  "finalPromptText": "can use toggele browser",
+  "itemLifecycle": {
+    "startedCount": 1,
+    "completedCount": 1,
+    "activeCount": 0
+  },
+  "toolMetas": [
+    {
+      "toolName": "browser",
+      "meta": "38E2FFDD6FDAD4FB754CA9A104674371",
+      "replaySafe": false,
+      "toolCallId": "call_43fdcd56dde8406d94237c23df9a3827",
+      "isError": false
+    }
+  ],
+  "didSendViaMessagingTool": false,
+  "successfulCronAdds": 0,
+  "messagingToolSentTexts": [],
+  "messagingToolSentMediaUrls": [],
+  "messagingToolSentTargets": []
+}

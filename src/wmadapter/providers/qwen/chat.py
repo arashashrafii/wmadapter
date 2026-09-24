@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
+from urllib.parse import urlparse
 
 from playwright.async_api import Page
 from ...browser.elements import first_visible
@@ -71,6 +73,38 @@ class QwenChat:
     async def is_authenticated(self) -> bool:
         return await self.probe_auth() == CHAT_READY
 
+    async def delete_remote_conversation(self) -> bool:
+        """Delete the current Qwen chat through the visible chat menu."""
+        path = urlparse(self.page.url).path.rstrip("/")
+        if not path.startswith("/c/"):
+            return False
+        # Qwen's sidebar links do not always carry an href.  In the current
+        # SPA, the selected item is identified by the active class instead.
+        link = self.page.locator(f'a[href="{path}"]').last
+        if not await link.count():
+            link = self.page.locator("a.chat-item-drag-link-active").last
+        if not await link.count():
+            return False
+        container = link.locator("xpath=ancestor::div[contains(@class, 'chat-item-drag')][1]")
+        buttons = container.locator("button")
+        if not await buttons.count():
+            return False
+        await buttons.last.click()
+        for label in ("Delete", "Delete chat", "Remove"):
+            item = self.page.get_by_text(label, exact=True).last
+            if await item.count() and await item.is_visible(timeout=500):
+                await item.click()
+                break
+        else:
+            return False
+        for label in ("Delete", "Delete chat", "Confirm"):
+            confirm = self.page.get_by_role("button", name=label, exact=True).last
+            if await confirm.count() and await confirm.is_visible(timeout=500):
+                await confirm.click()
+                break
+        await self.page.wait_for_timeout(500)
+        return True
+
     async def _response_counts(self) -> dict[str, int]:
         return {selector: await self.page.locator(selector).count() for selector in RESPONSE_BLOCKS}
 
@@ -132,13 +166,75 @@ class QwenChat:
         if "AI-generated content may not be accurate." in text:
             text = text.split("AI-generated content may not be accurate.", 1)[0].strip()
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        noise = {"Auto", "How can I help you ?", "Qwen3.7-Plus"}
+        noise = {
+            "Auto",
+            "How can I help you ?",
+            "Qwen3.7-Plus",
+            "Qwen3.8-Max",
+            "Qwen3.8-Omni-Flash",
+        }
         lines = [line for line in lines if line not in noise]
         return "\n".join(lines).strip()
 
-    async def send_message(self, message: str) -> str:
+    @staticmethod
+    def _model_labels(model: str) -> tuple[str, ...]:
+        parts = model.split("-")
+        title = "-".join([parts[0].capitalize(), *[part.capitalize() for part in parts[1:]]])
+        spaced = title.replace("-", " ")
+        return tuple(dict.fromkeys((title, spaced, model)))
+
+    async def _select_model(self, model: str | None) -> None:
+        if not model or model == "qwen-chat":
+            return
+        labels = self._model_labels(model)
+        visible_label = None
+        model_trigger = self.page.locator("[aria-label='Select Model']").first
+        try:
+            await model_trigger.wait_for(state="visible", timeout=5000)
+            visible_label = model_trigger
+        except Exception:
+            model_trigger = self.page.get_by_role("button", name="Select Model", exact=True)
+            if await model_trigger.count() and await model_trigger.is_visible(timeout=500):
+                visible_label = model_trigger
+
+        triggers = self.page.locator("button, [role='button']")
+        for index in range(await triggers.count()):
+            if visible_label is not None:
+                break
+            candidate = triggers.nth(index)
+            if not await candidate.is_visible(timeout=300):
+                continue
+            text = " ".join((await candidate.inner_text()).split())
+            if re.match(r"^Qwen(?:[0-9]|\s*[0-9])", text, re.IGNORECASE):
+                visible_label = candidate
+                break
+        if visible_label is None:
+            raise PreSubmitError(f"Qwen model is not visible: {model}")
+
+        # The current model label is also the selector trigger. Clicking it
+        # opens the provider-owned model menu; the exact label then identifies
+        # the requested option without relying on generated CSS class names.
+        await visible_label.click()
+        options = self.page.get_by_role("option")
+        for label in labels:
+            option = self.page.get_by_text(label, exact=True).last
+            if await option.count() and await option.is_visible(timeout=1000):
+                await option.click()
+                return
+            for index in range(await options.count()):
+                option = options.nth(index)
+                if not await option.is_visible(timeout=300):
+                    continue
+                option_text = " ".join((await option.inner_text()).split())
+                if option_text == label or option_text.startswith(f"{label} "):
+                    await option.click()
+                    return
+        raise PreSubmitError(f"Qwen model option is unavailable: {model}")
+
+    async def send_message(self, message: str, model: str | None = None) -> str:
         self.submit_state = SubmitState.NOT_SUBMITTED
         try:
+            await self._select_model(model)
             input_box = await self._first_visible(CHAT_INPUTS)
             await self.page.wait_for_timeout(1000)
             previous_counts = await self._response_counts()
@@ -169,7 +265,7 @@ class QwenChat:
                 await asyncio.sleep(1)
 
             raise TimeoutError("Qwen response was not detected before timeout")
-        except UncertainSubmitError:
+        except (PreSubmitError, UncertainSubmitError):
             raise
         except Exception:
             if self.submit_state in (SubmitState.SUBMITTING, SubmitState.SUBMITTED_UNCERTAIN):

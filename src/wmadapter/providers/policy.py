@@ -38,7 +38,10 @@ def detect_client_policy(
         for item in tools or []
         if isinstance(item, dict) and isinstance(item.get("function"), dict)
     }
-    openclaw_tools = {"browser", "computer", "process", "session_status", "nodes"}
+    openclaw_tools = {
+        "browser", "computer", "process", "session_status", "nodes",
+        "tool_search", "tool_describe", "tool_call", "tool_search_code",
+    }
     return ClientPolicy.OPENCLAW if tool_names & openclaw_tools else ClientPolicy.GENERIC
 
 

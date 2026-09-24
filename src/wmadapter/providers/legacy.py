@@ -15,6 +15,7 @@ from .protocol import (
 from .normalizer import ToolProtocolNormalizer
 from .recovery import ToolCallRecovery
 from .policy import ClientPolicy
+from .invoke import invoke_provider
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,8 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
             value += "\nTOOL CHOICE: You must return one of the listed tool calls, not a final text answer."
         return value
 
-    prompt = build_prompt(messages)
+    prompt_policy = request.client_policy
+    prompt = build_prompt(messages, prompt_policy)
     budget = request.context_budget_chars
     if budget is None:
         budget = provider.context_budget_for(chat.model) if hasattr(provider, "context_budget_for") else None
@@ -48,7 +50,8 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
         # The Control UI already supplies its own operating instructions.
         # Avoid duplicating WM Adapter's long OpenClaw playbook in the limited
         # Web-chat prompt before any user content or tool schema is sent.
-        prompt = build_prompt(messages, ClientPolicy.GENERIC)
+        prompt_policy = ClientPolicy.GENERIC
+        prompt = build_prompt(messages, prompt_policy)
     compacted = False
     if budget is not None:
         # Keep a single browser-relay result from exhausting the whole
@@ -57,19 +60,20 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
         bounded = bound_tool_results(messages, max(512, min(8192, budget // 8)))
         compacted = bounded != messages
         messages = bounded
-        prompt = build_prompt(messages)
+        prompt = build_prompt(messages, prompt_policy)
     if budget is not None and len(prompt) > budget:
         try:
             messages = compact_messages(messages, max(1024, budget // 2))
         except ContextLimitError as exc:
             raise ContextLimitError(len(prompt), budget) from exc
-        prompt = build_prompt(messages)
+        prompt = build_prompt(messages, prompt_policy)
         compacted = True
         # OpenClaw's verbose operational guidance is useful for large-context
         # API models, but it can exceed the unknown Web-chat envelope before
         # the user's request or callable tool schemas are considered.
         if len(prompt) > budget and request.client_policy is ClientPolicy.OPENCLAW:
-            prompt = build_prompt(messages, ClientPolicy.GENERIC)
+            prompt_policy = ClientPolicy.GENERIC
+            prompt = build_prompt(messages, prompt_policy)
         if len(prompt) > budget:
             raise ContextLimitError(len(prompt), budget)
     logger.info(
@@ -82,14 +86,18 @@ async def infer_legacy(provider, request: ProviderRequest) -> ProviderResult:
     if images:
         if not provider.capabilities.image_input:
             raise ValueError("This provider does not support image input")
-        answer = await provider.complete_with_attachments(
-            prompt, conversation_id=request.conversation_id, attachments=images
+        answer = await invoke_provider(
+            provider, "complete_with_attachments", prompt,
+            conversation_id=request.conversation_id, model=chat.model,
+            attachments=images,
         )
     else:
-        answer = await provider.complete(prompt, conversation_id=request.conversation_id)
-    call, visible = await (adapter.resolve(provider, answer, messages, tools, request.conversation_id, prompt)
+        answer = await invoke_provider(
+            provider, "complete", prompt, conversation_id=request.conversation_id, model=chat.model
+        )
+    call, visible = await (adapter.resolve(provider, answer, messages, tools, request.conversation_id, prompt, chat.model)
                            if adapter else ToolCallRecovery().resolve(
-                               provider, answer, messages, tools, request.conversation_id, prompt
+                               provider, answer, messages, tools, request.conversation_id, prompt, chat.model
                            ))
     if call is None:
         call, visible = ToolProtocolNormalizer().normalize(visible, tools)

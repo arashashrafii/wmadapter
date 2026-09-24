@@ -7,6 +7,7 @@ import uuid
 import asyncio
 import os
 import base64
+import hashlib
 from contextlib import suppress
 from contextlib import asynccontextmanager
 from typing import Any
@@ -47,6 +48,7 @@ from .providers.contract import (
     validate_structured_output,
 )
 from .providers.state import ConversationStateConflict, GatewayState, UnknownResponseId
+from .jobs import InferenceJob, InferenceJobStore, JobIdempotencyConflict
 from .providers.opencode import translate_request as translate_opencode_request
 from .providers.policy import detect_client_policy
 from .providers.errors import (
@@ -75,7 +77,10 @@ configure_logging(config["logging"])
 logger = logging.getLogger(__name__)
 
 STREAM_HEARTBEAT_SECONDS = 5.0
-STREAM_WATCHDOG_SECONDS = 90.0
+# Provider adapters own the actual inference deadline. Zero means that the
+# gateway keeps waiting while emitting heartbeats; compatibility routes may
+# still provide an explicit watchdog.
+STREAM_WATCHDOG_SECONDS = 0.0
 # OpenCode includes its full tool and project envelope on each continuation.
 # Keep the gateway limit below the practical DeepSeek Web context envelope.
 # A very large value lets OpenCode send huge tool histories that the web model
@@ -83,23 +88,24 @@ STREAM_WATCHDOG_SECONDS = 90.0
 OPENCODE_CONTEXT_BUDGET_CHARS = int(
     os.getenv("WMADAPTER_OPENCODE_CONTEXT_BUDGET_CHARS", "48000")
 )
-# The OpenClaw Control UI adds a substantial agent and tool envelope. Web-chat
-# providers do not publish stable context limits, so keep that envelope below
-# the size at which they can silently stop responding.
+# The OpenClaw Control UI adds a substantial agent and tool envelope. Keep a
+# bounded but useful window for several Browser/tool-search turns; 12k was too
+# small for a normal open -> snapshot -> type -> verify workflow.
 OPENCLAW_CONTEXT_BUDGET_CHARS = int(
-    os.getenv("WMADAPTER_OPENCLAW_CONTEXT_BUDGET_CHARS", "12000")
+    os.getenv("WMADAPTER_OPENCLAW_CONTEXT_BUDGET_CHARS", "24000")
 )
 OPENCODE_STREAM_WATCHDOG_SECONDS = 900.0
 providers = {"deepseek": DeepSeekService(config), "qwen": QwenService(config)}
 router = ProviderRouter(
     providers,
-    config["providers"]["default"],
-    config["providers"].get("enabled"),
-    config["providers"].get("enabled_models"),
+    (config.get("providers") or {}).get("default"),
 )
 default_system_prompt = config["deepseek"].get("system_prompt", "")
 gateway_api_key = config["server"].get("api_key")
 response_state = GatewayState()
+inference_jobs = InferenceJobStore(
+    retention_seconds=int((config.get("server") or {}).get("async_job_retention_ms", 3600000)) / 1000
+)
 _startup_status = {"state": "starting", "error": None}
 _startup_task: asyncio.Task | None = None
 
@@ -145,6 +151,41 @@ def _attach_provider_metadata(response: dict[str, Any], result: ProviderResult) 
         if values:
             response[field] = [item.model_dump() if hasattr(item, "model_dump") else item for item in values]
     return response
+
+
+def _completed_chat_response(request_id: str, model: str, result: ProviderResult) -> dict[str, Any]:
+    _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
+    response = _attach_provider_metadata(
+        _completion_response(request_id, model, result.content or "", result.tool_calls), result
+    )
+    response["choices"][0]["finish_reason"] = result.finish_reason
+    response["usage"] = _observed_usage(result)
+    return response
+
+
+def _request_fingerprint(payload: ChatRequest) -> str:
+    """Hash request shape for idempotency conflict detection without storing it."""
+    encoded = payload.model_dump_json(exclude_none=False, exclude_unset=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _idempotency_key(request: Request) -> str | None:
+    return request.headers.get("idempotency-key") or request.headers.get("x-wmadapter-request-key")
+
+
+def _job_status_response(job: InferenceJob, request: Request) -> JSONResponse:
+    return JSONResponse(
+        {
+            "id": job.job_id,
+            "object": "chat.completion",
+            "status": job.status,
+            "model": job.model,
+            "created": int(job.created_at),
+            "poll_url": str(request.url_for("retrieve_chat_completion", request_id=job.job_id)),
+        },
+        status_code=202,
+        headers={"Retry-After": "1"},
+    )
 
 
 def _legacy_completion_request(payload: LegacyCompletionRequest) -> ChatRequest:
@@ -216,6 +257,7 @@ async def lifespan(app: FastAPI):
                 await _startup_task
         await router.stop()
         response_state.clear()
+        inference_jobs.cancel_all()
 
 
 app = FastAPI(title="Web Model Adapter", description="Web Model Adapter — Web-to-API Gateway for AI Agents", version="0.5.0", lifespan=lifespan)
@@ -311,8 +353,7 @@ async def health():
 @app.get("/ready")
 async def ready():
     status = await router.status()
-    enabled = config["providers"].get("enabled", [config["providers"]["default"]])
-    providers_ready = all(status.get(name, {}).get("ready") for name in enabled)
+    providers_ready = any(item.get("ready") is True for item in status.values())
     # A provider can recover asynchronously after its initial startup probe
     # (for example, after a browser session finishes authentication). Do not
     # keep the gateway globally unavailable once every enabled provider is
@@ -331,7 +372,8 @@ async def ready():
 
 
 def _model_catalog():
-    return {model: name for name in router.enabled_providers
+    return {model: name for name, provider in router.providers.items()
+            if getattr(provider, "ready", True)
             for model in router.models_for_provider(name)}
 
 
@@ -504,6 +546,29 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         return await (_infer_structured(provider, inference, structured_output)
                       if structured_output else provider.infer(inference))
 
+    try:
+        job, _created = inference_jobs.create(
+            request_id,
+            payload.model,
+            _request_fingerprint(payload),
+            infer,
+            idempotency_key=_idempotency_key(request),
+        )
+    except JobIdempotencyConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    request_id = job.job_id
+
+    # Explicit opt-in for clients whose own HTTP timeout is shorter than a
+    # browser-backed provider turn. The job continues running and can be
+    # polled or retried with the same Idempotency-Key.
+    if request.headers.get("x-wmadapter-async", "").casefold() in {"1", "true", "yes"}:
+        if job.done:
+            try:
+                return _completed_chat_response(request_id, payload.model, await job.wait())
+            except Exception as exc:
+                raise _provider_http_error(exc) from exc
+        return _job_status_response(job, request)
+
     if payload.stream:
         async def events():
             def chunk(delta, finish=None):
@@ -512,25 +577,23 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
                         "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
             created = int(time.time())
             yield _sse(chunk({"role": "assistant", "content": ""}))
-            inference_task = asyncio.create_task(infer())
             try:
-                deadline = asyncio.get_running_loop().time() + (
-                    watchdog_seconds if watchdog_seconds is not None else
-                    (OPENCODE_STREAM_WATCHDOG_SECONDS if is_opencode_request else STREAM_WATCHDOG_SECONDS)
+                timeout = watchdog_seconds if watchdog_seconds is not None else (
+                    OPENCODE_STREAM_WATCHDOG_SECONDS if is_opencode_request else STREAM_WATCHDOG_SECONDS
                 )
+                deadline = (asyncio.get_running_loop().time() + timeout) if timeout > 0 else None
                 while True:
-                    remaining = deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0:
+                    remaining = None if deadline is None else deadline - asyncio.get_running_loop().time()
+                    if remaining is not None and remaining <= 0:
                         raise asyncio.TimeoutError
                     try:
-                        result = await asyncio.wait_for(
-                            asyncio.shield(inference_task),
-                            min(STREAM_HEARTBEAT_SECONDS, remaining),
-                        )
+                        wait_for = STREAM_HEARTBEAT_SECONDS if remaining is None else min(STREAM_HEARTBEAT_SECONDS, remaining)
+                        await asyncio.wait_for(asyncio.shield(job.task), wait_for)
+                        result = await job.wait()
                         break
                     except asyncio.TimeoutError:
-                        if inference_task.done():
-                            result = inference_task.result()
+                        if job.done:
+                            result = await job.wait()
                             break
                         # Some OpenAI-compatible clients ignore SSE comments
                         # when tracking an idle streamed response. Emit a
@@ -548,10 +611,16 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
                                 "created": created, "model": payload.model,
                                 "choices": [], "usage": _observed_usage(result)})
             except (asyncio.TimeoutError, TimeoutError):
-                inference_task.cancel()
-                with suppress(asyncio.CancelledError, asyncio.TimeoutError):
-                    await asyncio.wait_for(inference_task, 0.1)
-                yield _sse(_error("Provider request timed out", "provider_error", "provider_timeout"))
+                # Do not cancel provider work after submission. Polling the
+                # request ID observes the same job and prevents duplicates.
+                error = _error(
+                    "Provider is still processing; poll this request ID to retrieve the result",
+                    "provider_error",
+                    "provider_timeout",
+                )
+                error["request_id"] = request_id
+                error["poll_url"] = str(request.url_for("retrieve_chat_completion", request_id=request_id))
+                yield _sse(error)
             except PageCapacityError:
                 yield _sse(_error("Provider page capacity is temporarily unavailable; close an idle conversation or retry", "provider_error", "provider_capacity"))
             except ContextLimitError:
@@ -565,7 +634,7 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
         return StreamingResponse(events(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "Connection": "close", "X-Accel-Buffering": "no"})
     try:
-        result = await infer()
+        result = await job.wait()
     except PageCapacityError as exc:
         logger.warning("Chat completion blocked by provider page capacity: %s", exc)
         raise _provider_http_error(exc) from exc
@@ -574,13 +643,23 @@ async def chat_completion(payload: ChatRequest, request: Request, *, allow_max_t
     except Exception as exc:
         logger.exception("Chat completion failed")
         raise _provider_http_error(exc) from exc
-    _enforce_output_limit(result.content or "", config.get("limits", {}).get("max_output_chars"))
-    response = _attach_provider_metadata(
-        _completion_response(request_id, payload.model, result.content or "", result.tool_calls), result
-    )
-    response["choices"][0]["finish_reason"] = result.finish_reason
-    response["usage"] = _observed_usage(result)
-    return response
+    return _completed_chat_response(request_id, payload.model, result)
+
+
+@app.get("/v1/chat/completions/{request_id}", name="retrieve_chat_completion")
+async def retrieve_chat_completion(request_id: str, request: Request):
+    """Retrieve a long-running completion without resubmitting provider work."""
+    _authorize(request)
+    job = inference_jobs.get(request_id)
+    if job is None:
+        raise HTTPException(404, "Unknown or expired request_id")
+    if not job.done:
+        return _job_status_response(job, request)
+    try:
+        result = await job.wait()
+    except Exception as exc:
+        raise _provider_http_error(exc) from exc
+    return _completed_chat_response(job.job_id, job.model, result)
 
 
 @app.post("/v1/completions")
@@ -659,7 +738,9 @@ async def images(payload: ImagesRequest, request: Request):
     if not isinstance(provider, QwenService):
         raise HTTPException(501, "image_generation_not_supported")
     try:
-        content, mime = await provider.generate_image(payload.prompt.strip())
+        content, mime = await provider.generate_image(
+            payload.prompt.strip(), conversation_id=f"image:{uuid.uuid4().hex}"
+        )
     except Exception as exc:
         logger.warning("Qwen image generation failed: %s", type(exc).__name__)
         raise HTTPException(502, "image_generation_failed") from exc

@@ -14,6 +14,7 @@ from wmadapter.service import QwenService
 class QwenMediaBoundaryTests(unittest.TestCase):
     def setUp(self):
         provider = QwenService(load_config('/nonexistent'))
+        provider.ready = True
         provider.capabilities = provider.capabilities.model_copy(update={
             'image_generation': False,
             'video_generation': False,

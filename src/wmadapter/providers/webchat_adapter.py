@@ -18,7 +18,7 @@ class WebChatTextAdapter:
     def attachments(self, messages):
         return _image_attachments(messages)
 
-    async def resolve(self, provider, answer: str, messages, tools, conversation_id, prompt):
+    async def resolve(self, provider, answer: str, messages, tools, conversation_id, prompt, model=None):
         return await self.recovery.resolve(
-            provider, answer, messages, tools, conversation_id, prompt
+            provider, answer, messages, tools, conversation_id, prompt, model
         )

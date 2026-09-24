@@ -18,6 +18,10 @@ verification must be repeated when the Qwen Web UI changes.
   response. CAPTCHA/challenge screens remain user-driven.
 - Observed adapter entry point: `QwenTextAdapter`, using the Qwen chat
   selectors in `src/wmadapter/providers/qwen/`.
+- Current text model IDs exposed to clients are `qwen3.7-plus`, `qwen3.8-max`,
+  and `qwen3.8-omni-flash`, matching the visible Qwen model menu.
+  `qwen-chat` remains a compatibility alias for the configured default model.
+  Availability is account- and region-dependent.
 
 ## Capability matrix
 

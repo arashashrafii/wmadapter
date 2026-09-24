@@ -137,6 +137,18 @@ class DeepSeekChat:
             diagnostics["body_chars"] = "unavailable"
         return diagnostics
 
+    def _response_started(self, block_count: int, previous_count: int, text: str) -> bool:
+        """Detect a new answer even when DeepSeek reuses the last DOM block.
+
+        DeepSeek normally appends a new ``.ds-markdown`` node for each turn,
+        but after a tool result it can update the existing last node in place.
+        Counting nodes alone then makes a valid final answer look like an
+        unfinished request until the browser timeout expires.
+        """
+        return block_count > previous_count or (
+            bool(text) and text != self._previous_response_text
+        )
+
     async def delete_remote_conversation(self) -> bool:
         """Delete the current DeepSeek Web conversation through its UI."""
         current_url = self.page.url
@@ -241,7 +253,7 @@ class DeepSeekChat:
                 # block as a new answer makes the gateway return the old/default
                 # response and leaves the client waiting for the real turn.
                 # A new response block is the reliable boundary in DeepSeek Web.
-                if block_count > previous_count:
+                if self._response_started(block_count, previous_count, current_text):
                     # Read the complete rendered block, including multiline Markdown
                     # and any content that arrived after the first DOM update.
                     text = current_text
@@ -290,7 +302,7 @@ class DeepSeekChat:
                 blocks = await self._response_locator()
                 block_count = await blocks.count()
                 current_text = await self._response_text(blocks.last)
-                if block_count > self._previous_response_count:
+                if self._response_started(block_count, self._previous_response_count, current_text):
                     if current_text:
                         if current_text == last_text:
                             stable_rounds += 1

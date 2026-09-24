@@ -2,6 +2,7 @@ server:
  host: 127.0.0.1
  port: 11556
  api_key:
+ async_job_retention_ms: 3600000
 
 browser:
  mode: managed
@@ -26,16 +27,23 @@ qwen:
  headless: true
  auth: google
  profile_dir: /tmp/opencode/wmadapter-test/profiles/qwen
+ default_model: qwen3.7-plus
  models:
  - qwen-chat
+ - qwen3.7-plus
+ - qwen3.8-max
+ - qwen3.8-omni-flash
  image_generation_verified: false
 
 providers:
- default: deepseek
+ default: qwen
  enabled:
- - deepseek
+ - qwen
  enabled_models:
- - deepseek-chat
+ - qwen-chat
+ - qwen3.7-plus
+ - qwen3.8-max
+ - qwen3.8-omni-flash
 
 limits:
  max_input_chars:
