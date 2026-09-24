@@ -97,17 +97,8 @@ class DeepSeekService(ChatProvider):
         self._initial_start_available = True
 
     def _request_timeout_ms(self, prompt: str) -> int:
-        """Allow long WebChat turns more render time without unbounded waits.
-
-        DeepSeek Web has no stable, documented UI response SLA. Long OpenCode
-        tool envelopes are especially slow to render, so add 30 seconds per
-        8k prompt characters after the normal 12k baseline, capped at fifteen
-        minutes. This only changes observation time; it never resubmits an
-        uncertain browser submission.
-        """
-        extra_chars = max(0, len(prompt) - 12000)
-        extension = ((extra_chars + 7999) // 8000) * 30000
-        return min(900000, self.timeout_ms + extension)
+        """Compatibility alias for the shared provider timeout policy."""
+        return self.request_timeout_ms(prompt)
 
     async def start(self) -> None:
         if self.auth_state == "LOGIN_INTERRUPTED":
@@ -440,6 +431,12 @@ class DeepSeekService(ChatProvider):
                                 raise
                     finally:
                         self._mark_page_inactive(page)
+                        # Provider-side session deletion is intentionally disabled.
+                        # if conversation_id:
+                        #     try:
+                        #         await self.delete_conversation(conversation_id)
+                        #     except Exception as exc:
+                        #         logger.warning("DeepSeek conversation cleanup failed: %s", exc)
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
@@ -481,6 +478,12 @@ class DeepSeekService(ChatProvider):
                                 raise
                     finally:
                         self._mark_page_inactive(page)
+                        # Provider-side session deletion is intentionally disabled.
+                        # if conversation_id:
+                        #     try:
+                        #         await self.delete_conversation(conversation_id)
+                        #     except Exception as exc:
+                        #         logger.warning("DeepSeek conversation cleanup failed: %s", exc)
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
@@ -514,6 +517,7 @@ class QwenService(ChatProvider):
     name = "qwen"
     capabilities = ModelCapabilities(image_input=False)
     protocol = QwenTextAdapter()
+    DEFAULT_MODEL = "qwen3.7-plus"
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:
@@ -541,6 +545,7 @@ class QwenService(ChatProvider):
         if len(set(configured_models)) != len(configured_models):
             raise ValueError("qwen.models must not contain duplicate model IDs")
         self.model_ids = configured_models
+        self.default_model = qwen_cfg.get("default_model", self.DEFAULT_MODEL)
         limits = config.get("limits", {})
         self.context_budget_chars = limits.get("context_budget_chars")
         self.context_budget_profiles = limits.get("context_budget_profiles", {})
@@ -797,10 +802,21 @@ class QwenService(ChatProvider):
         page = self._conversation_pages.pop(conversation_id, None)
         if page is None:
             return False
-        if not page.is_closed():
-            await page.close()
-        self._remove_page(page)
-        return True
+        for alias, candidate in list(self._conversation_pages.items()):
+            if candidate is page:
+                self._conversation_pages.pop(alias, None)
+        deleted = False
+        try:
+            deleted = await QwenChat(page, timeout_ms=self.timeout_ms).delete_remote_conversation()
+        except Exception as exc:
+            logger.warning("Qwen remote conversation deletion failed: %s", exc)
+        finally:
+            self._page_records.pop(id(page), None)
+            self._active_pages.discard(id(page))
+            self.browser.release_page(page)
+            if not page.is_closed():
+                await page.close()
+        return deleted
 
     async def _page_for_conversation(self, conversation_id: str | None):
         if self.auth_state in {"LOGIN_INTERRUPTED", "LOGIN_CANCELLED"}:
@@ -856,7 +872,9 @@ class QwenService(ChatProvider):
             self._set_auth_state("LOGIN_REQUIRED" if state == SIGN_IN_VISIBLE else "AUTHENTICATING", reason)
         raise RuntimeError(f"Qwen authentication is pending ({reason})")
 
-    async def complete(self, prompt: str, conversation_id: str | None = None) -> str:
+    async def complete(
+        self, prompt: str, conversation_id: str | None = None, model: str | None = None
+    ) -> str:
         async with self._request_lock:
             attempts = self.restart_retries + 1
             for attempt in range(1, attempts + 1):
@@ -869,15 +887,23 @@ class QwenService(ChatProvider):
                         page = await self._page_for_conversation(conversation_id)
                         if getattr(page, "url", "").rstrip("/") == self.chat_url.rstrip("/"):
                             await page.goto("https://chat.qwen.ai/", wait_until="domcontentloaded")
-                        chat = QwenChat(page, timeout_ms=self.timeout_ms)
+                        chat = QwenChat(page, timeout_ms=self.request_timeout_ms(prompt))
                         try:
-                            answer = await chat.send_message(prompt)
+                            provider_model = self._provider_model(model)
+                            send_kwargs = {"model": provider_model} if provider_model else {}
+                            answer = await chat.send_message(prompt, **send_kwargs)
                         except UncertainSubmitError:
                             answer = await chat.recover_response(self.recovery_timeout_ms) if self.recovery_enabled else None
                             if answer is None:
                                 raise
                     finally:
                         self._mark_page_inactive(page)
+                        # Provider-side session deletion is intentionally disabled.
+                        # if conversation_id:
+                        #     try:
+                        #         await self.delete_conversation(conversation_id)
+                        #     except Exception as exc:
+                        #         logger.warning("Qwen conversation cleanup failed: %s", exc)
                     self.last_error = None
                     return answer
                 except UncertainSubmitError as exc:
@@ -899,18 +925,33 @@ class QwenService(ChatProvider):
                     await self.browser.restart()
             raise RuntimeError("Qwen request failed")
 
-    async def stream_complete(self, prompt: str, conversation_id: str | None = None):
-        yield await self.complete(prompt, conversation_id=conversation_id)
+    def _provider_model(self, model: str | None) -> str | None:
+        if model is None:
+            return None
+        requested = model or self.default_model
+        return self.default_model if requested == "qwen-chat" else requested
+
+    async def stream_complete(
+        self, prompt: str, conversation_id: str | None = None, model: str | None = None
+    ):
+        yield await self.complete(prompt, conversation_id=conversation_id, model=model)
 
     async def generate_image(self, prompt: str, conversation_id: str | None = None) -> tuple[bytes, str]:
         """Generate one verified Qwen image; capability gating is enforced by the API."""
         async with self._request_lock:
-            page = await self._page_for_conversation(conversation_id)
+            owned_conversation = conversation_id or f"image:{uuid.uuid4().hex}"
+            page = None
+            page = await self._page_for_conversation(owned_conversation)
             self._mark_page_active(page)
             try:
                 if not self.ready:
-                    await self._authenticate(conversation_id)
-                page = await self._page_for_conversation(conversation_id)
-                return await QwenChat(page, timeout_ms=self.timeout_ms).send_image(prompt)
+                    await self._authenticate(owned_conversation)
+                page = await self._page_for_conversation(owned_conversation)
+                return await QwenChat(page, timeout_ms=self.request_timeout_ms(prompt)).send_image(prompt)
             finally:
                 self._mark_page_inactive(page)
+                # Provider-side session deletion is intentionally disabled.
+                # try:
+                #     await self.delete_conversation(owned_conversation)
+                # except Exception as exc:
+                #     logger.warning("Qwen image conversation cleanup failed: %s", exc)

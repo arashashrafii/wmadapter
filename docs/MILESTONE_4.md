@@ -5,7 +5,8 @@ Implemented:
 - Generic `ChatProvider` contract.
 - Provider router with model-to-provider dispatch hooks.
 - DeepSeek service implements the provider contract.
-- Configuration includes provider defaults and enabled provider list.
+- Configuration may retain provider defaults and enabled provider lists for
+  compatibility, but live provider readiness determines runtime availability.
 
 Current provider:
 

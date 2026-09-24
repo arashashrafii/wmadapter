@@ -4,24 +4,22 @@ from .base import ChatProvider
 
 
 class ProviderRouter:
-    def __init__(self, providers: dict[str, ChatProvider], default_provider: str,
+    def __init__(self, providers: dict[str, ChatProvider], default_provider: str | None = None,
                  enabled_providers: list[str] | tuple[str, ...] | None = None,
                  enabled_models: list[str] | tuple[str, ...] | None = None):
-        if default_provider not in providers:
-            raise RuntimeError(f"Default provider {default_provider!r} is not configured")
         self.providers = providers
-        self.default_provider = default_provider
-        self.enabled_providers = tuple(
-            (default_provider,) if enabled_providers is None else enabled_providers
-        )
-        self.enabled_models = None if enabled_models is None else frozenset(enabled_models)
-        unknown = set(self.enabled_providers) - set(providers)
-        if unknown:
-            raise RuntimeError(f"Enabled provider is not configured: {sorted(unknown)[0]!r}")
+        self.default_provider = default_provider if default_provider in providers else None
+        self.enabled_providers = tuple(providers)
+        self.enabled_models = None
 
     def provider_for_model(self, model: str | None) -> ChatProvider:
         if not model:
-            return self.providers[self.default_provider]
+            for provider in self.providers.values():
+                if getattr(provider, "ready", False):
+                    return provider
+            if self.default_provider:
+                return self.providers[self.default_provider]
+            return next(iter(self.providers.values()))
         if ":" in model:
             provider_name = model.split(":", 1)[0]
         elif model.startswith("qwen"):
@@ -37,24 +35,21 @@ class ProviderRouter:
     def resolve_model(self, model: str) -> ChatProvider:
         """Strict public model resolution; provider_for_model is legacy."""
         plain = model.split(":", 1)[-1]
-        for provider_name in self.enabled_providers:
-            provider = self.providers[provider_name]
-            if plain in getattr(provider, "model_ids", ()) and self.model_enabled(plain):
+        for provider in self.providers.values():
+            if plain in getattr(provider, "model_ids", ()):
                 return provider
         raise RuntimeError(f"Unknown model {model!r}")
 
     def model_enabled(self, model: str) -> bool:
-        return self.enabled_models is None or model in self.enabled_models
+        return True
 
     def models_for_provider(self, name: str) -> tuple[str, ...]:
-        provider = self.providers[name]
-        return tuple(model for model in provider.model_ids if self.model_enabled(model))
+        return tuple(self.providers[name].model_ids)
 
     async def start(self) -> None:
         failures = []
         errors = {}
-        for name in self.enabled_providers:
-            provider = self.providers[name]
+        for name, provider in self.providers.items():
             try:
                 await provider.start()
             except Exception as exc:
@@ -62,15 +57,12 @@ class ProviderRouter:
                 provider.last_error = "provider_startup_failed"
                 failures.append(name)
                 errors[name] = str(exc).strip() or exc.__class__.__name__
-        if failures:
-            details = ", ".join(
-                f"{name}: {errors[name]}"
-                for name in failures
-            )
-            raise RuntimeError(f"Enabled provider startup failed ({details}); retry after fixing configuration")
+        # Authentication is provider-local. An unauthenticated provider must
+        # remain visible in status without preventing ready providers from
+        # serving requests.
 
     async def stop(self) -> None:
-        for name in self.enabled_providers:
+        for name in self.providers:
             await self.providers[name].stop()
 
     async def status(self) -> dict:

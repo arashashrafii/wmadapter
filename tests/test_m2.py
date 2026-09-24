@@ -47,7 +47,7 @@ class Milestone2Tests(unittest.TestCase):
         router = ProviderRouter({"deepseek": deepseek, "qwen": qwen}, "deepseek", ["deepseek"])
         asyncio.run(router.start())
         deepseek.start.assert_awaited_once()
-        qwen.start.assert_not_awaited()
+        qwen.start.assert_awaited_once()
 
     def test_router_continues_enabled_provider_startup_after_one_failure(self):
         deepseek = FakeProvider()
@@ -57,10 +57,24 @@ class Milestone2Tests(unittest.TestCase):
         deepseek.start = AsyncMock(side_effect=RuntimeError("provider detail"))
         qwen.start = AsyncMock()
         router = ProviderRouter({"deepseek": deepseek, "qwen": qwen}, "deepseek", ["deepseek", "qwen"])
-        with self.assertRaisesRegex(RuntimeError, "Enabled provider startup failed .*retry after fixing configuration"):
-            asyncio.run(router.start())
+        asyncio.run(router.start())
         qwen.start.assert_awaited_once()
         self.assertEqual(deepseek.last_error, "provider_startup_failed")
+
+    def test_router_discovers_model_without_enable_allowlist(self):
+        deepseek = FakeProvider()
+        qwen = FakeProvider()
+        deepseek.name = "deepseek"
+        qwen.name = "qwen"
+        deepseek.model_ids = ("deepseek-chat",)
+        qwen.model_ids = ("qwen3.7-plus",)
+        router = ProviderRouter(
+            {"deepseek": deepseek, "qwen": qwen},
+            "deepseek",
+            ["deepseek"],
+            ["deepseek-chat"],
+        )
+        self.assertIs(router.resolve_model("qwen3.7-plus"), qwen)
 
     def test_external_auth_probes_google_popup_and_chat_pages(self):
         context = Mock()

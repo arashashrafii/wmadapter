@@ -101,6 +101,7 @@ write_config() {
 server:
   host: ${server_host}
   port: ${API_PORT}
+  async_job_retention_ms: 3600000
 
 browser:
   mode: managed
@@ -117,6 +118,9 @@ qwen:
   headless: true
   models:
     - qwen-chat
+    - qwen3.7-plus
+    - qwen3.8-max
+    - qwen3.8-omni-flash
   image_generation_verified: false
 
 deepseek:
@@ -278,14 +282,13 @@ fi
 say "Web Model Adapter installed without provider authentication."
 say "Provider profiles are preserved across reinstalls."
 say "Service started and health check passed. Provider readiness still requires login."
+say "Service address: http://${API_HOST}:${API_PORT}"
+say "OpenAI-compatible API base URL: http://${API_HOST}:${API_PORT}/v1"
 say "Next steps:"
 say "  wmadapter provider list"
-say "  wmadapter login deepseek"
-say "  wmadapter login qwen --google"
-say "  wmadapter provider enable qwen"
-say "  wmadapter proxy add qwen http://localhost:8080"
-say "  wmadapter proxy list"
-say "  wmadapter run opencode deepseek"
-say "  wmadapter run openclaw deepseek"
+say "  wmadapter login (deepseek/qwen)"
+say "  If a provider needs network access, set its proxy before login:"
+say "    wmadapter proxy add (deepseek/qwen) http://localhost:8080"
+say "  wmadapter run (opencode/openclaw) (deepseek/qwen)"
 say "  Service is already running; use wmadapter provider list to inspect providers."
 INSTALL_SUCCESS=1

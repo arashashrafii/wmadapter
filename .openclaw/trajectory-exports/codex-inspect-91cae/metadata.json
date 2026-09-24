@@ -1,0 +1,363 @@
+{
+  "traceSchema": "openclaw-trajectory",
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T11:10:30.143Z",
+  "traceId": "4d11c574-d81c-4c96-b55c-3c12feb75340",
+  "sessionId": "4d11c574-d81c-4c96-b55c-3c12feb75340",
+  "sessionKey": "agent:main:dashboard:91cae46a-0ec5-44f1-8278-f94e12df2e13",
+  "harness": {
+    "type": "openclaw",
+    "name": "OpenClaw",
+    "version": "2026.9.4",
+    "os": {
+      "platform": "linux",
+      "arch": "x64",
+      "release": "7.0.0-31-generic",
+      "label": "linux 7.0.0-31-generic (x64)"
+    },
+    "runtime": {
+      "node": "v24.19.0"
+    },
+    "invocation": [
+      "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/bin/node",
+      "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js",
+      "gateway",
+      "--port",
+      "18789"
+    ],
+    "entrypoint": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js",
+    "workspaceDir": "$OPENCLAW_STATE_DIR/workspace",
+    "sessionFile": "~/agent:main:dashboard:91cae46a-0ec5-44f1-8278-f94e12df2e13"
+  },
+  "model": {
+    "provider": "wmadapter",
+    "name": "deepseek-chat",
+    "api": "openai-completions",
+    "fastMode": false,
+    "thinkLevel": "off",
+    "reasoningLevel": "off"
+  },
+  "config": {
+    "redacted": {
+      "gateway": {
+        "mode": "local",
+        "auth": {
+          "mode": "token"
+        }
+      },
+      "plugins": {
+        "entries": {
+          "anthropic": {
+            "config": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "codex": {
+            "config": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "wmadapter-image": {
+            "enabled": true
+          },
+          "memory-core": {
+            "enabled": false
+          },
+          "browser": {
+            "enabled": true
+          }
+        }
+      },
+      "meta": {
+        "migrations": {
+          "modelPolicyAllowlist": true
+        },
+        "lastTouchedVersion": "2026.9.4"
+      },
+      "agents": {
+        "defaults": {
+          "models": {
+            "wmadapter/deepseek-chat": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          },
+          "bootstrapMaxChars": 2000,
+          "bootstrapTotalMaxChars": 4000,
+          "systemAgent": {
+            "agentId": "main"
+          },
+          "heartbeat": {
+            "agentId": "main"
+          },
+          "model": {
+            "primary": "omniroute/ds-web/deepseek-v4-flash"
+          },
+          "experimental": {
+            "localModelLean": false
+          }
+        },
+        "entries": {
+          "main": {
+            "models": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "model": "omniroute/ds-web/deepseek-v4-flash",
+            "workspace": "$OPENCLAW_STATE_DIR/workspace"
+          }
+        }
+      },
+      "models": {
+        "providers": {
+          "wmadapter": {
+            "baseUrl": "http://127.0.0.1:11555/v1",
+            "api": "openai-completions",
+            "models": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            },
+            "timeoutSeconds": 300
+          },
+          "omniroute": {
+            "baseUrl": "http://127.0.0.1:20128/v1",
+            "api": "openai-completions",
+            "models": {
+              "truncated": true,
+              "reason": "trajectory-depth-limit",
+              "limitDepth": 6
+            }
+          }
+        }
+      },
+      "tools": {
+        "profile": "minimal",
+        "alsoAllow": [
+          "exec",
+          "browser",
+          "web_search",
+          "web_fetch"
+        ]
+      },
+      "talk": {
+        "agentId": "main"
+      },
+      "browser": {
+        "ssrfPolicy": {
+          "allowedHostnames": [
+            "instagram.com",
+            "www.instagram.com"
+          ]
+        }
+      }
+    },
+    "runtime": {
+      "timeoutMs": 172800000,
+      "trigger": "user",
+      "disableTools": false,
+      "toolResultFormat": "markdown"
+    }
+  },
+  "plugins": {
+    "source": "active-registry",
+    "importedRuntimePluginIds": [
+      "anthropic",
+      "browser",
+      "canvas",
+      "cua-computer",
+      "device-pair",
+      "file-transfer",
+      "geolocation",
+      "linux-node",
+      "ollama",
+      "openai",
+      "talk-voice",
+      "xai"
+    ],
+    "entries": [
+      {
+        "id": "anthropic",
+        "name": "Anthropic",
+        "version": "2026.9.4",
+        "description": "Anthropic models, Claude CLI, and native Claude session catalog",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/anthropic/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/anthropic",
+        "cliBackendIds": [
+          "claude-cli"
+        ],
+        "providerIds": [
+          "anthropic"
+        ],
+        "mediaUnderstandingProviderIds": [
+          "anthropic"
+        ]
+      },
+      {
+        "id": "browser",
+        "name": "Browser",
+        "version": "2026.9.4",
+        "description": "Default browser tool plugin",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "auto",
+        "activationReason": "browser configured",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/browser/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/browser"
+      },
+      {
+        "id": "canvas",
+        "name": "Canvas",
+        "version": "2026.9.4",
+        "description": "Presents hosted widget documents on paired macOS panels.",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/canvas/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/canvas"
+      },
+      {
+        "id": "cua-computer",
+        "name": "CUA Computer",
+        "version": "2026.9.4",
+        "description": "Experimental CUA Driver computer control for macOS, Windows, and Linux node hosts.",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/cua-computer/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/cua-computer"
+      },
+      {
+        "id": "device-pair",
+        "name": "Device Pair",
+        "description": "QR/bootstrap pairing helpers for OpenClaw devices",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/device-pair/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/device-pair"
+      },
+      {
+        "id": "file-transfer",
+        "name": "File Transfer",
+        "version": "2026.9.4",
+        "description": "Fetch, list, and write files on paired nodes via dedicated node commands.",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/file-transfer/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/file-transfer",
+        "toolNames": [
+          "dir_fetch",
+          "dir_list",
+          "file_fetch",
+          "file_write"
+        ]
+      },
+      {
+        "id": "geolocation",
+        "name": "Geolocation Plugin",
+        "version": "2026.9.4",
+        "description": "Bundled geolocation plugin",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/geolocation/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/geolocation"
+      },
+      {
+        "id": "linux-node",
+        "name": "Linux Node",
+        "version": "2026.9.4",
+        "description": "Desktop notifications, camera capture, and location for Linux node hosts.",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/linux-node/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/linux-node"
+      },
+      {
+        "id": "ollama",
+        "name": "Ollama Provider",
+        "version": "2026.9.4",
+        "description": "Bundled Ollama provider plugin",
+        "origin": "bundled",
+        "enabled": true,
+        "explicitlyEnabled": false,
+        "activated": true,
+        "activationSource": "default",
+        "activationReason": "bundled default enablement",
+        "status": "loaded",
+        "format": "openclaw",
+        "source": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/ollama/index.js",
+        "rootDir": "$OPENCLAW_STATE_DIR/tools/node-v24.19.0/lib/node_modules/openclaw/dist/extensions/ollama",
+        "toolNames": [
+          "node_inference"
+        ],
+        "providerIds": [
+          "ollama",
+          "ollama-cloud"
+        ],
+        "mediaUnderstandingProviderIds": [
+          "ollama"
+        ],
+        "webSearchProviderIds": "[Truncated]"
+      },
+      "[Truncated]",
+      "[Truncated]",
+      "[Truncated]"
+    ]
+  },
+  "skills": "[Truncated]",
+  "prompting": "[Truncated]",
+  "redaction": "[Truncated]",
+  "metadata": "[Truncated]"
+}

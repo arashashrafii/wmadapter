@@ -234,6 +234,18 @@ def _prompt(messages: list[Message], system_prompt: str = "", tools: list[dict[s
             if isinstance(item, dict) and isinstance(item.get("function"), dict)
         }
         conversation_text = " ".join(_content_text(message.content) for message in messages).lower()
+        if "browser" in tool_names:
+            lines.append(
+                "BROWSER TASK ROUTING: For requests containing browse, open a website, navigate, search the web, "
+                "click a link, fill a web form, or inspect a page, use the listed `browser` tool. Do not substitute "
+                "exec, curl, web_fetch, or shell commands for browser automation."
+            )
+        if any(message.role.lower() == "tool" for message in messages):
+            lines.append(
+                "TOOL RESULT AUTHORITY: A tool result in the conversation proves that the named tool was available "
+                "and executed for that turn. Never claim that a tool does not exist after receiving its result; "
+                "use the result to continue or give the final answer."
+            )
         selected_policy = client_policy if client_policy is not None else detect_client_policy(messages, tools)
         openclaw_request = selected_policy is ClientPolicy.OPENCLAW
         if openclaw_request:
@@ -324,14 +336,32 @@ def _prompt(messages: list[Message], system_prompt: str = "", tools: list[dict[s
         )
         if any(item.get("function", {}).get("name") == "browser" for item in tools):
             lines.append(
-                "BROWSER TOOL SHAPE: For browser action=act and kind=fill, always send "
-                "fields:[{ref:<textbox ref>,text:<value>}]. Never send fill ref/text as top-level fields."
+                "BROWSER TOOL SHAPE: For browser action=act, the nested request must use "
+                "kind (not action): type uses {kind:'type',ref:<textbox ref>,text:<value>,submit:true}; "
+                "fill uses {kind:'fill',fields:[{ref:<textbox ref>,text:<value>}]}."
+            )
+            lines.append(
+                "BROWSER COMPLETION: If a successful browser act result explicitly shows that the requested "
+                "text was entered in the requested field, stop browser calls and give a brief final answer. "
+                "Do not call snapshot or text merely to re-check state already proved by that act result."
+            )
+        if "tool_call" in tool_names and "browser" in tool_names:
+            lines.append(
+                "TOOL SEARCH CALL SHAPE: After tool_search/tool_describe identifies Browser, call tool_call with "
+                "{id:'openclaw:browser:browser',args:{action:'act',targetId:<target>,request:{kind:'type',"
+                "selector:\"textarea[name='q'], input[name='q']\",text:<value>}}}. Keep Browser arguments "
+                "inside args and the act request inside request; never put type or text beside action."
             )
         if any(message.role.lower() == "tool" for message in messages):
             lines.append(
                 "FINAL TOOL PROTOCOL: A tool result is already available above. "
                 "Use it to answer the user; call another tool only if the result is insufficient."
             )
+        lines.append(
+            "CURRENT TOOL CATALOG (authoritative for this request): "
+            + (", ".join(sorted(tool_names)) if tool_names else "NONE")
+            + ". Never emit any other tool name."
+        )
     result = "\n\n".join(lines)
     if client_policy is ClientPolicy.GENERIC:
         result = strip_openclaw_instructions(result)
@@ -437,7 +467,9 @@ async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversa
         return not text.strip() or bool(tools and re.search(
             r"<tool_call\b|<｜tool▁calls▁begin｜>|<｜tool▁call▁begin｜>|"
             r"<｜｜DSML｜｜\s*(?:invoke|parameter)\b|(?:^|\n)\s*Action\s*:\s*|"
-            r"(?:^|\n)\s*Action Input\s*:", text, re.IGNORECASE
+            r"(?:^|\n)\s*Action Input\s*:|"
+            r"\btool\s+[`'\"]?[\w.-]+[`'\"]?\s+does\s+not\s+exists?\b",
+            text, re.IGNORECASE
         ))
     def is_action_request():
         action_terms = (
@@ -492,6 +524,9 @@ async def _legacy_resolve_web_answer(provider, answer, messages, tools, conversa
             _diagnostic("repair_empty", answer, "fail_closed")
         elif needs_repair(answer):
             _diagnostic("repair_unresolved_marker", answer, "fail_closed")
+            raise ProtocolRecoveryError(
+                "Web model failed to produce a valid tool call after one repair; completion is unverified"
+            )
         else:
             _diagnostic("repair_complete", answer, "repaired_final")
         if not call and needs_repair(answer):
@@ -665,6 +700,66 @@ def _normalize_tool_arguments(
         ref = normalized.pop("ref")
         text = normalized.pop("text")
         normalized["fields"] = [{"ref": ref, "text": text}]
+    if name == "browser" and normalized.get("action") == "act":
+        request = normalized.get("request")
+        if isinstance(request, dict) and "kind" not in request:
+            # DeepSeek/Qwen occasionally mirror the outer browser action
+            # vocabulary inside the nested act request. OpenClaw expects the
+            # nested discriminator to be `kind`; normalize the equivalent
+            # shape before returning the call to OpenClaw.
+            nested = dict(request)
+            nested_action = nested.pop("action", None)
+            if isinstance(nested_action, str) and nested_action:
+                nested["kind"] = nested_action
+            if nested.get("kind") == "fill" and "fields" not in nested:
+                ref = nested.pop("ref", None)
+                text = nested.pop("text", None)
+                if isinstance(ref, str) and isinstance(text, str):
+                    nested["fields"] = [{"ref": ref, "text": text}]
+            normalized["request"] = nested
+    if name == "tool_call" and isinstance(normalized.get("args"), dict):
+        # Qwen sometimes flattens a Browser act request into the wrapper
+        # call. OpenClaw validates the wrapper before dispatching Browser, so
+        # repair this shape here where the provider response is still under
+        # our control. A selector is safe when Qwen omitted the snapshot ref.
+        nested_args = dict(normalized["args"])
+        if nested_args.get("action") == "act" and isinstance(
+            nested_args.get("type") or nested_args.get("act"), str
+        ):
+            # Qwen has emitted both `type: "type"` and `act: "type"` for
+            # the nested Browser operation. They mean the same thing; keep
+            # neither provider-specific field in OpenClaw's wrapper.
+            action_type = nested_args.pop("type", None) or nested_args.pop("act", None)
+            text = nested_args.pop("text", None)
+            if action_type == "type" and isinstance(text, str):
+                nested_args["request"] = {
+                    "kind": "type",
+                    "selector": "textarea[name='q'], input[name='q']",
+                    "text": text,
+                }
+            elif action_type == "fill" and isinstance(text, str):
+                nested_args["request"] = {
+                    "kind": "fill",
+                    "fields": [{"ref": nested_args.pop("ref", ""), "text": text}],
+                }
+            normalized["args"] = nested_args
+        elif nested_args.get("action") == "act" and isinstance(nested_args.get("actions"), list):
+            actions = nested_args.pop("actions")
+            first = actions[0] if actions and isinstance(actions[0], dict) else {}
+            action_type = first.get("type")
+            text = first.get("text")
+            if action_type == "type" and isinstance(text, str):
+                nested_args["request"] = {
+                    "kind": "type",
+                    "selector": "textarea[name='q'], input[name='q']",
+                    "text": text,
+                }
+            elif action_type == "fill" and isinstance(text, str):
+                nested_args["request"] = {
+                    "kind": "fill",
+                    "fields": [{"ref": first.get("ref", ""), "text": text}],
+                }
+            normalized["args"] = nested_args
     return normalized
 
 

@@ -232,6 +232,14 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chat.submit_state, SubmitState.COMPLETED)
         chat._response_locator.assert_awaited()
 
+    def test_deepseek_accepts_in_place_response_update_after_tool_result(self):
+        from wmadapter.providers.deepseek.chat import DeepSeekChat
+
+        chat = DeepSeekChat(AsyncMock())
+        chat._previous_response_text = "previous tool-turn answer"
+        self.assertTrue(chat._response_started(3, 3, "final answer after tool result"))
+        self.assertFalse(chat._response_started(3, 3, "previous tool-turn answer"))
+
     async def test_qwen_service_does_not_retry_uncertain_submission(self):
         from unittest.mock import patch, AsyncMock
         from wmadapter.providers.qwen.chat import QwenChat
@@ -274,3 +282,10 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider._request_timeout_ms('x' * 12000), provider.timeout_ms)
         self.assertGreater(provider._request_timeout_ms('x' * 45000), provider.timeout_ms)
         self.assertLessEqual(provider._request_timeout_ms('x' * 1_000_000), 900000)
+
+    def test_qwen_timeout_uses_the_same_long_turn_policy(self):
+        from wmadapter.service import QwenService
+        provider = QwenService(load_config('/nonexistent'))
+        self.assertEqual(provider.request_timeout_ms('x' * 12000), provider.timeout_ms)
+        self.assertGreater(provider.request_timeout_ms('x' * 45000), provider.timeout_ms)
+        self.assertLessEqual(provider.request_timeout_ms('x' * 1_000_000), 900000)

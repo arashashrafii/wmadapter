@@ -20,7 +20,12 @@ def provider_profile_dir(provider: str) -> str:
 
 BUILTIN_PROVIDER_MODELS = {
     "deepseek": ("deepseek-chat", "deepseek-reasoner"),
-    "qwen": ("qwen-chat",),
+    "qwen": (
+        "qwen-chat",
+        "qwen3.7-plus",
+        "qwen3.8-max",
+        "qwen3.8-omni-flash",
+    ),
 }
 
 
@@ -52,6 +57,7 @@ def update_provider_config(config: dict[str, Any], action: str, provider: str) -
     updated = dict(config)
     providers = dict(updated.get("providers", {}))
     enabled = list(providers.get("enabled") or [])
+    disabled = list(providers.get("disabled") or [])
     allowlist = providers.get("enabled_models")
     if allowlist is not None:
         allowlist = list(allowlist)
@@ -63,10 +69,13 @@ def update_provider_config(config: dict[str, Any], action: str, provider: str) -
             for model in BUILTIN_PROVIDER_MODELS[provider]:
                 if model not in allowlist:
                     allowlist.append(model)
+        disabled = [name for name in disabled if name != provider]
     elif action == "disable":
         if providers.get("default", "deepseek") == provider:
             raise ValueError("The default provider cannot be disabled; select another default first")
         enabled = [name for name in enabled if name != provider]
+        if provider not in disabled:
+            disabled.append(provider)
         if allowlist is not None:
             allowlist = [model for model in allowlist if model not in BUILTIN_PROVIDER_MODELS[provider]]
     else:
@@ -79,7 +88,27 @@ def update_provider_config(config: dict[str, Any], action: str, provider: str) -
         providers["default"] = "deepseek"
     if allowlist is not None:
         providers["enabled_models"] = allowlist
+    if disabled:
+        providers["disabled"] = disabled
+    else:
+        providers.pop("disabled", None)
     updated["providers"] = providers
+    return updated
+
+
+def mark_provider_authenticated(config: dict[str, Any], provider: str) -> dict[str, Any]:
+    """Enable a provider after login unless the user explicitly disabled it."""
+    if provider not in BUILTIN_PROVIDER_MODELS:
+        raise ValueError(f"Unsupported provider: {provider}")
+    updated = dict(config)
+    settings = dict(updated.get("providers", {}))
+    if provider in set(settings.get("disabled") or []):
+        return updated
+    enabled = list(settings.get("enabled") or [])
+    if provider not in enabled:
+        enabled.append(provider)
+    settings["enabled"] = enabled
+    updated["providers"] = settings
     return updated
 
 
@@ -109,6 +138,8 @@ class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=11555, ge=1, le=65535)
     api_key: str | None = None
+    # Completed long-running requests remain pollable after a client disconnect.
+    async_job_retention_ms: int = Field(default=3600000, ge=1000)
 
 
 class BrowserConfig(BaseModel):

@@ -74,7 +74,7 @@ class HTTPContractTests(unittest.TestCase):
         self.provider.ready = False
         response = self.client.get('/v1/models')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()['data']), 2)
+        self.assertEqual(response.json()['data'], [])
 
     def test_http_binds_before_provider_startup_finishes(self):
         pending_router = ProviderRouter({'deepseek': self.provider}, 'deepseek')

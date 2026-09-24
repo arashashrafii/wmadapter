@@ -13,6 +13,7 @@ import urllib.request
 
 from dotenv import load_dotenv
 import uvicorn
+import yaml
 
 from .config import (
     BUILTIN_PROVIDER_MODELS,
@@ -22,6 +23,7 @@ from .config import (
     save_config,
     update_provider_proxy,
     update_provider_config,
+    mark_provider_authenticated,
 )
 from .logging import configure_logging
 from .manual_auth import run_manual_auth
@@ -104,6 +106,9 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
     else:
         document = {}
     models = list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
+    server = config.get("server") or {}
+    host = server.get("host", "127.0.0.1")
+    port = int(server.get("port", 11555))
     model_config = dict(document.get("models") or {})
     providers = dict(model_config.get("providers") or {})
     current = dict(providers.get("wmadapter") or {})
@@ -113,28 +118,111 @@ def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
         if isinstance(item, dict) and isinstance(item.get("id"), str)
     }
     for model in models:
-        existing_models[model] = {"id": model, "name": model}
+        current_model = dict(existing_models.get(model) or {})
+        current_model.update({
+            "id": model,
+            "name": model,
+            # WMAdapter normalizes browser text into OpenAI-compatible
+            # function calls; tell OpenClaw not to suppress the tool surface.
+            "compat": {**dict(current_model.get("compat") or {}), "supportsTools": True},
+        })
+        existing_models[model] = current_model
     model_entries = list(existing_models.values())
     current.update({
-        "baseUrl": "http://127.0.0.1:11555/v1",
+        "baseUrl": f"http://{host}:{port}/v1",
         "api": "openai-completions",
-        "timeoutSeconds": 300,
+        # Browser-backed tool chains can require several provider turns before
+        # the final answer. Keep the client connection alive long enough for
+        # the gateway's heartbeat/polling behavior to do its job.
+        "timeoutSeconds": 900,
         "models": model_entries,
     })
     providers["wmadapter"] = current
     model_config["providers"] = providers
     document["models"] = model_config
+    tools_config = dict(document.get("tools") or {})
+    # A custom OpenAI-compatible provider is not classified as a local Ollama
+    # or LM Studio route by OpenClaw, so its automatic Tool Search default does
+    # not apply. Directory mode keeps the capability catalog discoverable
+    # while deferring optional schemas, preventing long sessions from
+    # overflowing before Browser can be searched.
+    tools_config["toolSearch"] = {"mode": "directory"}
+    document["tools"] = tools_config
     agents = dict(document.get("agents") or {})
     defaults = dict(agents.get("defaults") or {})
     experimental = dict(defaults.get("experimental") or {})
-    # Keep the initial tool catalog compact; browser remains discoverable via
-    # OpenClaw's tool_search/tool_call flow.
-    experimental["localModelLean"] = True
+    # This provider is not a local-model route.  Lean mode removes optional
+    # tools such as Browser, so it must be disabled for OpenClaw sessions that
+    # need the complete catalog.  Structured Tool Search still keeps the
+    # provider prompt compact by deferring full schemas until requested.
+    experimental["localModelLean"] = False
     defaults["experimental"] = experimental
     agents["defaults"] = defaults
     document["agents"] = agents
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return target
+
+
+def _client_models(provider: str, config: dict) -> list[str]:
+    return list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
+
+
+def _gateway_url(config: dict) -> str:
+    server = config.get("server") or {}
+    return f"http://{server.get('host', '127.0.0.1')}:{int(server.get('port', 11555))}/v1"
+
+
+def _run_pi(provider: str, config: dict, output: str | None) -> Path:
+    target = Path(output).expanduser() if output else Path.home() / ".pi" / "agent" / "models.json"
+    if target.exists():
+        try:
+            document = json.loads(target.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Pi config is not valid JSON: {target}") from exc
+    else:
+        document = {}
+    models = _client_models(provider, config)
+    providers = dict(document.get("providers") or {})
+    current = dict(providers.get(f"wmadapter-{provider}") or {})
+    current.update({
+        "baseUrl": _gateway_url(config),
+        "api": "openai-completions",
+        "apiKey": "not-needed",
+        "models": [{"id": model, "name": model} for model in models],
+    })
+    providers[f"wmadapter-{provider}"] = current
+    document["providers"] = providers
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return target
+
+
+def _run_dsh(provider: str, config: dict, output: str | None) -> Path:
+    dsh_home = Path(os.environ.get("DSH_HOME", str(Path.home() / ".dsh"))).expanduser()
+    target = Path(output).expanduser() if output else dsh_home / "profiles" / "web" / "cordis.patch.yml"
+    if target.exists():
+        try:
+            document = yaml.safe_load(target.read_text(encoding="utf-8")) or []
+        except yaml.YAMLError as exc:
+            raise RuntimeError(f"DeepSeek Harness config is not valid YAML: {target}") from exc
+    else:
+        document = []
+    if not isinstance(document, list):
+        raise RuntimeError(f"DeepSeek Harness config must contain a YAML patch list: {target}")
+    models = _client_models(provider, config)
+    providers = {f"wmadapter-{provider}": {
+        "api": "openai-completions",
+        "baseURL": _gateway_url(config),
+        "models": [{"id": model} for model in models],
+    }}
+    patch = next((item for item in document if isinstance(item, dict) and item.get("id") == "llm-pi-ai"), None)
+    if patch is None:
+        document.append({"id": "llm-pi-ai", "config": {"providers": providers}})
+    else:
+        patch.setdefault("config", {})["providers"] = {**dict(patch.get("config", {}).get("providers") or {}), **providers}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return target
 
 
@@ -281,12 +369,12 @@ def main() -> None:
         description="Web Model Adapter — Web-to-API Gateway for AI Agents",
         epilog=(
             "Examples:\n"
-            "  wmadapter login deepseek\n"
-            "  wmadapter provider enable qwen\n"
-            "  wmadapter proxy add qwen http://localhost:8080\n"
+            "  wmadapter login (deepseek/qwen)\n"
+            "  wmadapter proxy add (deepseek/qwen) http://localhost:8080\n"
             "  wmadapter check ready qwen\n"
+            "  wmadapter service restart\n"
             "  wmadapter doctor --fix\n"
-            "  wmadapter run opencode qwen"
+            "  wmadapter run (opencode/openclaw/dsh/pi) (deepseek/qwen)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -299,7 +387,6 @@ def main() -> None:
     def add_auth_parser(name: str) -> None:
         auth = subparsers.add_parser(name, help="Authenticate a provider in its browser profile")
         auth.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
-        auth.add_argument("--google", action="store_true", help="Open provider login and start Google authentication when possible")
         auth.add_argument("--external-browser", action="store_true", help="Authenticate in system Chrome, then let the hidden service verify the profile")
         auth.add_argument("--executable-path", help="Google Chrome executable path")
 
@@ -323,6 +410,9 @@ def main() -> None:
     check_commands = check.add_subparsers(dest="check_command", title="check commands")
     ready = check_commands.add_parser("ready", help="Check whether a provider is online and authenticated")
     ready.add_argument("provider", nargs="?", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    service = subparsers.add_parser("service", help="Control the local WM Adapter service")
+    service_commands = service.add_subparsers(dest="service_command", required=True, title="service commands")
+    service_commands.add_parser("restart", help="Restart wmadapter.service and wait until it is healthy")
     doctor = subparsers.add_parser("doctor", help="Diagnose the local WM Adapter service")
     doctor.add_argument("--fix", action="store_true", help="Restart the service, then run diagnostics")
     run = subparsers.add_parser("run", help="Configure a client from WM Adapter models")
@@ -333,6 +423,12 @@ def main() -> None:
     openclaw = run_commands.add_parser("openclaw", help="Add WM Adapter models to OpenClaw")
     openclaw.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
     openclaw.add_argument("--config", dest="client_config", help="OpenClaw config file path")
+    dsh = run_commands.add_parser("dsh", aliases=["deepseek-harness"], help="Add WM Adapter models to DeepSeek Harness")
+    dsh.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    dsh.add_argument("--config", dest="client_config", help="DeepSeek Harness cordis.patch.yml path")
+    pi = run_commands.add_parser("pi", help="Add WM Adapter models to Pi")
+    pi.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
+    pi.add_argument("--config", dest="client_config", help="Pi models.json path")
     args = parser.parse_args()
 
     if args.command == "login":
@@ -342,12 +438,12 @@ def main() -> None:
             asyncio.run(
                 run_manual_auth(
                     args.provider,
-                    use_google=args.google,
                     external_browser=args.external_browser,
                     executable_path=args.executable_path,
                     config=config,
                 )
             )
+            save_config(mark_provider_authenticated(config, args.provider), config_file_path(args.config))
         finally:
             _resume_service_after_login(paused)
         return
@@ -358,10 +454,11 @@ def main() -> None:
             settings = config.get("providers", {})
             default = settings.get("default", "deepseek")
             enabled = set(settings.get("enabled") or [])
+            disabled = set(settings.get("disabled") or [])
             print(f"config: {path}")
             print(f"default: {default}")
             for provider_name in sorted(BUILTIN_PROVIDER_MODELS):
-                state = "enabled" if provider_name in enabled else "disabled"
+                state = "disabled" if provider_name in disabled else ("enabled" if provider_name in enabled else "not logged in")
                 profile = provider_profile_from_config(config, provider_name)
                 print(f"{provider_name}: {state}; profile={profile}")
             return
@@ -391,7 +488,9 @@ def main() -> None:
     if args.command == "run":
         config = load_config(args.config)
         try:
-            path = (_run_opencode if args.client == "opencode" else _run_openclaw)(args.provider, config, args.client_config)
+            writers = {"opencode": _run_opencode, "openclaw": _run_openclaw, "dsh": _run_dsh,
+                       "deepseek-harness": _run_dsh, "pi": _run_pi}
+            path = writers[args.client](args.provider, config, args.client_config)
         except RuntimeError as exc:
             parser.error(str(exc))
         print(f"{args.client.title()} configured for {args.provider}: {path}")
@@ -403,6 +502,16 @@ def main() -> None:
         healthy, _ = _service_checks(config)
         print("okay" if healthy else "not okay")
         raise SystemExit(0 if healthy else 1)
+    if args.command == "service":
+        config = load_config(args.config)
+        if args.service_command == "restart":
+            try:
+                _fix_service(config)
+            except RuntimeError as exc:
+                print(f"restart: not okay ({exc})")
+                raise SystemExit(1)
+            print("wmadapter.service restarted and healthy")
+            return
     if args.command == "doctor":
         config = load_config(args.config)
         if args.fix:
