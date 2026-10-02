@@ -56,10 +56,10 @@ wmadapter --config config.yaml run openclaw qwen   # only the qwen models
 wmadapter --config config.yaml run openclaw        # every provider and model
 ```
 
-Supported agents: `opencode`, `openclaw`, `dsh` (DeepSeek Harness), `pi`, and
-`omp`. Every command preserves existing client settings and accepts `--config`
-for an alternate destination. The endpoint is derived from `server.host` and
-`server.port`, so the test config consistently yields
+Supported agents: `opencode`, `openclaw`, `dsh` (DeepSeek Harness), `pi`,
+`omp`, and `hermes`. Every command preserves existing client settings and
+accepts `--config` for an alternate destination. The endpoint is derived from
+`server.host` and `server.port`, so the test config consistently yields
 `http://127.0.0.1:11556/v1`.
 
 ## OpenClaw
@@ -108,16 +108,17 @@ curl http://127.0.0.1:11555/v1/models
 The requested model must appear in `/v1/models`; a model listed only in
 `openclaw.json` is not enough.
 
-## DeepSeek Harness, Pi, and OMP
+## DeepSeek Harness, Pi, OMP, and Hermes
 
-The same provider/model catalog can be added to DeepSeek Harness (`dsh`), Pi, or
-OMP. All commands preserve existing client settings and accept `--config` for an
-alternate destination:
+The same provider/model catalog can be added to DeepSeek Harness (`dsh`), Pi,
+OMP, or Hermes Agent. All commands preserve existing client settings and accept
+`--config` for an alternate destination:
 
 ```bash
 wmadapter --config config.yaml run dsh qwen
 wmadapter --config config.yaml run pi qwen
 wmadapter --config config.yaml run omp qwen
+wmadapter --config config.yaml run hermes qwen
 ```
 
 Omit the provider to write every provider's models instead, which is the
@@ -126,6 +127,7 @@ recommended one-shot setup:
 ```bash
 wmadapter --config config.yaml run pi
 wmadapter --config config.yaml run omp
+wmadapter --config config.yaml run hermes
 ```
 
 By default, DSH writes `$DSH_HOME/profiles/web/cordis.patch.yml` (or
@@ -134,7 +136,16 @@ and OMP writes `~/.omp/agent/models.json`. Pi and OMP share the same
 `openai-completions` provider schema, so OMP additionally records default model
 roles in `~/.omp/agent/config.yml` (next to `models.json`); that file is only
 written where a model role is still unset, so an existing choice is preserved.
-All three clients point at WM Adapter's OpenAI-compatible `/v1` endpoint and
+
+Hermes reads `$HERMES_HOME/config.yaml` (or `~/.hermes/config.yaml`). It merges
+two changes: one named custom endpoint per provider under a top-level
+`providers:` mapping, and an active `model:` block with `provider: custom`,
+`base_url`, and a default model drawn from the first selected provider. Because
+Hermes probes `{base_url}/models`, it also discovers the live catalog on its own.
+Switch models in a session with `/model custom:<name>:<model>`, for example
+`/model custom:wmadapter-qwen:qwen-chat`.
+
+All four clients point at WM Adapter's OpenAI-compatible `/v1` endpoint and
 receive the configured model IDs of every selected provider.
 
 ## Test environment
@@ -200,8 +211,10 @@ wmadapter --config config.yaml run openclaw qwen
 wmadapter --config config.yaml run dsh qwen
 wmadapter --config config.yaml run pi qwen
 wmadapter --config config.yaml run omp qwen
+wmadapter --config config.yaml run hermes qwen
 wmadapter --config config.yaml run opencode          # every provider and model
 wmadapter --config config.yaml run omp               # every provider and model
+wmadapter --config config.yaml run hermes            # every provider and model
 ```
 
 Provider `enable`, `disable`, and `default` commands remain accepted for old

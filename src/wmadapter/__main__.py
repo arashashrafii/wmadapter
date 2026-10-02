@@ -285,6 +285,63 @@ def _run_dsh(provider: str | None, config: dict, output: str | None) -> Path:
     return target
 
 
+def _read_yaml_config(target: Path, label: str):
+    if not target.exists():
+        return None
+    try:
+        return yaml.safe_load(target.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"{label} config is not valid YAML: {target}") from exc
+
+
+def _run_hermes(provider: str | None, config: dict, output: str | None) -> Path:
+    """Point Hermes Agent at the WM Adapter gateway.
+
+    Hermes keeps its named custom endpoints in a top-level ``providers``
+    mapping and its active endpoint in ``model``; both are merged so the
+    existing agent, tool, and gateway settings survive untouched. Hermes
+    discovers models from ``{base_url}/models``, so the endpoint also resolves
+    the catalog on its own.
+    """
+    hermes_home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+    target = Path(output).expanduser() if output else hermes_home / "config.yaml"
+    settings = _read_yaml_config(target, "Hermes") or {}
+    if not isinstance(settings, dict):
+        raise RuntimeError(f"Hermes config must contain a YAML mapping: {target}")
+    names = _client_providers(provider)
+    # A custom OpenAI-compatible endpoint needs a non-empty key placeholder;
+    # WM Adapter only enforces Authorization when server.api_key is set.
+    api_key = str((config.get("server") or {}).get("api_key") or "any")
+    existing_providers = settings.get("providers")
+    if existing_providers is not None and not isinstance(existing_providers, dict):
+        raise RuntimeError(f"Hermes config providers must be a YAML mapping: {target}")
+    providers = dict(existing_providers or {})
+    for name in names:
+        current = dict(providers.get(f"wmadapter-{name}") or {})
+        current.update({
+            "api": _gateway_url(config),
+            "api_key": api_key,
+            "models": _client_models(name, config),
+        })
+        providers[f"wmadapter-{name}"] = current
+    settings["providers"] = providers
+    existing_model = settings.get("model")
+    if existing_model is not None and not isinstance(existing_model, dict):
+        raise RuntimeError(f"Hermes config model must be a YAML mapping: {target}")
+    model_settings = dict(existing_model or {})
+    model_settings.update({
+        "provider": "custom",
+        "base_url": _gateway_url(config),
+        "default": _client_models(names[0], config)[0],
+        "api_mode": "chat_completions",
+        "api_key": api_key,
+    })
+    settings["model"] = model_settings
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(yaml.safe_dump(settings, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return target
+
+
 def _check_ready(config: dict, provider: str | None = None) -> int:
     server = config.get("server", {})
     host = server.get("host", "127.0.0.1")
@@ -433,8 +490,8 @@ def main() -> None:
             "  wmadapter check ready qwen\n"
             "  wmadapter service restart\n"
             "  wmadapter doctor --fix\n"
-            "  wmadapter run (opencode/openclaw/dsh/pi/omp) (deepseek/qwen)\n"
-            "  wmadapter run (opencode/openclaw/dsh/pi/omp)   # every provider and model"
+            "  wmadapter run (opencode/openclaw/dsh/pi/omp/hermes) (deepseek/qwen)\n"
+            "  wmadapter run (opencode/openclaw/dsh/pi/omp/hermes)   # every provider and model"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -491,6 +548,7 @@ def main() -> None:
                    "DeepSeek Harness cordis.patch.yml path", aliases=["deepseek-harness"])
     add_run_parser("pi", "Add WM Adapter models to Pi", "Pi models.json path")
     add_run_parser("omp", "Add WM Adapter models to OMP", "OMP models.json path")
+    add_run_parser("hermes", "Add WM Adapter models to Hermes Agent", "Hermes config.yaml path")
     args = parser.parse_args()
 
     if args.command == "login":
@@ -551,7 +609,8 @@ def main() -> None:
         config = load_config(args.config)
         try:
             writers = {"opencode": _run_opencode, "openclaw": _run_openclaw, "dsh": _run_dsh,
-                       "deepseek-harness": _run_dsh, "pi": _run_pi, "omp": _run_omp}
+                       "deepseek-harness": _run_dsh, "pi": _run_pi, "omp": _run_omp,
+                       "hermes": _run_hermes}
             path = writers[args.client](args.provider, config, args.client_config)
         except RuntimeError as exc:
             parser.error(str(exc))

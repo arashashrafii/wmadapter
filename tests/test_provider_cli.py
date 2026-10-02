@@ -279,6 +279,82 @@ class ProviderCliTests(unittest.TestCase):
             self.assertEqual(settings["modelRoles"]["default"], "other/custom")
             self.assertEqual(settings["modelRoles"]["slow"], "wmadapter-qwen/qwen-chat")
 
+    def test_run_hermes_writes_named_provider_and_custom_model_endpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.test.yaml"
+            target = Path(directory) / "hermes" / "config.yaml"
+            save_config({"server": {"port": 11556}, "qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "hermes", "qwen", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            settings = yaml.safe_load(target.read_text())
+            provider = settings["providers"]["wmadapter-qwen"]
+            self.assertEqual(provider["api"], "http://127.0.0.1:11556/v1")
+            self.assertEqual(provider["models"], ["qwen-chat"])
+            self.assertEqual(settings["model"], {
+                "provider": "custom",
+                "base_url": "http://127.0.0.1:11556/v1",
+                "default": "qwen-chat",
+                "api_mode": "chat_completions",
+                "api_key": "any",
+            })
+
+    def test_run_hermes_without_a_provider_configures_every_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "config.yaml"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "hermes", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            settings = yaml.safe_load(target.read_text())
+            self.assertEqual(sorted(settings["providers"]), ["wmadapter-deepseek", "wmadapter-qwen"])
+            self.assertEqual(settings["providers"]["wmadapter-deepseek"]["models"],
+                             ["deepseek-chat", "deepseek-reasoner"])
+            self.assertEqual(settings["providers"]["wmadapter-qwen"]["models"], ["qwen-chat"])
+            self.assertEqual(settings["model"]["default"], "deepseek-chat")
+
+    def test_run_hermes_preserves_unrelated_settings_and_other_providers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "config.yaml"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            target.write_text(
+                "model:\n  default: existing-model\n"
+                "providers:\n  other-gateway:\n    api: http://localhost:9999/v1\n"
+                "agent:\n  max_turns: 42\nterminal:\n  backend: local\n",
+                encoding="utf-8",
+            )
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "hermes", "qwen", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            settings = yaml.safe_load(target.read_text())
+            self.assertEqual(settings["agent"], {"max_turns": 42})
+            self.assertEqual(settings["terminal"], {"backend": "local"})
+            self.assertEqual(settings["providers"]["other-gateway"], {"api": "http://localhost:9999/v1"})
+            self.assertIn("wmadapter-qwen", settings["providers"])
+            self.assertEqual(settings["model"]["default"], "qwen-chat")
+
+    def test_run_hermes_reuses_a_configured_gateway_api_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "config.yaml"
+            save_config({"server": {"api_key": "secret-key"}, "qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "hermes", "qwen", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            settings = yaml.safe_load(target.read_text())
+            self.assertEqual(settings["model"]["api_key"], "secret-key")
+            self.assertEqual(settings["providers"]["wmadapter-qwen"]["api_key"], "secret-key")
+
     def test_check_ready_returns_nonzero_for_unready_service(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "config.yaml"
