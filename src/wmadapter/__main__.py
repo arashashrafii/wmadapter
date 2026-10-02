@@ -70,42 +70,30 @@ def _opencode_config_path(value: str | None) -> Path:
     return Path(value).expanduser() if value else Path.home() / ".config" / "opencode" / "opencode.json"
 
 
-def _run_opencode(provider: str, config: dict, output: str | None) -> Path:
+def _run_opencode(provider: str | None, config: dict, output: str | None) -> Path:
     target = _opencode_config_path(output)
-    if target.exists():
-        try:
-            raw = target.read_text(encoding="utf-8").strip()
-            document = json.loads(raw) if raw else {}
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"OpenCode config is not valid JSON: {target}") from exc
-    else:
-        document = {}
-    models = list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
-    provider_id = f"wmadapter-{provider}"
+    document = _read_json_config(target, "OpenCode")
     providers = dict(document.get("provider") or {})
-    providers[provider_id] = {
-        "name": f"WM Adapter ({provider})",
-        "npm": "@ai-sdk/openai-compatible",
-        "options": {"baseURL": "http://127.0.0.1:11555/v1"},
-        "models": {model: {"name": model} for model in models},
-    }
+    for name in _client_providers(provider):
+        providers[f"wmadapter-{name}"] = {
+            "name": f"WM Adapter ({name})",
+            "npm": "@ai-sdk/openai-compatible",
+            "options": {"baseURL": _gateway_url(config)},
+            "models": {model: {"name": model} for model in _client_models(name, config)},
+        }
     document["provider"] = providers
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_json_config(target, document)
     return target
 
 
-def _run_openclaw(provider: str, config: dict, output: str | None) -> Path:
+def _run_openclaw(provider: str | None, config: dict, output: str | None) -> Path:
     target = Path(output).expanduser() if output else Path.home() / ".openclaw" / "openclaw.json"
-    if target.exists():
-        try:
-            raw = target.read_text(encoding="utf-8").strip()
-            document = json.loads(raw) if raw else {}
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"OpenClaw config is not valid JSON: {target}") from exc
-    else:
-        document = {}
-    models = list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
+    document = _read_json_config(target, "OpenClaw")
+    models: list[str] = []
+    for name in _client_providers(provider):
+        for model in _client_models(name, config):
+            if model not in models:
+                models.append(model)
     server = config.get("server") or {}
     host = server.get("host", "127.0.0.1")
     port = int(server.get("port", 11555))
@@ -168,37 +156,109 @@ def _client_models(provider: str, config: dict) -> list[str]:
     return list(config.get(provider, {}).get("models") or BUILTIN_PROVIDER_MODELS[provider])
 
 
+def _client_providers(provider: str | None) -> list[str]:
+    """Providers a client endpoint should be written for.
+
+    The provider argument is optional: `wmadapter run <agent>` without a model
+    writes one endpoint for every built-in provider so the agent discovers the
+    whole catalog from its own settings.
+    """
+    return [provider] if provider else sorted(BUILTIN_PROVIDER_MODELS)
+
+
+def _read_json_config(target: Path, label: str) -> dict:
+    if not target.exists():
+        return {}
+    raw = target.read_text(encoding="utf-8").strip()
+    if not raw:
+        return {}
+    try:
+        document = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{label} config is not valid JSON: {target}") from exc
+    if not isinstance(document, dict):
+        raise RuntimeError(f"{label} config must contain a JSON object: {target}")
+    return document
+
+
+def _write_json_config(target: Path, document: dict) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def _gateway_url(config: dict) -> str:
     server = config.get("server") or {}
     return f"http://{server.get('host', '127.0.0.1')}:{int(server.get('port', 11555))}/v1"
 
 
-def _run_pi(provider: str, config: dict, output: str | None) -> Path:
+def _run_pi(provider: str | None, config: dict, output: str | None) -> Path:
     target = Path(output).expanduser() if output else Path.home() / ".pi" / "agent" / "models.json"
-    if target.exists():
-        try:
-            document = json.loads(target.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Pi config is not valid JSON: {target}") from exc
-    else:
-        document = {}
-    models = _client_models(provider, config)
+    document = _read_json_config(target, "Pi")
     providers = dict(document.get("providers") or {})
-    current = dict(providers.get(f"wmadapter-{provider}") or {})
-    current.update({
-        "baseUrl": _gateway_url(config),
-        "api": "openai-completions",
-        "apiKey": "not-needed",
-        "models": [{"id": model, "name": model} for model in models],
-    })
-    providers[f"wmadapter-{provider}"] = current
+    for name in _client_providers(provider):
+        current = dict(providers.get(f"wmadapter-{name}") or {})
+        current.update({
+            "baseUrl": _gateway_url(config),
+            "api": "openai-completions",
+            "apiKey": "not-needed",
+            "models": [{"id": model, "name": model} for model in _client_models(name, config)],
+        })
+        providers[f"wmadapter-{name}"] = current
     document["providers"] = providers
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_json_config(target, document)
     return target
 
 
-def _run_dsh(provider: str, config: dict, output: str | None) -> Path:
+def _omp_model_selector(provider: str, model: str) -> str:
+    """OMP resolves roles through "provider/model-id" selectors."""
+    return f"wmadapter-{provider}/{model}"
+
+
+def _run_omp(provider: str | None, config: dict, output: str | None) -> Path:
+    """Configure OMP through both of its settings surfaces.
+
+    `models.json` carries the provider endpoints (the OMP file Pi shares), and
+    `config.yml` carries the default model role so a plain `omp` invocation
+    resolves a WM Adapter model without a `--model` flag.
+    """
+    names = _client_providers(provider)
+    target = Path(output).expanduser() if output else Path.home() / ".omp" / "agent" / "models.json"
+    roles_target = target.with_name("config.yml")
+    document = _read_json_config(target, "OMP")
+    providers = dict(document.get("providers") or {})
+    for name in names:
+        current = dict(providers.get(f"wmadapter-{name}") or {})
+        current.update({
+            "baseUrl": _gateway_url(config),
+            "api": "openai-completions",
+            "apiKey": "not-needed",
+            "models": [{"id": model, "name": model} for model in _client_models(name, config)],
+        })
+        providers[f"wmadapter-{name}"] = current
+    document["providers"] = providers
+    _write_json_config(target, document)
+
+    if roles_target.exists():
+        try:
+            settings = yaml.safe_load(roles_target.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise RuntimeError(f"OMP config is not valid YAML: {roles_target}") from exc
+    else:
+        settings = {}
+    if not isinstance(settings, dict):
+        raise RuntimeError(f"OMP config must contain a YAML mapping: {roles_target}")
+    configured = dict(settings.get("modelRoles") or {})
+    # Only fill roles that are still unset; an explicit user choice wins.
+    for role, name in (("default", names[0]), ("smol", names[0]), ("slow", names[-1])):
+        default_model = _client_models(name, config)[0]
+        configured.setdefault(role, _omp_model_selector(name, default_model))
+    settings["modelRoles"] = configured
+    roles_target.parent.mkdir(parents=True, exist_ok=True)
+    roles_target.write_text(yaml.safe_dump(settings, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return target
+
+
+def _run_dsh(provider: str | None, config: dict, output: str | None) -> Path:
     dsh_home = Path(os.environ.get("DSH_HOME", str(Path.home() / ".dsh"))).expanduser()
     target = Path(output).expanduser() if output else dsh_home / "profiles" / "web" / "cordis.patch.yml"
     if target.exists():
@@ -210,12 +270,11 @@ def _run_dsh(provider: str, config: dict, output: str | None) -> Path:
         document = []
     if not isinstance(document, list):
         raise RuntimeError(f"DeepSeek Harness config must contain a YAML patch list: {target}")
-    models = _client_models(provider, config)
-    providers = {f"wmadapter-{provider}": {
+    providers = {f"wmadapter-{name}": {
         "api": "openai-completions",
         "baseURL": _gateway_url(config),
-        "models": [{"id": model} for model in models],
-    }}
+        "models": [{"id": model} for model in _client_models(name, config)],
+    } for name in _client_providers(provider)}
     patch = next((item for item in document if isinstance(item, dict) and item.get("id") == "llm-pi-ai"), None)
     if patch is None:
         document.append({"id": "llm-pi-ai", "config": {"providers": providers}})
@@ -374,7 +433,8 @@ def main() -> None:
             "  wmadapter check ready qwen\n"
             "  wmadapter service restart\n"
             "  wmadapter doctor --fix\n"
-            "  wmadapter run (opencode/openclaw/dsh/pi) (deepseek/qwen)"
+            "  wmadapter run (opencode/openclaw/dsh/pi/omp) (deepseek/qwen)\n"
+            "  wmadapter run (opencode/openclaw/dsh/pi/omp)   # every provider and model"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -417,18 +477,20 @@ def main() -> None:
     doctor.add_argument("--fix", action="store_true", help="Restart the service, then run diagnostics")
     run = subparsers.add_parser("run", help="Configure a client from WM Adapter models")
     run_commands = run.add_subparsers(dest="client", required=True)
-    opencode = run_commands.add_parser("opencode", help="Add a WM Adapter provider to OpenCode")
-    opencode.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
-    opencode.add_argument("--config", dest="client_config", help="OpenCode config file path")
-    openclaw = run_commands.add_parser("openclaw", help="Add WM Adapter models to OpenClaw")
-    openclaw.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
-    openclaw.add_argument("--config", dest="client_config", help="OpenClaw config file path")
-    dsh = run_commands.add_parser("dsh", aliases=["deepseek-harness"], help="Add WM Adapter models to DeepSeek Harness")
-    dsh.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
-    dsh.add_argument("--config", dest="client_config", help="DeepSeek Harness cordis.patch.yml path")
-    pi = run_commands.add_parser("pi", help="Add WM Adapter models to Pi")
-    pi.add_argument("provider", choices=sorted(BUILTIN_PROVIDER_MODELS))
-    pi.add_argument("--config", dest="client_config", help="Pi models.json path")
+
+    def add_run_parser(name: str, help_text: str, config_help: str, aliases: list[str] | None = None) -> None:
+        client = run_commands.add_parser(name, help=help_text, aliases=aliases or [])
+        # Omitting the provider configures every provider and model in one step.
+        client.add_argument("provider", nargs="?", choices=sorted(BUILTIN_PROVIDER_MODELS),
+                            help="gateway provider to expose (omit to configure every provider)")
+        client.add_argument("--config", dest="client_config", help=config_help)
+
+    add_run_parser("opencode", "Add a WM Adapter provider to OpenCode", "OpenCode config file path")
+    add_run_parser("openclaw", "Add WM Adapter models to OpenClaw", "OpenClaw config file path")
+    add_run_parser("dsh", "Add WM Adapter models to DeepSeek Harness (DSH)",
+                   "DeepSeek Harness cordis.patch.yml path", aliases=["deepseek-harness"])
+    add_run_parser("pi", "Add WM Adapter models to Pi", "Pi models.json path")
+    add_run_parser("omp", "Add WM Adapter models to OMP", "OMP models.json path")
     args = parser.parse_args()
 
     if args.command == "login":
@@ -489,11 +551,11 @@ def main() -> None:
         config = load_config(args.config)
         try:
             writers = {"opencode": _run_opencode, "openclaw": _run_openclaw, "dsh": _run_dsh,
-                       "deepseek-harness": _run_dsh, "pi": _run_pi}
+                       "deepseek-harness": _run_dsh, "pi": _run_pi, "omp": _run_omp}
             path = writers[args.client](args.provider, config, args.client_config)
         except RuntimeError as exc:
             parser.error(str(exc))
-        print(f"{args.client.title()} configured for {args.provider}: {path}")
+        print(f"{args.client.title()} configured for {args.provider or 'all providers'}: {path}")
         return
     if args.command == "check":
         config = load_config(args.config)

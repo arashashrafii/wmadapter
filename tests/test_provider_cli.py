@@ -28,6 +28,7 @@ class ProviderCliTests(unittest.TestCase):
             "qwen3.7-plus",
             "qwen3.8-max",
             "qwen3.8-omni-flash",
+            "qwen-image-3.0",
         ])
         self.assertEqual(config["providers"]["enabled"], ["deepseek"])
 
@@ -153,6 +154,130 @@ class ProviderCliTests(unittest.TestCase):
             provider = document[1]["config"]["providers"]["wmadapter-qwen"]
             self.assertEqual(provider["baseURL"], "http://127.0.0.1:11555/v1")
             self.assertEqual(provider["models"], [{"id": "qwen-chat"}])
+
+    def test_run_without_a_provider_configures_every_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            cases = {
+                "opencode": ("opencode.json", lambda document: sorted(
+                    name for name in document["provider"] if name.startswith("wmadapter-"))),
+                "pi": ("models.json", lambda document: sorted(
+                    name for name in document["providers"] if name.startswith("wmadapter-"))),
+                "omp": ("models.json", lambda document: sorted(
+                    name for name in document["providers"] if name.startswith("wmadapter-"))),
+            }
+            for client, (filename, names) in cases.items():
+                with self.subTest(client=client):
+                    target = Path(directory) / filename
+                    with patch.object(sys, "argv", [
+                        "wmadapter", "--config", str(source), "run", client, "--config", str(target)
+                    ]):
+                        main()
+                    document = json.loads(target.read_text())
+                    self.assertEqual(names(document), ["wmadapter-deepseek", "wmadapter-qwen"])
+
+    def test_run_without_a_provider_uses_deepseek_catalog_and_configured_qwen_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "models.json"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "pi", "--config", str(target)
+            ]):
+                main()
+            providers = json.loads(target.read_text())["providers"]
+            self.assertEqual([item["id"] for item in providers["wmadapter-deepseek"]["models"]],
+                             ["deepseek-chat", "deepseek-reasoner"])
+            self.assertEqual([item["id"] for item in providers["wmadapter-qwen"]["models"]], ["qwen-chat"])
+
+    def test_run_openclaw_without_a_provider_aggregates_one_endpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "openclaw.json"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "openclaw", "--config", str(target)
+            ]):
+                main()
+            provider = json.loads(target.read_text())["models"]["providers"]["wmadapter"]
+            self.assertEqual([item["id"] for item in provider["models"]], [
+                "deepseek-chat", "deepseek-reasoner", "qwen-chat",
+            ])
+
+    def test_run_dsh_without_a_provider_patches_both_providers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "cordis.patch.yml"
+            save_config({"server": {"port": 11556}, "qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "dsh", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            providers = yaml.safe_load(target.read_text())[0]["config"]["providers"]
+            self.assertEqual(sorted(providers), ["wmadapter-deepseek", "wmadapter-qwen"])
+            self.assertEqual(providers["wmadapter-qwen"]["baseURL"], "http://127.0.0.1:11556/v1")
+            self.assertEqual(providers["wmadapter-deepseek"]["models"], [
+                {"id": "deepseek-chat"}, {"id": "deepseek-reasoner"},
+            ])
+
+    def test_run_omp_writes_providers_and_default_model_role(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.test.yaml"
+            target = Path(directory) / "agent" / "models.json"
+            save_config({"server": {"port": 11556}, "qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "omp", "qwen", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            provider = json.loads(target.read_text())["providers"]["wmadapter-qwen"]
+            self.assertEqual(provider["baseUrl"], "http://127.0.0.1:11556/v1")
+            self.assertEqual(provider["api"], "openai-completions")
+            self.assertEqual(provider["models"], [{"id": "qwen-chat", "name": "qwen-chat"}])
+            roles = yaml.safe_load((target.parent / "config.yml").read_text())["modelRoles"]
+            self.assertEqual(roles["default"], "wmadapter-qwen/qwen-chat")
+            self.assertEqual(roles["slow"], "wmadapter-qwen/qwen-chat")
+
+    def test_run_omp_without_a_provider_selects_deepseek_and_qwen_roles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "agent" / "models.json"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "omp", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            document = json.loads(target.read_text())
+            self.assertEqual(sorted(document["providers"]), ["wmadapter-deepseek", "wmadapter-qwen"])
+            roles = yaml.safe_load((target.parent / "config.yml").read_text())["modelRoles"]
+            self.assertEqual(roles["default"], "wmadapter-deepseek/deepseek-chat")
+            self.assertEqual(roles["smol"], "wmadapter-deepseek/deepseek-chat")
+            self.assertEqual(roles["slow"], "wmadapter-qwen/qwen-chat")
+
+    def test_run_omp_keeps_existing_providers_and_model_roles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "config.yaml"
+            target = Path(directory) / "agent" / "models.json"
+            save_config({"qwen": {"models": ["qwen-chat"]}}, source)
+            target.parent.mkdir(parents=True)
+            target.write_text(json.dumps({"providers": {"other": {"models": []}}}))
+            (target.parent / "config.yml").write_text(
+                "modelRoles:\n  default: other/custom\nsetupVersion: 2\n", encoding="utf-8")
+            with patch.object(sys, "argv", [
+                "wmadapter", "--config", str(source), "run", "omp", "qwen", "--config", str(target)
+            ]):
+                main()
+            import yaml
+            document = json.loads(target.read_text())
+            self.assertIn("other", document["providers"])
+            self.assertIn("wmadapter-qwen", document["providers"])
+            settings = yaml.safe_load((target.parent / "config.yml").read_text())
+            self.assertEqual(settings["setupVersion"], 2)
+            self.assertEqual(settings["modelRoles"]["default"], "other/custom")
+            self.assertEqual(settings["modelRoles"]["slow"], "wmadapter-qwen/qwen-chat")
 
     def test_check_ready_returns_nonzero_for_unready_service(self):
         with tempfile.TemporaryDirectory() as directory:
