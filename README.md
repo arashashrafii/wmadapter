@@ -71,7 +71,14 @@ wmadapter/qwen-chat
 wmadapter/qwen3.7-plus
 wmadapter/qwen3.8-max
 wmadapter/qwen3.8-omni-flash
+wmadapter/qwen-image-3.0
 ```
+
+`qwen-image-3.0` is the Qwen Image 3 generation model. It uses the same
+`POST /v1/images` endpoint as `qwen-chat` and additionally accepts a normalized
+`size`/`aspect_ratio` parameter. It stays unadvertised as image-capable until
+it is listed in `qwen.image_generation_verified_models`. See
+[Qwen Image 3 contract](docs/QWEN_IMAGE_CONTRACT.md).
 
 Verify the model is live before testing OpenClaw:
 
@@ -120,7 +127,12 @@ Never use the product configuration or profile for automated tests.
 - `POST /v1/chat/completions`
 - `POST /v1/completions` (supported legacy subset)
 - `POST /v1/responses` (non-streaming text subset)
-- `POST /v1/images` for verified Qwen image generation
+- `POST /v1/images` for verified Qwen image generation. `qwen-chat` uses the
+  original Create Image flow; `qwen-image-3.0` additionally accepts a
+  normalized `size` or `aspect_ratio` and returns one validated base64 artifact.
+- `POST /v1/images/generations` serves the same handler at the canonical OpenAI
+  Images path, so OpenAI-SDK clients (OpenClaw's `image_generate` tool, Pi,
+  compatible agents) use the gateway with no client-side plugin.
 
 Unsupported capabilities return explicit errors. Streaming is buffered because
 the upstream web providers do not expose native token streaming.

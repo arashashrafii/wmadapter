@@ -423,12 +423,39 @@ class EmbeddingsRequest(BaseModel):
 
 
 class ImagesRequest(BaseModel):
-    """Supported OpenAI image-generation subset for verified Qwen Web."""
+    """Provider-neutral image-generation request for verified Qwen models."""
     model_config = ConfigDict(extra="allow")
     model: str = "qwen-chat"
     prompt: Any
     n: int = Field(default=1, ge=1, le=1)
     response_format: str = "b64_json"
+    # Normalized image shape. Exactly one may be supplied; Qwen Image 3
+    # additionally accepts an explicit "WxH" pixel size. Both are optional and
+    # interpreted per model by the endpoint.
+    size: str | None = None
+    aspect_ratio: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_aspect_alias(cls, data):
+        """Accept the OpenAI-SDK camelCase ``aspectRatio`` spelling.
+
+        OpenAI-SDK clients such as OpenClaw's image tool send ``aspectRatio``
+        while this contract uses ``aspect_ratio``. Both address the same
+        normalized parameter. Supplying both at once is ambiguous and is
+        rejected instead of silently resolved, and the camelCase key is removed
+        so it never surfaces as an unsupported extra field.
+        """
+        if not isinstance(data, dict):
+            return data
+        camel = data.get("aspectRatio")
+        if camel is None:
+            return data
+        if data.get("aspect_ratio") is not None:
+            raise ValueError("Specify only one of aspect_ratio or aspectRatio")
+        normalized = {key: value for key, value in data.items() if key != "aspectRatio"}
+        normalized["aspect_ratio"] = camel
+        return normalized
 
 
 class ImageEditsRequest(BaseModel):

@@ -15,6 +15,7 @@ from .providers.deepseek.chat import DeepSeekChat
 from .providers.deepseek.login import DeepSeekLogin
 from .providers.deepseek.login import ACCOUNT_SUSPENDED, CHAT_READY, CHALLENGE_VISIBLE, SIGN_IN_VISIBLE, UNKNOWN_UI, DeepSeekLogin
 from .providers.qwen.chat import QwenChat
+from .providers.qwen.image_contract import QWEN_IMAGE_MODEL, QWEN_IMAGE_TIMEOUT_MS
 from .providers.deepseek.protocol import DeepSeekTextAdapter
 from .providers.qwen.protocol import QwenTextAdapter
 from .providers.submit import PreSubmitError, UncertainSubmitError
@@ -545,6 +546,16 @@ class QwenService(ChatProvider):
         if len(set(configured_models)) != len(configured_models):
             raise ValueError("qwen.models must not contain duplicate model IDs")
         self.model_ids = configured_models
+        verified_models = qwen_cfg.get("image_generation_verified_models")
+        if verified_models is None:
+            # Backward-compatible interpretation of the old global flag:
+            # only the existing qwen-chat flow is verified by that flag.
+            self._verified_image_models = {"qwen-chat"} if self.capabilities.image_generation else set()
+        else:
+            self._verified_image_models = {
+                model for model in verified_models
+                if isinstance(model, str) and model in self.model_ids
+            } if self.capabilities.image_generation else set()
         self.default_model = qwen_cfg.get("default_model", self.DEFAULT_MODEL)
         limits = config.get("limits", {})
         self.context_budget_chars = limits.get("context_budget_chars")
@@ -588,11 +599,40 @@ class QwenService(ChatProvider):
         self._last_probe_result: str | None = None
         self._initial_start_available = True
 
+    def capabilities_for_model(self, model: str):
+        """Per-model capability view; image generation is an explicit opt-in."""
+        capabilities = self.capabilities
+        if model in {"qwen-chat", QWEN_IMAGE_MODEL}:
+            return capabilities.model_copy(update={
+                "image_generation": capabilities.image_generation and model in self._verified_image_models,
+            })
+        return capabilities.model_copy(update={"image_generation": False})
+
     async def _bootstrap_page(self, page):
         """Navigate only a newly-created blank page to Qwen."""
         if getattr(page, "url", "") in {"", "about:blank"}:
             await page.goto(self.chat_url, wait_until="domcontentloaded")
         return page
+
+    def _chat_root_url(self) -> str:
+        """Main Qwen chat URL derived from the configured auth entry point."""
+        url = self.chat_url.rstrip("/")
+        if url.endswith("/auth"):
+            return url[: -len("/auth")] + "/"
+        return url + "/"
+
+    async def _chat_ready_page(self, conversation_id: str | None = None):
+        """Return a page parked on the main Qwen chat page.
+
+        A fresh page can land on the provider auth URL even for an already
+        authenticated session; the auth route renders no composer, so it is
+        not a usable Create Image surface.
+        """
+        page = await self._page_for_conversation(conversation_id)
+        url = getattr(page, "url", "")
+        if isinstance(url, str) and url.rstrip("/").endswith("/auth"):
+            await page.goto(self._chat_root_url(), wait_until="domcontentloaded")
+        return await self._bootstrap_page(page)
 
     async def start(self) -> None:
         if self.auth_state == "LOGIN_INTERRUPTED":
@@ -936,18 +976,35 @@ class QwenService(ChatProvider):
     ):
         yield await self.complete(prompt, conversation_id=conversation_id, model=model)
 
-    async def generate_image(self, prompt: str, conversation_id: str | None = None) -> tuple[bytes, str]:
+    async def generate_image(
+        self, prompt: str, conversation_id: str | None = None, *,
+        model: str = "qwen-chat", size: str = "auto",
+    ) -> tuple[bytes, str]:
         """Generate one verified Qwen image; capability gating is enforced by the API."""
+        if model not in self.model_ids:
+            raise ValueError("Qwen image model is not configured")
         async with self._request_lock:
             owned_conversation = conversation_id or f"image:{uuid.uuid4().hex}"
             page = None
-            page = await self._page_for_conversation(owned_conversation)
+            page = await self._chat_ready_page(owned_conversation)
             self._mark_page_active(page)
             try:
                 if not self.ready:
+                    # A fresh page can transiently render the provider login
+                    # wall; only probe when the provider is not already ready,
+                    # mirroring the verified chat path.
                     await self._authenticate(owned_conversation)
-                page = await self._page_for_conversation(owned_conversation)
-                return await QwenChat(page, timeout_ms=self.request_timeout_ms(prompt)).send_image(prompt)
+                    page = await self._chat_ready_page(owned_conversation)
+                # Image rendering outlasts a normal chat turn, so it gets a
+                # dedicated budget instead of the chat timeout.
+                image_timeout_ms = min(
+                    self.max_request_timeout_ms,
+                    max(self.timeout_ms, QWEN_IMAGE_TIMEOUT_MS),
+                )
+                chat = QwenChat(page, timeout_ms=image_timeout_ms)
+                if model == "qwen-chat":
+                    return await chat.send_image(prompt)
+                return await chat.send_image(prompt, size=size, model=model)
             finally:
                 self._mark_page_inactive(page)
                 # Provider-side session deletion is intentionally disabled.

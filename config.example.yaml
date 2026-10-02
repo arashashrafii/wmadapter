@@ -38,8 +38,15 @@ qwen:
     - qwen3.7-plus
     - qwen3.8-max
     - qwen3.8-omni-flash
+    - qwen-image-3.0
   # Enable only after the live Qwen image UI/artifact probe succeeds.
   image_generation_verified: true
+  # Per-model opt-in for image generation. The legacy flag above verifies only
+  # qwen-chat when this list is omitted, so qwen-image-3.0 stays unadvertised
+  # until its own Create Image flow is verified. Requires the flag above.
+  image_generation_verified_models:
+    - qwen-chat
+    # - qwen-image-3.0
 
 providers:
   default: deepseek

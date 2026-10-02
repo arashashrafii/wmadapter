@@ -25,6 +25,7 @@ BUILTIN_PROVIDER_MODELS = {
         "qwen3.7-plus",
         "qwen3.8-max",
         "qwen3.8-omni-flash",
+        "qwen-image-3.0",
     ),
 }
 
@@ -194,6 +195,11 @@ class QwenConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: ["qwen-chat"])
     # Deliberately false until a repeatable live Qwen image probe succeeds.
     image_generation_verified: bool = False
+    # Per-model opt-in for image generation. When omitted, the legacy global
+    # flag above verifies only the original qwen-chat Create Image flow, so an
+    # upgrade never silently advertises an unverified image model. Listing a
+    # model here requires image_generation_verified=true as well.
+    image_generation_verified_models: list[str] | None = None
     proxy: str | None = None
 
 

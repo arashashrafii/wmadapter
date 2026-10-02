@@ -24,6 +24,12 @@ from .providers.router import ProviderRouter
 from .security import redact
 from .service import DeepSeekService, PageCapacityError, QwenService
 from .providers.recovery import ProtocolRecoveryError
+from .providers.qwen.image_contract import (
+    QWEN_IMAGE_MODEL,
+    normalize_qwen_image_size,
+    qwen_image_aspect_for_size,
+)
+from .providers.qwen.images import validate_image_bytes
 
 from .providers.contract import (
     ConversationId,
@@ -377,8 +383,14 @@ def _model_catalog():
             for model in router.models_for_provider(name)}
 
 
-def _public_capabilities(provider):
-    capabilities = provider.capabilities.model_dump()
+def _public_capabilities(provider, model: str | None = None):
+    """Per-model capability view when the model is known, else provider-level."""
+    capabilities = (
+        provider.capabilities_for_model(model)
+        if model is not None and hasattr(provider, "capabilities_for_model")
+        else provider.capabilities
+    )
+    capabilities = capabilities.model_dump()
     limits = config.get("limits", {})
     capabilities["gateway_max_input_chars"] = limits.get("max_input_chars")
     capabilities["gateway_max_output_chars"] = limits.get("max_output_chars")
@@ -471,7 +483,7 @@ async def props(model: str, autoload: bool = False):
     await _require_provider_ready(provider)
     return {"model": model, "provider": provider.name,
             "context_length": provider.capabilities.context_window,
-            "supports_chat": True, "capabilities": _public_capabilities(provider),
+            "supports_chat": True, "capabilities": _public_capabilities(provider, model),
             "limits": _model_limits(provider)}
 
 
@@ -480,7 +492,7 @@ async def models(request: Request):
     _authorize(request)
     return {"object": "list", "data": [
         {"id": model, "object": "model", "created": 0, "owned_by": name + "-web",
-         "provider": name, "capabilities": _public_capabilities(router.providers[name]),
+         "provider": name, "capabilities": _public_capabilities(router.providers[name], model),
          "limits": _model_limits(router.providers[name])}
         for model, name in _model_catalog().items() if name in router.providers
     ]}
@@ -722,8 +734,12 @@ async def embeddings(payload: EmbeddingsRequest, request: Request):
 
 
 @app.post("/v1/images")
+# Canonical OpenAI Images path. OpenAI-SDK clients (OpenClaw's `image_generate`
+# tool, Pi, and compatible agents) call /v1/images/generations directly, so the
+# same handler is served under both paths and no per-client plugin is needed.
+@app.post("/v1/images/generations")
 async def images(payload: ImagesRequest, request: Request):
-    """Generate one verified image through the selected provider."""
+    """Generate one verified image through the selected provider model."""
     _authorize(request)
     unsupported = sorted(payload.model_extra or {})
     if unsupported:
@@ -733,14 +749,35 @@ async def images(payload: ImagesRequest, request: Request):
     if not isinstance(payload.prompt, str) or not payload.prompt.strip():
         raise HTTPException(400, "Image generation prompt must be a non-empty string")
     provider = _model_provider(payload.model)
-    if not provider.capabilities.image_generation:
+    # Size and aspect_ratio belong to the Qwen Image 3 contract only. Reject
+    # them for other models rather than silently ignoring a client's explicit
+    # shape request.
+    if payload.model != QWEN_IMAGE_MODEL and (payload.size is not None or payload.aspect_ratio is not None):
+        field = "size" if payload.size is not None else "aspect_ratio"
+        raise HTTPException(400, f"Unsupported image generation field: {field}")
+    try:
+        normalized_size = normalize_qwen_image_size(
+            size=payload.size, aspect_ratio=payload.aspect_ratio,
+        ) if payload.model == QWEN_IMAGE_MODEL else "auto"
+        if payload.model == QWEN_IMAGE_MODEL:
+            qwen_image_aspect_for_size(normalized_size)
+    except ValueError as exc:
+        raise HTTPException(400, f"Unsupported Qwen Image 3 size: {exc}") from exc
+    capabilities = _public_capabilities(provider, payload.model)
+    if not capabilities.get("image_generation"):
         raise HTTPException(501, "image_generation_unverified")
     if not isinstance(provider, QwenService):
         raise HTTPException(501, "image_generation_not_supported")
     try:
-        content, mime = await provider.generate_image(
-            payload.prompt.strip(), conversation_id=f"image:{uuid.uuid4().hex}"
-        )
+        if payload.model == QWEN_IMAGE_MODEL:
+            content, mime = await provider.generate_image(
+                payload.prompt.strip(), model=payload.model, size=normalized_size,
+            )
+        else:
+            content, mime = await provider.generate_image(payload.prompt.strip())
+        content, mime = validate_image_bytes(content, mime)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("Qwen image generation failed: %s", type(exc).__name__)
         raise HTTPException(502, "image_generation_failed") from exc

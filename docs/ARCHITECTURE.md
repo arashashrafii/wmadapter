@@ -97,13 +97,17 @@ JSON arguments are rejected. Responses tool fields remain explicitly
 unsupported, and no tool is executed by the gateway.
 
 The images route validates a single non-empty text prompt and model selection.
-For Qwen, the capability is opt-in through the verified configuration flag;
-the adapter selects the provider-owned image mode, accepts only a provider-owned
-HTTPS artifact, validates MIME/magic bytes and size, and serializes one
-`b64_json` result. Unverified providers return `501
-image_generation_unverified`; provider failures return a safe `502
-image_generation_failed`. No URL is exposed to clients and no artifact is
-fabricated.
+For Qwen, the capability is opt-in: `qwen.image_generation_verified` gates the
+flow and `qwen.image_generation_verified_models` gates it per model, so the
+registered `qwen-image-3.0` model stays unadvertised until its own Create
+Image flow is verified. `qwen-image-3.0` additionally accepts exactly one
+normalized `size`/`aspect_ratio` parameter that maps deterministically to
+Qwen's OpenAI-compatible pixel sizes; the adapter selects the provider-owned
+image mode and aspect preset, accepts only a provider-owned HTTPS artifact,
+validates MIME/magic bytes and size, and serializes one `b64_json` result.
+Unverified providers return `501 image_generation_unverified`; provider
+failures return a safe `502 image_generation_failed`. No URL is exposed to
+clients and no artifact is fabricated.
 
 Audio speech, transcription, translation, and Realtime routes validate their
 request shapes but return `501` (`audio_not_supported` or

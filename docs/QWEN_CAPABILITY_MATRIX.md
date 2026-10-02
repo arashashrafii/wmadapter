@@ -22,6 +22,12 @@ verification must be repeated when the Qwen Web UI changes.
   and `qwen3.8-omni-flash`, matching the visible Qwen model menu.
   `qwen-chat` remains a compatibility alias for the configured default model.
   Availability is account- and region-dependent.
+- `qwen-image-3.0` is registered as the Qwen Image 3 generation model exposed
+  by Qwen Studio's Create Image workflow. It is listed in the model catalog
+  once its provider is ready, but its `image_generation` capability stays
+  `false` until the model is separately listed in
+  `qwen.image_generation_verified_models`; see
+  [Qwen Image 3 contract](QWEN_IMAGE_CONTRACT.md).
 
 ## Capability matrix
 
@@ -32,7 +38,7 @@ verification must be repeated when the Qwen Web UI changes.
 | Code interpreter / data analysis / charts | Unsupported at adapter boundary | The gateway does not execute provider code. A chart or file is only representable as validated metadata after a provider-specific live verification. |
 | Qwen Studio Artifacts | Unsupported at adapter boundary | No live observation establishes safe preview/update/export semantics. HTML/SVG is never rendered or executed by the gateway. |
 | Reasoning text | Blocked pending live observation | Do not advertise a reasoning model or expose hidden-thought content based on labels. |
-| Image generation | Verified separately | QW-M01 evidence belongs to Issue #79; it is not evidence for audio, voice, image understanding/editing, or video understanding. |
+| Image generation | Verified separately | QW-M01 evidence belongs to Issue #79; it is not evidence for audio, voice, image understanding/editing, or video understanding. The standard Qwen Image 3 flow is exposed as `qwen-image-3.0` and requires its own per-model verification flag. |
 | Image understanding/editing | Unsupported at adapter boundary | No live UI observation establishes image upload/grounded understanding or an edit artifact; the adapter advertises `image_input=false`, `image_editing=false` and rejects image parts. |
 | Video generation | Blocked | No live UI observation establishing a Qwen video agent. |
 | Image input | Unsupported at adapter boundary | No live UI observation establishes upload/vision support; image parts are rejected and `image_input=false`. |
